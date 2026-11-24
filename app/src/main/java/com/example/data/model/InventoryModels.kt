@@ -1,0 +1,118 @@
+package com.example.data.model
+
+import com.example.data.local.ProductEntity
+import com.example.data.local.StockTransactionEntity
+import com.example.data.local.UserAccountEntity
+import com.example.data.local.VehicleEntity
+
+data class StoreStockRow(
+    val product: ProductEntity,
+    val openingFull: Int,
+    val fullPurchases: Int,
+    val fullReturns: Int,
+    val fullDispatch: Int,
+    val storeFullBalance: Int,
+    val openingEmpty: Int,
+    val emptyPurchases: Int,
+    val emptyReturnsToStore: Int,
+    val emptyDispatch: Int,
+    val storeEmptyBalance: Int
+)
+
+data class VehicleStockRow(
+    val vehicle: VehicleEntity,
+    val product: ProductEntity,
+    val oldFull: Int,
+    val fullReceived: Int,
+    val totalFull: Int,
+    val customerSales: Int,
+    val fullBalance: Int,
+    val oldEmpty: Int,
+    val customerEmptyReceived: Int,
+    val emptyReturnedToStore: Int,
+    val emptyBalance: Int
+)
+
+data class VehicleOverview(
+    val vehicle: VehicleEntity,
+    val totalOldFull: Int,
+    val totalFullReceived: Int,
+    val totalFull: Int,
+    val totalCustomerSales: Int,
+    val totalFullBalance: Int,
+    val totalOldEmpty: Int,
+    val totalCustomerEmptyReceived: Int,
+    val totalEmptyReturnedToStore: Int,
+    val totalEmptyBalance: Int
+)
+
+data class DashboardSummary(
+    val selectedDate: String,
+    val totalFullCylinders: Int,
+    val totalEmptyCylinders: Int,
+    val storeFullBalance: Int,
+    val storeEmptyBalance: Int,
+    val allVehiclesFullBalance: Int,
+    val allVehiclesEmptyBalance: Int,
+    val todayFullPurchases: Int,
+    val todayEmptyPurchases: Int,
+    val todayFullDispatch: Int,
+    val todayEmptyDispatch: Int,
+    val todaySales: Int,
+    val vehicleOverviews: List<VehicleOverview>,
+    val recentTransactions: List<TransactionDisplayItem>
+)
+
+data class TransactionDisplayItem(
+    val transaction: StockTransactionEntity,
+    val productName: String,
+    val productCategory: ProductCategory
+)
+
+data class ProductSalesRow(
+    val product: ProductEntity,
+    val totalSold: Int,
+    val emptyCollected: Int
+)
+
+data class StaffSalesRow(
+    val vehicle: VehicleEntity,
+    val totalFullReceived: Int,
+    val totalSold: Int,
+    val totalEmptyCollected: Int,
+    val totalEmptyReturned: Int,
+    val closingFullBalance: Int,
+    val closingEmptyBalance: Int
+)
+
+data class MonthlyDailySaleRow(
+    val date: String,
+    val totalSold: Int,
+    val totalPurchases: Int,
+    val totalDispatch: Int,
+    val totalEmptyReturned: Int
+)
+
+data class CompanyStockRow(
+    val product: ProductEntity,
+    val storeFull: Int,
+    val vehiclesFull: Int,
+    val totalFull: Int,
+    val storeEmpty: Int,
+    val vehiclesEmpty: Int,
+    val totalEmpty: Int
+)
+
+data class AuthSession(
+    val user: UserAccountEntity,
+    val assignedVehicle: VehicleEntity?
+)
+
+sealed class OperationResult {
+    data class Success(val message: String) : OperationResult()
+    data class InsufficientStock(
+        val title: String,
+        val message: String
+    ) : OperationResult()
+    data class ValidationError(val message: String) : OperationResult()
+}
