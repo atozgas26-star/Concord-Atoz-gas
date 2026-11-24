@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -29,18 +32,23 @@ import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.DashboardSummary
 import com.example.ui.components.BrandHeaderBanner
@@ -70,7 +78,9 @@ fun AdminDashboardScreen(
     selectedDate: String,
     summary: DashboardSummary?,
     onDateSelected: (String) -> Unit,
+    onOpenInventory: () -> Unit,
     onOpenStore: () -> Unit,
+    onOpenVehicles: () -> Unit,
     onOpenVehicleDetail: (Long) -> Unit,
     onOpenReports: () -> Unit,
     onLogout: () -> Unit
@@ -103,6 +113,57 @@ fun AdminDashboardScreen(
                     selectedDate = selectedDate,
                     onDateSelected = onDateSelected
                 )
+            }
+
+            // Quick Navigation Section (Material 3 Cards for Inventory, Store, Vehicles)
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Quick Navigation",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        QuickNavCard(
+                            title = "Inventory",
+                            subtitle = summary?.let { "${it.totalFullCylinders} Full • ${it.totalEmptyCylinders} Emp" } ?: "All Cylinders",
+                            icon = Icons.Default.Inventory2,
+                            accentColor = BrandGreenPrimary,
+                            containerColor = BrandGreenContainer,
+                            onContainerColor = BrandGreenOnContainer,
+                            onClick = onOpenInventory,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("quick_nav_inventory")
+                        )
+                        QuickNavCard(
+                            title = "Store",
+                            subtitle = summary?.let { "${it.storeFullBalance}F / ${it.storeEmptyBalance}E Yard" } ?: "Yard Stock",
+                            icon = Icons.Default.Store,
+                            accentColor = SlateTertiary,
+                            containerColor = SlateContainer,
+                            onContainerColor = SlateOnContainer,
+                            onClick = onOpenStore,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("quick_nav_store")
+                        )
+                        QuickNavCard(
+                            title = "Vehicles",
+                            subtitle = summary?.let { "${it.vehicleOverviews.size} Active Fleet" } ?: "7 Vehicles",
+                            icon = Icons.Default.LocalShipping,
+                            accentColor = BrandRedSecondary,
+                            containerColor = BrandRedContainer,
+                            onContainerColor = BrandRedOnContainer,
+                            onClick = onOpenVehicles,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("quick_nav_vehicles")
+                        )
+                    }
+                }
             }
 
             if (summary != null) {
@@ -192,32 +253,17 @@ fun AdminDashboardScreen(
                     }
                 }
 
-                // Quick Navigation Actions
+                // Reports Shortcut
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    FilledTonalButton(
+                        onClick = onOpenReports,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("quick_reports_button")
                     ) {
-                        FilledTonalButton(
-                            onClick = onOpenStore,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("quick_store_button")
-                        ) {
-                            Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Store Entry")
-                        }
-                        FilledTonalButton(
-                            onClick = onOpenReports,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("quick_reports_button")
-                        ) {
-                            Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Daily & Monthly")
-                        }
+                        Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Open Daily & Monthly Reports (PDF / Excel)")
                     }
                 }
 
@@ -369,3 +415,65 @@ fun AdminDashboardScreen(
         }
     }
 }
+
+@Composable
+private fun QuickNavCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accentColor: Color,
+    containerColor: Color,
+    onContainerColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = modifier.minimumInteractiveComponentSize(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(containerColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = onContainerColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+

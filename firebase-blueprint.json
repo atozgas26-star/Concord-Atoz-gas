@@ -1,0 +1,259 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated Google user profile storing linked workspace and last selected staff account.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the signed-in Google user."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name from Google account."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address from Google account."
+        },
+        "activeWorkspaceId": {
+          "type": "string",
+          "description": "Currently active Concord Gas workspace document ID."
+        },
+        "linkedStaffUsername": {
+          "type": "string",
+          "description": "Last selected Concord staff/admin username."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when profile was updated."
+        }
+      },
+      "required": ["userId", "displayName", "createdAt", "updatedAt"]
+    },
+    "WorkspaceInvite": {
+      "title": "WorkspaceInvite",
+      "description": "Invite code mapping allowing 7 staff devices to join the shared company workspace.",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "description": "Target workspace ID."
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "UID of the workspace owner who created the invite."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether this invite code is currently enabled."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["workspaceId", "ownerUid", "active", "createdAt", "updatedAt"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Company workspace containing member UIDs for Concord & A to Z Gas online entry sync.",
+      "type": "object",
+      "properties": {
+        "companyName": {
+          "type": "string",
+          "description": "Company display name."
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "Primary Admin UID owning this workspace."
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Bounded list (max 20) of authorized Google UIDs in this company workspace."
+        },
+        "activeInviteCode": {
+          "type": "string",
+          "description": "Current invite code for staff devices to join."
+        },
+        "lastJoinInviteCode": {
+          "type": "string",
+          "description": "Invite code validated when the latest staff member joined."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["companyName", "ownerUid", "memberUids", "activeInviteCode", "createdAt", "updatedAt"]
+    },
+    "StaffAccount": {
+      "title": "StaffAccount",
+      "description": "Concord Admin or 7 Staff accounts with PINs synced across devices.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer", "description": "Local Room ID." },
+        "username": { "type": "string", "description": "Unique account username." },
+        "displayName": { "type": "string", "description": "Staff or Admin display name." },
+        "role": { "type": "string", "enum": ["ADMIN", "STAFF"] },
+        "pin": { "type": "string", "description": "4-digit PIN." },
+        "active": { "type": "boolean", "description": "Whether account is active." },
+        "memberUids": { "type": "array", "description": "Denormalized workspace member UIDs." },
+        "updatedByUid": { "type": "string", "description": "UID of last editor." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["localId", "username", "displayName", "role", "pin", "active", "memberUids", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "One of the 7 delivery vehicles assigned to staff.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer", "description": "Local Room ID." },
+        "name": { "type": "string", "description": "Vehicle name (e.g. NADEEM, SAJAN)." },
+        "staffUserId": { "type": "integer", "description": "Assigned staff localId." },
+        "active": { "type": "boolean", "description": "Whether vehicle is active." },
+        "memberUids": { "type": "array", "description": "Denormalized workspace member UIDs." },
+        "updatedByUid": { "type": "string", "description": "UID of last editor." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["localId", "name", "staffUserId", "active", "memberUids", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Gas cylinder product in the master catalog.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer", "description": "Local Room ID." },
+        "category": {
+          "type": "string",
+          "enum": ["INDUSTRIAL_GAS", "SMALL_48_CFT", "COOKING_GAS", "MCG_CUTTING_GAS"]
+        },
+        "name": { "type": "string", "description": "Cylinder name." },
+        "sortOrder": { "type": "integer", "description": "Sort order within catalog." },
+        "active": { "type": "boolean", "description": "Whether product is active." },
+        "memberUids": { "type": "array", "description": "Denormalized workspace member UIDs." },
+        "updatedByUid": { "type": "string", "description": "UID of last editor." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["localId", "category", "name", "sortOrder", "active", "memberUids", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "OpeningStock": {
+      "title": "OpeningStock",
+      "description": "Base opening stock record for Store or a Vehicle per product.",
+      "type": "object",
+      "properties": {
+        "scope": { "type": "string", "enum": ["STORE", "VEHICLE"] },
+        "vehicleId": { "type": "integer", "description": "0 for STORE or vehicle localId." },
+        "productId": { "type": "integer", "description": "Product localId." },
+        "openingFull": { "type": "integer", "description": "Base full cylinder count." },
+        "openingEmpty": { "type": "integer", "description": "Base empty cylinder count." },
+        "updatedBy": { "type": "string", "description": "Admin display name." },
+        "memberUids": { "type": "array", "description": "Denormalized workspace member UIDs." },
+        "updatedByUid": { "type": "string", "description": "UID of last editor." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["scope", "vehicleId", "productId", "openingFull", "openingEmpty", "updatedBy", "memberUids", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "StockTransaction": {
+      "title": "StockTransaction",
+      "description": "Online or offline-queued gas cylinder stock movement transaction.",
+      "type": "object",
+      "properties": {
+        "clientTxId": { "type": "string", "description": "Unique client transaction slug matching doc ID." },
+        "businessDate": { "type": "string", "description": "ISO yyyy-MM-dd business date." },
+        "clientTimestampMs": { "type": "integer", "description": "Epoch milliseconds on device when recorded." },
+        "type": {
+          "type": "string",
+          "enum": [
+            "STORE_PURCHASE_FULL",
+            "STORE_PURCHASE_EMPTY",
+            "STORE_FULL_DISPATCH_DIRECT",
+            "STORE_EMPTY_DISPATCH",
+            "STORE_ADJUST_FULL_IN",
+            "STORE_ADJUST_FULL_OUT",
+            "STORE_ADJUST_EMPTY_IN",
+            "STORE_ADJUST_EMPTY_OUT",
+            "VEHICLE_FULL_RECEIVED",
+            "VEHICLE_CUSTOMER_SALE",
+            "VEHICLE_EMPTY_FROM_CUSTOMER",
+            "VEHICLE_EMPTY_RETURN_TO_STORE",
+            "VEHICLE_ADJUST_FULL_IN",
+            "VEHICLE_ADJUST_FULL_OUT",
+            "VEHICLE_ADJUST_EMPTY_IN",
+            "VEHICLE_ADJUST_EMPTY_OUT"
+          ]
+        },
+        "productId": { "type": "integer", "description": "Product localId." },
+        "vehicleId": { "type": "integer", "description": "Optional vehicle localId." },
+        "vehicleName": { "type": "string", "description": "Optional vehicle name." },
+        "staffId": { "type": "integer", "description": "Staff/Admin localId." },
+        "staffName": { "type": "string", "description": "Staff/Admin display name." },
+        "quantity": { "type": "integer", "description": "Positive cylinder count." },
+        "notes": { "type": "string", "description": "Optional entry notes." },
+        "createdByUid": { "type": "string", "description": "Google UID of user who entered this transaction." },
+        "memberUids": { "type": "array", "description": "Denormalized workspace member UIDs." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientTxId", "businessDate", "clientTimestampMs", "type", "productId", "staffId", "staffName", "quantity", "notes", "createdByUid", "memberUids", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Per-user private Google profile and active workspace binding."
+    },
+    "/workspace_invites/{inviteCode}": {
+      "schema": { "$ref": "#/entities/WorkspaceInvite" },
+      "description": "Direct-lookup invite code records for staff onboarding."
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/Workspace" },
+      "description": "Shared Concord & A to Z Gas company workspaces."
+    },
+    "/workspaces/{workspaceId}/staff_accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/StaffAccount" },
+      "description": "Admin and 7 staff accounts synced across devices."
+    },
+    "/workspaces/{workspaceId}/vehicles/{vehicleId}": {
+      "schema": { "$ref": "#/entities/Vehicle" },
+      "description": "7 staff vehicles synced across devices."
+    },
+    "/workspaces/{workspaceId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Cylinder product catalog synced across devices."
+    },
+    "/workspaces/{workspaceId}/openings/{openingId}": {
+      "schema": { "$ref": "#/entities/OpeningStock" },
+      "description": "Store and vehicle opening stock baselines."
+    },
+    "/workspaces/{workspaceId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/StockTransaction" },
+      "description": "Online entries from all 7 staff and Admin."
+    }
+  }
+}

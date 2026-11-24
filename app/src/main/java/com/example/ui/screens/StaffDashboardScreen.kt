@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Input
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Output
@@ -83,6 +84,7 @@ fun StaffDashboardScreen(
     storeRows: List<StoreStockRow>,
     products: List<ProductEntity>,
     allTransactions: List<TransactionDisplayItem>,
+    isOnlineSynced: Boolean = true,
     onDateSelected: (String) -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String) -> Unit,
     onLogout: () -> Unit
@@ -126,15 +128,43 @@ fun StaffDashboardScreen(
             title = "CONCORD & A TO Z GAS",
             subtitle = "Staff: ${staffUser.displayName}  •  Vehicle: ${assignedVehicle?.name ?: "N/A"}",
             trailingContent = {
-                IconButton(
-                    onClick = onLogout,
-                    modifier = Modifier.testTag("staff_logout_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = "Logout",
-                        tint = Color.White
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isOnlineSynced) {
+                        Surface(
+                            color = Color.White.copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDone,
+                                    contentDescription = "Online Sync Active",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "ONLINE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    IconButton(
+                        onClick = onLogout,
+                        modifier = Modifier.testTag("staff_logout_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Logout",
+                            tint = Color.White
+                        )
+                    }
                 }
             }
         )

@@ -63,7 +63,8 @@ data class OpeningStockEntity(
     indices = [
         Index(value = ["businessDate"]),
         Index(value = ["productId"]),
-        Index(value = ["vehicleId"])
+        Index(value = ["vehicleId"]),
+        Index(value = ["remoteId"], unique = true)
     ]
 )
 data class StockTransactionEntity(
@@ -77,5 +78,6 @@ data class StockTransactionEntity(
     val staffId: Long,
     val staffName: String,
     val quantity: Int,
-    val notes: String = ""
+    val notes: String = "",
+    val remoteId: String? = null
 )

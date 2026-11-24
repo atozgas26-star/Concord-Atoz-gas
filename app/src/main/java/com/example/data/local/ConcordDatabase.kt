@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.withTransaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.ProductCategory
 import com.example.data.model.UserRole
 
@@ -17,7 +19,7 @@ import com.example.data.model.UserRole
         OpeningStockEntity::class,
         StockTransactionEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -115,6 +117,13 @@ abstract class ConcordDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: ConcordDatabase? = null
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE stock_transactions ADD COLUMN remoteId TEXT DEFAULT NULL")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_stock_transactions_remoteId ON stock_transactions(remoteId)")
+            }
+        }
+
         fun getInstance(context: Context): ConcordDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -122,6 +131,7 @@ abstract class ConcordDatabase : RoomDatabase() {
                     ConcordDatabase::class.java,
                     "concord_gas_inventory.db"
                 )
+                    .addMigrations(MIGRATION_1_2)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { INSTANCE = it }

@@ -22,13 +22,17 @@ import com.example.data.model.TransactionType
 import com.example.data.model.UserRole
 import com.example.data.model.VehicleOverview
 import com.example.data.model.VehicleStockRow
+import com.example.data.remote.CloudSyncRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class InventoryRepository(private val db: ConcordDatabase) {
+class InventoryRepository(
+    private val db: ConcordDatabase,
+    private val cloudSync: CloudSyncRepository? = null
+) {
 
     private val userDao = db.userDao()
     private val vehicleDao = db.vehicleDao()
@@ -63,11 +67,14 @@ class InventoryRepository(private val db: ConcordDatabase) {
             return OperationResult.ValidationError("PIN must be exactly 4 digits.")
         }
         userDao.updatePin(targetUserId, newPin)
+        userDao.getUserById(targetUserId)?.let { updatedUser ->
+            cloudSync?.pushUserPin(updatedUser)
+        }
         return OperationResult.Success("PIN updated successfully.")
     }
 
     suspend fun addProduct(category: ProductCategory, name: String): OperationResult {
-        val cleanName = name.trim()
+        val cleanName = name.trim().take(100)
         if (cleanName.isEmpty()) {
             return OperationResult.ValidationError("Product name cannot be empty.")
         }
@@ -77,20 +84,22 @@ class InventoryRepository(private val db: ConcordDatabase) {
         }
         val nextSort = (existing.filter { it.category == category }.maxOfOrNull { it.sortOrder }
             ?: (category.sortOrder * 100)) + 1
-        productDao.insert(
-            ProductEntity(
-                category = category,
-                name = cleanName,
-                sortOrder = nextSort,
-                isActive = true
-            )
+        val newProduct = ProductEntity(
+            category = category,
+            name = cleanName,
+            sortOrder = nextSort,
+            isActive = true
         )
+        val newId = productDao.insert(newProduct)
+        cloudSync?.pushProduct(newProduct.copy(id = newId))
         return OperationResult.Success("Product added to ${category.displayName}.")
     }
 
     suspend fun toggleProductActive(product: ProductEntity): OperationResult {
-        productDao.update(product.copy(isActive = !product.isActive))
-        val status = if (!product.isActive) "activated" else "archived"
+        val updated = product.copy(isActive = !product.isActive)
+        productDao.update(updated)
+        cloudSync?.pushProduct(updated)
+        val status = if (updated.isActive) "activated" else "archived"
         return OperationResult.Success("${product.name} $status.")
     }
 
@@ -199,11 +208,15 @@ class InventoryRepository(private val db: ConcordDatabase) {
         quantity: Int,
         notes: String
     ): OperationResult {
-        if (quantity <= 0) {
-            return OperationResult.ValidationError("Quantity must be greater than 0.")
+        if (quantity <= 0 || quantity > 100000) {
+            return OperationResult.ValidationError("Quantity must be between 1 and 100,000.")
         }
 
-        return db.withTransaction {
+        val remoteId = CloudSyncRepository.generateRemoteTxId()
+        var insertedEntity: StockTransactionEntity? = null
+        var productNameLabel = ""
+
+        val localResult = db.withTransaction {
             val product = productDao.getProductById(productId)
                 ?: return@withTransaction OperationResult.ValidationError("Selected product not found.")
 
@@ -238,6 +251,7 @@ class InventoryRepository(private val db: ConcordDatabase) {
             }
 
             val productLabel = "${product.category.displayName} • ${product.name}"
+            productNameLabel = product.name
 
             when (type) {
                 TransactionType.VEHICLE_FULL_RECEIVED -> {
@@ -287,22 +301,34 @@ class InventoryRepository(private val db: ConcordDatabase) {
                 else -> Unit
             }
 
-            txDao.insert(
-                StockTransactionEntity(
-                    businessDate = businessDate,
-                    timestamp = System.currentTimeMillis(),
-                    type = type,
-                    productId = productId,
-                    vehicleId = vehicle?.id,
-                    vehicleName = vehicle?.name,
-                    staffId = actor.id,
-                    staffName = actor.displayName,
-                    quantity = quantity,
-                    notes = notes.trim()
-                )
+            val newEntity = StockTransactionEntity(
+                businessDate = businessDate,
+                timestamp = System.currentTimeMillis(),
+                type = type,
+                productId = productId,
+                vehicleId = vehicle?.id,
+                vehicleName = vehicle?.name,
+                staffId = actor.id,
+                staffName = actor.displayName,
+                quantity = quantity,
+                notes = notes.trim().take(300),
+                remoteId = remoteId
             )
-            OperationResult.Success("Recorded $quantity × ${product.name} (${type.label}).")
+            val rowId = txDao.insert(newEntity)
+            insertedEntity = newEntity.copy(id = rowId)
+            OperationResult.Success("Recorded $quantity × $productNameLabel (${type.label}).")
         }
+
+        val txToSync = insertedEntity
+        if (localResult is OperationResult.Success && txToSync != null && cloudSync != null) {
+            val cloudResult = cloudSync.pushTransaction(txToSync)
+            if (cloudResult.isFailure) {
+                return OperationResult.Success(
+                    "Saved $quantity × $productNameLabel locally (will sync when online)."
+                )
+            }
+        }
+        return localResult
     }
 
     /**
@@ -365,18 +391,18 @@ class InventoryRepository(private val db: ConcordDatabase) {
             val newBaseFull = desiredOpeningFull - priorFull
             val newBaseEmpty = desiredOpeningEmpty - priorEmpty
 
-            openingDao.upsert(
-                OpeningStockEntity(
-                    id = existingBase?.id ?: 0L,
-                    scope = scope,
-                    vehicleId = vehicleId,
-                    productId = productId,
-                    openingFull = newBaseFull,
-                    openingEmpty = newBaseEmpty,
-                    updatedAt = System.currentTimeMillis(),
-                    updatedBy = admin.displayName
-                )
+            val savedOpening = OpeningStockEntity(
+                id = existingBase?.id ?: 0L,
+                scope = scope,
+                vehicleId = vehicleId,
+                productId = productId,
+                openingFull = newBaseFull,
+                openingEmpty = newBaseEmpty,
+                updatedAt = System.currentTimeMillis(),
+                updatedBy = admin.displayName
             )
+            openingDao.upsert(savedOpening)
+            cloudSync?.pushOpeningStock(savedOpening)
             OperationResult.Success("Opening stock updated.")
         }
     }
@@ -388,7 +414,8 @@ class InventoryRepository(private val db: ConcordDatabase) {
         if (admin.role != UserRole.ADMIN) {
             return OperationResult.ValidationError("Only Admin can delete transactions.")
         }
-        return db.withTransaction {
+        var deletedRemoteId: String? = null
+        val localResult = db.withTransaction {
             val target = txDao.getTransactionById(transactionId)
                 ?: return@withTransaction OperationResult.ValidationError("Transaction not found.")
 
@@ -422,9 +449,14 @@ class InventoryRepository(private val db: ConcordDatabase) {
                 }
             }
 
+            deletedRemoteId = target.remoteId
             txDao.deleteById(transactionId)
             OperationResult.Success("Transaction deleted.")
         }
+        if (localResult is OperationResult.Success && deletedRemoteId != null) {
+            cloudSync?.deleteCloudTransaction(deletedRemoteId!!)
+        }
+        return localResult
     }
 
     // --- Report Queries ---

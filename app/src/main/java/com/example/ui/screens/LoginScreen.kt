@@ -30,19 +30,25 @@ import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +70,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.local.UserAccountEntity
 import com.example.data.model.UserRole
+import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenDark
 import com.example.ui.theme.BrandGreenOnContainer
@@ -78,6 +85,13 @@ import com.example.ui.theme.JetBrainsMono
 fun LoginScreen(
     users: List<UserAccountEntity>,
     loginError: String?,
+    googleEmail: String = "",
+    workspaceState: WorkspaceConnectionState = WorkspaceConnectionState.Checking,
+    cloudBusy: Boolean = false,
+    onJoinWorkspace: (String) -> Unit = {},
+    onCreateWorkspace: () -> Unit = {},
+    onRetryCloud: () -> Unit = {},
+    onGoogleSignOut: () -> Unit = {},
     onLogin: (userId: Long, pin: String) -> Unit,
     onClearError: () -> Unit
 ) {
@@ -160,7 +174,12 @@ fun LoginScreen(
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
-                                text = "OFFLINE SECURE",
+                                text = when (workspaceState) {
+                                    is WorkspaceConnectionState.Connected -> "ONLINE SYNC ACTIVE"
+                                    is WorkspaceConnectionState.NeedsSetup -> "SETUP SYNC"
+                                    is WorkspaceConnectionState.Error -> "LOCAL QUEUE"
+                                    WorkspaceConnectionState.Checking -> "CONNECTING..."
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -196,6 +215,16 @@ fun LoginScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                CloudSyncStatusBanner(
+                    googleEmail = googleEmail,
+                    workspaceState = workspaceState,
+                    busy = cloudBusy,
+                    onJoinWorkspace = onJoinWorkspace,
+                    onCreateWorkspace = onCreateWorkspace,
+                    onRetryCloud = onRetryCloud,
+                    onGoogleSignOut = onGoogleSignOut
+                )
+
                 // Role Toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -495,6 +524,165 @@ private fun RoleToggleButton(
                     style = MaterialTheme.typography.labelSmall,
                     color = if (selected) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudSyncStatusBanner(
+    googleEmail: String,
+    workspaceState: WorkspaceConnectionState,
+    busy: Boolean,
+    onJoinWorkspace: (String) -> Unit,
+    onCreateWorkspace: () -> Unit,
+    onRetryCloud: () -> Unit,
+    onGoogleSignOut: () -> Unit
+) {
+    var inviteCodeInput by remember { mutableStateOf("CONCORD2026") }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    val icon = when (workspaceState) {
+                        is WorkspaceConnectionState.Connected -> Icons.Default.CloudDone
+                        is WorkspaceConnectionState.Error -> Icons.Default.CloudOff
+                        else -> Icons.Default.CloudSync
+                    }
+                    val tint = when (workspaceState) {
+                        is WorkspaceConnectionState.Connected -> BrandGreenPrimary
+                        is WorkspaceConnectionState.Error -> BrandRedSecondary
+                        else -> MaterialTheme.colorScheme.primary
+                    }
+                    Icon(icon, contentDescription = "Cloud Sync Status", tint = tint, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = when (workspaceState) {
+                                is WorkspaceConnectionState.Connected ->
+                                    "Online Sync Active (${workspaceState.memberCount} device${if (workspaceState.memberCount == 1) "" else "s"})"
+                                is WorkspaceConnectionState.NeedsSetup ->
+                                    "Connect Device to 7-Staff Online Sync"
+                                is WorkspaceConnectionState.Error ->
+                                    "Cloud Sync Reconnecting"
+                                WorkspaceConnectionState.Checking ->
+                                    "Connecting Online Sync..."
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (googleEmail.isNotBlank()) {
+                            Text(
+                                text = "Google: $googleEmail",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = onGoogleSignOut,
+                    modifier = Modifier.testTag("switch_google_account_button")
+                ) {
+                    Text("Switch Google", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+
+            when (workspaceState) {
+                is WorkspaceConnectionState.Connected -> {
+                    Surface(
+                        color = BrandGreenContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "7-Staff Invite Code: ${workspaceState.inviteCode}  •  Share with staff phones for live sync",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = BrandGreenOnContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+
+                is WorkspaceConnectionState.NeedsSetup -> {
+                    OutlinedTextField(
+                        value = inviteCodeInput,
+                        onValueChange = { inviteCodeInput = it.uppercase() },
+                        label = { Text("Company Invite Code (e.g. CONCORD2026)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("workspace_invite_input")
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onJoinWorkspace(inviteCodeInput) },
+                            enabled = !busy && inviteCodeInput.trim().length >= 4,
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("join_workspace_button")
+                        ) {
+                            if (busy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("Join Company")
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onCreateWorkspace,
+                            enabled = !busy,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("create_workspace_button")
+                        ) {
+                            Text("New Workspace")
+                        }
+                    }
+                }
+
+                is WorkspaceConnectionState.Error -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = workspaceState.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BrandRedBright,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = onRetryCloud) {
+                            Text("Retry")
+                        }
+                    }
+                }
+
+                WorkspaceConnectionState.Checking -> Unit
             }
         }
     }

@@ -21,6 +21,8 @@ import com.example.data.model.TransactionDisplayItem
 import com.example.data.model.TransactionType
 import com.example.data.model.UserRole
 import com.example.data.model.VehicleStockRow
+import com.example.data.remote.CloudSyncRepository
+import com.example.data.remote.WorkspaceConnectionState
 import com.example.data.repository.InventoryRepository
 import com.example.export.BackupManager
 import com.example.export.ReportTable
@@ -43,7 +45,8 @@ data class WarningAlert(
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(
     private val repository: InventoryRepository,
-    private val backupManager: BackupManager
+    private val backupManager: BackupManager,
+    private val cloudSync: CloudSyncRepository? = null
 ) : ViewModel() {
 
     private val _isInitialized = MutableStateFlow(false)
@@ -69,6 +72,12 @@ class AppViewModel(
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
+    val workspaceConnectionState: StateFlow<WorkspaceConnectionState> =
+        cloudSync?.connectionState ?: MutableStateFlow(WorkspaceConnectionState.Checking).asStateFlow()
+
+    private val _cloudActionBusy = MutableStateFlow(false)
+    val cloudActionBusy: StateFlow<Boolean> = _cloudActionBusy.asStateFlow()
 
     val users: StateFlow<List<UserAccountEntity>> = repository.usersFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -139,7 +148,74 @@ class AppViewModel(
         viewModelScope.launch {
             repository.initializeDatabase()
             _isInitialized.value = true
+            cloudSync?.connectForSignedInUser()
         }
+    }
+
+    fun retryCloudConnect() {
+        viewModelScope.launch {
+            _cloudActionBusy.value = true
+            val res = cloudSync?.connectForSignedInUser()
+            _cloudActionBusy.value = false
+            if (res?.isFailure == true) {
+                _snackbarMessage.value = res.exceptionOrNull()?.localizedMessage ?: "Cloud connection failed."
+            }
+        }
+    }
+
+    fun joinWorkspace(inviteCode: String) {
+        viewModelScope.launch {
+            _cloudActionBusy.value = true
+            val res = cloudSync?.joinWorkspaceWithInviteCode(inviteCode)
+            _cloudActionBusy.value = false
+            if (res?.isSuccess == true) {
+                _snackbarMessage.value = "Joined Concord & A to Z Gas Online Sync!"
+            } else if (res?.isFailure == true) {
+                _warningAlert.value = WarningAlert(
+                    "Could Not Join Workspace",
+                    res.exceptionOrNull()?.localizedMessage ?: "Invalid or inactive invite code."
+                )
+            }
+        }
+    }
+
+    fun createStandaloneWorkspace() {
+        viewModelScope.launch {
+            _cloudActionBusy.value = true
+            val res = cloudSync?.createStandaloneOrCompanyWorkspace()
+            _cloudActionBusy.value = false
+            if (res?.isSuccess == true) {
+                _snackbarMessage.value = "Cloud workspace ready!"
+            } else if (res?.isFailure == true) {
+                _warningAlert.value = WarningAlert(
+                    "Workspace Error",
+                    res.exceptionOrNull()?.localizedMessage ?: "Could not create cloud workspace."
+                )
+            }
+        }
+    }
+
+    fun syncNow() {
+        viewModelScope.launch {
+            _cloudActionBusy.value = true
+            val res = cloudSync?.pushAllLocalDataToCloud()
+            _cloudActionBusy.value = false
+            if (res?.isSuccess == true) {
+                _snackbarMessage.value = "All data synced to cloud."
+            } else if (res?.isFailure == true) {
+                _snackbarMessage.value = "Sync failed: ${res.exceptionOrNull()?.localizedMessage ?: "Offline"}"
+            }
+        }
+    }
+
+    fun stopCloudSyncBeforeSignOut() {
+        _authSession.value = null
+        cloudSync?.stopSync()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        cloudSync?.stopSync()
     }
 
     fun login(userId: Long, pin: String) {
@@ -301,6 +377,9 @@ class AppViewModel(
         if (session.user.role != UserRole.ADMIN) return
         viewModelScope.launch {
             val result = backupManager.restoreBackupJson(jsonText)
+            if (result is OperationResult.Success) {
+                cloudSync?.pushAllLocalDataToCloud()
+            }
             handleOperationResult(result)
         }
     }
@@ -568,11 +647,12 @@ class AppViewModel(
 
     class Factory(
         private val repository: InventoryRepository,
-        private val backupManager: BackupManager
+        private val backupManager: BackupManager,
+        private val cloudSync: CloudSyncRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return AppViewModel(repository, backupManager) as T
+            return AppViewModel(repository, backupManager, cloudSync) as T
         }
     }
 }

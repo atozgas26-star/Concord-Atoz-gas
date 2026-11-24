@@ -1,10 +1,12 @@
 package com.example.data.local
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.example.data.model.ProductCategory
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -60,6 +62,9 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY sortOrder ASC, id ASC")
     fun observeActiveProducts(): Flow<List<ProductEntity>>
 
+    @Query("SELECT * FROM products WHERE isActive = 1 AND category = :category ORDER BY sortOrder ASC, id ASC")
+    fun observeActiveProductsByCategory(category: ProductCategory): Flow<List<ProductEntity>>
+
     @Query("SELECT * FROM products ORDER BY sortOrder ASC, id ASC")
     fun observeAllProducts(): Flow<List<ProductEntity>>
 
@@ -78,6 +83,9 @@ interface ProductDao {
     @Update
     suspend fun update(product: ProductEntity)
 
+    @Delete
+    suspend fun delete(product: ProductEntity)
+
     @Query("DELETE FROM products")
     suspend fun deleteAll()
 }
@@ -86,6 +94,12 @@ interface ProductDao {
 interface OpeningStockDao {
     @Query("SELECT * FROM opening_stocks")
     fun observeAllOpenings(): Flow<List<OpeningStockEntity>>
+
+    @Query("SELECT * FROM opening_stocks WHERE scope = 'STORE' AND vehicleId = 0")
+    fun observeStoreOpenings(): Flow<List<OpeningStockEntity>>
+
+    @Query("SELECT * FROM opening_stocks WHERE scope = 'VEHICLE' AND vehicleId = :vehicleId")
+    fun observeVehicleOpenings(vehicleId: Long): Flow<List<OpeningStockEntity>>
 
     @Query("SELECT * FROM opening_stocks")
     suspend fun getAllOpeningsOnce(): List<OpeningStockEntity>
@@ -108,20 +122,41 @@ interface TransactionDao {
     @Query("SELECT * FROM stock_transactions ORDER BY businessDate DESC, timestamp DESC, id DESC")
     fun observeAllTransactions(): Flow<List<StockTransactionEntity>>
 
+    @Query("SELECT * FROM stock_transactions WHERE businessDate = :businessDate ORDER BY timestamp DESC, id DESC")
+    fun observeTransactionsByDate(businessDate: String): Flow<List<StockTransactionEntity>>
+
+    @Query("SELECT * FROM stock_transactions WHERE vehicleId = :vehicleId AND businessDate = :businessDate ORDER BY timestamp DESC, id DESC")
+    fun observeTransactionsByVehicleAndDate(vehicleId: Long, businessDate: String): Flow<List<StockTransactionEntity>>
+
     @Query("SELECT * FROM stock_transactions ORDER BY businessDate ASC, timestamp ASC, id ASC")
     suspend fun getAllTransactionsOnce(): List<StockTransactionEntity>
 
     @Query("SELECT * FROM stock_transactions WHERE id = :id LIMIT 1")
     suspend fun getTransactionById(id: Long): StockTransactionEntity?
 
+    @Query("SELECT * FROM stock_transactions WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getTransactionByRemoteId(remoteId: String): StockTransactionEntity?
+
+    @Query("SELECT * FROM stock_transactions WHERE remoteId IS NULL")
+    suspend fun getUnsyncedTransactionsOnce(): List<StockTransactionEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(tx: StockTransactionEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(tx: StockTransactionEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(txs: List<StockTransactionEntity>)
 
+    @Query("UPDATE stock_transactions SET remoteId = :remoteId WHERE id = :id")
+    suspend fun updateRemoteId(id: Long, remoteId: String)
+
     @Query("DELETE FROM stock_transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM stock_transactions WHERE remoteId = :remoteId")
+    suspend fun deleteByRemoteId(remoteId: String)
 
     @Query("DELETE FROM stock_transactions")
     suspend fun deleteAll()

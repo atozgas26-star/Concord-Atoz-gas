@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Restore
@@ -62,7 +63,10 @@ import com.example.data.local.ProductEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.model.ProductCategory
 import com.example.data.model.UserRole
+import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.BrandHeaderBanner
+import com.example.ui.theme.BrandGreenContainer
+import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
@@ -75,6 +79,10 @@ import java.util.Locale
 fun AdminSettingsScreen(
     users: List<UserAccountEntity>,
     products: List<ProductEntity>,
+    googleEmail: String = "",
+    workspaceState: WorkspaceConnectionState = WorkspaceConnectionState.Checking,
+    onSyncNow: () -> Unit = {},
+    onGoogleSignOut: () -> Unit = {},
     onUpdatePin: (userId: Long, newPin: String) -> Unit,
     onAddProduct: (ProductCategory, String) -> Unit,
     onToggleProductActive: (ProductEntity) -> Unit,
@@ -148,6 +156,67 @@ fun AdminSettingsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),
+                        border = BorderStroke(1.dp, BrandGreenPrimary)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CloudSync, contentDescription = null, tint = BrandGreenOnContainer)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Online Cloud Sync (7 Staff)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = BrandGreenOnContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            if (googleEmail.isNotBlank()) {
+                                Text(
+                                    text = "Signed in as: $googleEmail",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = BrandGreenOnContainer
+                                )
+                            }
+                            if (workspaceState is WorkspaceConnectionState.Connected) {
+                                Text(
+                                    text = "7-Staff Invite Code: ${workspaceState.inviteCode}  •  Connected devices: ${workspaceState.memberCount}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = JetBrainsMono,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BrandGreenOnContainer
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = onSyncNow,
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("settings_sync_now_button")
+                                ) {
+                                    Text("Sync All Now")
+                                }
+                                OutlinedButton(
+                                    onClick = onGoogleSignOut,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("settings_google_signout_button")
+                                ) {
+                                    Text("Sign Out Google")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 item {
                     Text(
                         text = "Admin & Staff PIN Management",

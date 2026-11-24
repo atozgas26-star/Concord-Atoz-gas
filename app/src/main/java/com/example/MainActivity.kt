@@ -37,22 +37,31 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.auth.GoogleAuthScreen
+import com.example.auth.authStateFlow
+import com.example.auth.signOutGoogle
 import com.example.data.model.StockCalculator
 import com.example.data.model.UserRole
+import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.InsufficientStockWarningDialog
 import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.AdminSettingsScreen
+import com.example.ui.screens.CompanyInventoryScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.StaffDashboardScreen
@@ -61,6 +70,8 @@ import com.example.ui.screens.VehicleDetailScreen
 import com.example.ui.screens.VehicleManagementScreen
 import com.example.ui.theme.ConcordGasTheme
 import com.example.ui.viewmodel.AppViewModel
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 
 private enum class AdminNavTab(
     val label: String,
@@ -81,22 +92,47 @@ class MainActivity : ComponentActivity() {
         val app = application as ConcordGasApp
         setContent {
             ConcordGasTheme {
-                val viewModel: AppViewModel = viewModel(
-                    factory = AppViewModel.Factory(
-                        repository = app.container.repository,
-                        backupManager = app.container.backupManager
-                    )
-                )
-                ConcordGasRootApp(viewModel)
+                val auth = remember { Firebase.auth }
+                val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+                val user = currentUser
+
+                if (user == null) {
+                    GoogleAuthScreen(onAuthSuccess = { /* authStateFlow emits updated user */ })
+                } else {
+                    val uid = user.uid
+                    key(uid) {
+                        val viewModel: AppViewModel = viewModel(
+                            key = uid,
+                            factory = AppViewModel.Factory(
+                                repository = app.container.repository,
+                                backupManager = app.container.backupManager,
+                                cloudSync = app.container.cloudSyncRepository
+                            )
+                        )
+                        ConcordGasRootApp(
+                            viewModel = viewModel,
+                            googleEmail = user.email.orEmpty()
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun ConcordGasRootApp(viewModel: AppViewModel) {
+fun ConcordGasRootApp(
+    viewModel: AppViewModel,
+    googleEmail: String = ""
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+
     val isInitialized by viewModel.isInitialized.collectAsStateWithLifecycle()
     val authSession by viewModel.authSession.collectAsStateWithLifecycle()
+    val workspaceState by viewModel.workspaceConnectionState.collectAsStateWithLifecycle()
+    val cloudBusy by viewModel.cloudActionBusy.collectAsStateWithLifecycle()
     val loginError by viewModel.loginError.collectAsStateWithLifecycle()
     val users by viewModel.users.collectAsStateWithLifecycle()
     val vehicles by viewModel.vehicles.collectAsStateWithLifecycle()
@@ -117,7 +153,7 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
     viewModel.monthlySalesReport.collectAsStateWithLifecycle()
     viewModel.productWiseSales.collectAsStateWithLifecycle()
     viewModel.staffWiseSales.collectAsStateWithLifecycle()
-    viewModel.companyStockReport.collectAsStateWithLifecycle()
+    val companyStockReport by viewModel.companyStockReport.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -135,6 +171,14 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
         return
     }
 
+    val handleGoogleSignOut: () -> Unit = {
+        signOutGoogle(
+            credentialManager = credentialManager,
+            scope = scope,
+            onPreSignOutCleanup = { viewModel.stopCloudSyncBeforeSignOut() }
+        )
+    }
+
     val session = authSession
     if (session == null) {
         Scaffold(
@@ -145,6 +189,13 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                 LoginScreen(
                     users = users,
                     loginError = loginError,
+                    googleEmail = googleEmail,
+                    workspaceState = workspaceState,
+                    cloudBusy = cloudBusy,
+                    onJoinWorkspace = viewModel::joinWorkspace,
+                    onCreateWorkspace = viewModel::createStandaloneWorkspace,
+                    onRetryCloud = viewModel::retryCloudConnect,
+                    onGoogleSignOut = handleGoogleSignOut,
                     onLogin = viewModel::login,
                     onClearError = viewModel::clearLoginError
                 )
@@ -168,6 +219,7 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                     storeRows = storeRows,
                     products = activeProducts,
                     allTransactions = allTransactions,
+                    isOnlineSynced = workspaceState is WorkspaceConnectionState.Connected,
                     onDateSelected = viewModel::setSelectedDate,
                     onRecordTransaction = viewModel::recordTransaction,
                     onLogout = viewModel::logout
@@ -177,6 +229,7 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
     } else {
         var currentTab by rememberSaveable { mutableStateOf(AdminNavTab.DASHBOARD) }
         var viewingVehicleDetail by rememberSaveable { mutableStateOf(false) }
+        var viewingCompanyInventory by rememberSaveable { mutableStateOf(false) }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val useRail = maxWidth >= 600.dp
@@ -185,7 +238,7 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 contentWindowInsets = WindowInsets.safeDrawing,
                 bottomBar = {
-                    if (!useRail && !viewingVehicleDetail) {
+                    if (!useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
                         NavigationBar {
                             AdminNavTab.entries.forEach { tab ->
                                 val selected = currentTab == tab
@@ -194,6 +247,7 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                                     onClick = {
                                         currentTab = tab
                                         viewingVehicleDetail = false
+                                        viewingCompanyInventory = false
                                     },
                                     icon = {
                                         Icon(
@@ -214,7 +268,7 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                         .fillMaxSize()
                         .padding(innerPadding)
                 ) {
-                    if (useRail && !viewingVehicleDetail) {
+                    if (useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
                         NavigationRail(modifier = Modifier.statusBarsPadding()) {
                             AdminNavTab.entries.forEach { tab ->
                                 val selected = currentTab == tab
@@ -223,6 +277,7 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                                     onClick = {
                                         currentTab = tab
                                         viewingVehicleDetail = false
+                                        viewingCompanyInventory = false
                                     },
                                     icon = {
                                         Icon(
@@ -238,7 +293,22 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                     }
 
                     Box(modifier = Modifier.weight(1f)) {
-                        if (viewingVehicleDetail) {
+                        if (viewingCompanyInventory) {
+                            CompanyInventoryScreen(
+                                selectedDate = selectedDate,
+                                stockRows = companyStockReport,
+                                onDateSelected = viewModel::setSelectedDate,
+                                onOpenProductMaster = {
+                                    viewingCompanyInventory = false
+                                    currentTab = AdminNavTab.SETTINGS
+                                },
+                                onOpenStockReport = {
+                                    viewingCompanyInventory = false
+                                    currentTab = AdminNavTab.REPORTS
+                                },
+                                onBack = { viewingCompanyInventory = false }
+                            )
+                        } else if (viewingVehicleDetail) {
                             val activeVehicle = vehicles.firstOrNull { it.id == selectedVehicleId }
                             VehicleDetailScreen(
                                 vehicle = activeVehicle,
@@ -266,7 +336,9 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                                     selectedDate = selectedDate,
                                     summary = dashboardSummary,
                                     onDateSelected = viewModel::setSelectedDate,
+                                    onOpenInventory = { viewingCompanyInventory = true },
                                     onOpenStore = { currentTab = AdminNavTab.STORE },
+                                    onOpenVehicles = { currentTab = AdminNavTab.VEHICLES },
                                     onOpenVehicleDetail = { vehicleId ->
                                         viewModel.selectVehicle(vehicleId)
                                         currentTab = AdminNavTab.VEHICLES
@@ -321,6 +393,10 @@ fun ConcordGasRootApp(viewModel: AppViewModel) {
                                 AdminNavTab.SETTINGS -> AdminSettingsScreen(
                                     users = users,
                                     products = allProducts,
+                                    googleEmail = googleEmail,
+                                    workspaceState = workspaceState,
+                                    onSyncNow = viewModel::syncNow,
+                                    onGoogleSignOut = handleGoogleSignOut,
                                     onUpdatePin = viewModel::updateUserPin,
                                     onAddProduct = viewModel::addProduct,
                                     onToggleProductActive = viewModel::toggleProductActive,
