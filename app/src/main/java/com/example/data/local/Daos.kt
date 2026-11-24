@@ -32,6 +32,9 @@ interface UserDao {
     @Query("UPDATE user_accounts SET pin = :newPin WHERE id = :userId")
     suspend fun updatePin(userId: Long, newPin: String)
 
+    @Query("UPDATE user_accounts SET displayName = :newDisplayName WHERE id = :userId")
+    suspend fun updateDisplayName(userId: Long, newDisplayName: String)
+
     @Query("DELETE FROM user_accounts")
     suspend fun deleteAll()
 }
@@ -51,7 +54,13 @@ interface VehicleDao {
     suspend fun getVehicleById(vehicleId: Long): VehicleEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(vehicle: VehicleEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(vehicles: List<VehicleEntity>): List<Long>
+
+    @Query("UPDATE vehicles SET name = :newName WHERE id = :vehicleId")
+    suspend fun updateName(vehicleId: Long, newName: String)
 
     @Query("DELETE FROM vehicles")
     suspend fun deleteAll()

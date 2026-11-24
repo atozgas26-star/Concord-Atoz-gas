@@ -19,7 +19,7 @@ import com.example.data.model.UserRole
         OpeningStockEntity::class,
         StockTransactionEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -124,6 +124,12 @@ abstract class ConcordDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE stock_transactions ADD COLUMN purchaseCompanyName TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): ConcordDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -131,7 +137,7 @@ abstract class ConcordDatabase : RoomDatabase() {
                     ConcordDatabase::class.java,
                     "concord_gas_inventory.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { INSTANCE = it }

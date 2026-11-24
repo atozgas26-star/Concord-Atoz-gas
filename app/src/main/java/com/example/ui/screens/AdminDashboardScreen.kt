@@ -394,6 +394,14 @@ fun AdminDashboardScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    if (tx.purchaseCompanyName.isNotBlank()) {
+                                        Text(
+                                            text = "Company: ${tx.purchaseCompanyName}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = BrandGreenPrimary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                                 Surface(
                                     color = BrandGreenContainer,

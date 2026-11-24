@@ -103,8 +103,9 @@ fun StoreManagementScreen(
     products: List<ProductEntity>,
     vehicles: List<VehicleEntity>,
     transactions: List<TransactionDisplayItem>,
+    recentPurchaseCompanies: List<String> = emptyList(),
     onDateSelected: (String) -> Unit,
-    onRecordTransaction: (TransactionType, Long, Long?, Int, String) -> Unit,
+    onRecordTransaction: (TransactionType, Long, Long?, Int, String, String) -> Unit,
     onUpdateOpeningStock: (productId: Long, full: Int, empty: Int) -> Unit,
     onDeleteTransaction: (Long) -> Unit
 ) {
@@ -269,6 +270,14 @@ fun StoreManagementScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    if (tx.purchaseCompanyName.isNotBlank()) {
+                                        Text(
+                                            text = "Company: ${tx.purchaseCompanyName}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = BrandGreenPrimary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                     if (tx.notes.isNotBlank()) {
                                         Text(
                                             text = "Note: ${tx.notes}",
@@ -356,19 +365,24 @@ fun StoreManagementScreen(
             StoreModalAction.ADJUST_EMPTY_OUT -> Triple("Store Empty Adjustment (-)", TransactionType.STORE_ADJUST_EMPTY_OUT, false)
         }
 
+        val isPurchaseAction = txType == TransactionType.STORE_PURCHASE_FULL ||
+            txType == TransactionType.STORE_PURCHASE_EMPTY
+
         TransactionEntryDialog(
             title = title,
             transactionType = txType,
             products = products,
             vehicles = vehicles,
             requireVehicleSelection = needsVehicle,
+            showPurchaseCompanyField = isPurchaseAction,
+            recentPurchaseCompanies = recentPurchaseCompanies,
             availableStockHint = { productId, _ ->
                 val row = storeRows.firstOrNull { it.product.id == productId }
                 row?.let { "Store Available -> Full: ${it.storeFullBalance}  |  Empty: ${it.storeEmptyBalance}" }
             },
             onDismiss = { activeModal = null },
-            onConfirm = { productId, vehicleId, qty, notes ->
-                onRecordTransaction(txType, productId, vehicleId, qty, notes)
+            onConfirm = { productId, vehicleId, qty, notes, purchaseCompany ->
+                onRecordTransaction(txType, productId, vehicleId, qty, notes, purchaseCompany)
             }
         )
     }

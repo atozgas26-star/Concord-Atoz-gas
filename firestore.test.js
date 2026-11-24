@@ -354,3 +354,153 @@ test("Master data & Staff online transaction sync mirrors Kotlin payloads and bl
       .delete()
   );
 });
+
+test("Purchase transactions with purchaseCompanyName and staff/vehicle name edits follow Kotlin rules", async () => {
+  const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
+  const members = [ADMIN_UID];
+
+  // Store purchase with purchaseCompanyName succeeds
+  const purId = "tx_1700000001_purchase";
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc(purId)
+      .set({
+        clientTxId: purId,
+        businessDate: "2026-11-24",
+        clientTimestampMs: Date.now() - 1000,
+        type: "STORE_PURCHASE_FULL",
+        productId: 1,
+        staffId: 1,
+        staffName: "Ragavan",
+        quantity: 25,
+        purchaseCompanyName: "Emirates Gas LLC",
+        notes: "INV-9981",
+        createdByUid: ADMIN_UID,
+        memberUids: members,
+        createdAt: pastDate(1000),
+        updatedAt: pastDate(1000),
+      })
+  );
+
+  // Oversized purchaseCompanyName (> 120 chars) fails
+  await assertFails(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc("tx_bad_company")
+      .set({
+        clientTxId: "tx_bad_company",
+        businessDate: "2026-11-24",
+        clientTimestampMs: Date.now() - 1000,
+        type: "STORE_PURCHASE_FULL",
+        productId: 1,
+        staffId: 1,
+        staffName: "Ragavan",
+        quantity: 10,
+        purchaseCompanyName: "X".repeat(121),
+        notes: "",
+        createdByUid: ADMIN_UID,
+        memberUids: members,
+        createdAt: pastDate(1000),
+        updatedAt: pastDate(1000),
+      })
+  );
+
+  // Staff account displayName edit succeeds; empty displayName fails
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_accounts")
+      .doc("user_nadeem")
+      .set({
+        localId: 2,
+        username: "nadeem",
+        displayName: "Nadeem",
+        role: "STAFF",
+        pin: "1001",
+        active: true,
+        memberUids: members,
+        updatedByUid: ADMIN_UID,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+  );
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_accounts")
+      .doc("user_nadeem")
+      .update({
+        displayName: "Nadeem Khan",
+        pin: "1001",
+        active: true,
+        memberUids: members,
+        updatedByUid: ADMIN_UID,
+        updatedAt: pastDate(500),
+      })
+  );
+  await assertFails(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_accounts")
+      .doc("user_nadeem")
+      .update({
+        displayName: "",
+        updatedByUid: ADMIN_UID,
+        updatedAt: pastDate(400),
+      })
+  );
+
+  // Vehicle name edit succeeds; oversized name fails
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("vehicles")
+      .doc("veh_1")
+      .set({
+        localId: 1,
+        name: "NADEEM",
+        staffUserId: 2,
+        active: true,
+        memberUids: members,
+        updatedByUid: ADMIN_UID,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+  );
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("vehicles")
+      .doc("veh_1")
+      .update({
+        name: "NADEEM KHAN",
+        staffUserId: 2,
+        active: true,
+        memberUids: members,
+        updatedByUid: ADMIN_UID,
+        updatedAt: pastDate(300),
+      })
+  );
+  await assertFails(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("vehicles")
+      .doc("veh_1")
+      .update({
+        name: "V".repeat(65),
+        updatedByUid: ADMIN_UID,
+        updatedAt: pastDate(200),
+      })
+  );
+});

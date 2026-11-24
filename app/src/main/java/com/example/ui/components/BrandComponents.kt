@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -369,9 +370,11 @@ fun TransactionEntryDialog(
     vehicles: List<VehicleEntity> = emptyList(),
     fixedVehicle: VehicleEntity? = null,
     requireVehicleSelection: Boolean = false,
+    showPurchaseCompanyField: Boolean = false,
+    recentPurchaseCompanies: List<String> = emptyList(),
     availableStockHint: ((productId: Long, vehicleId: Long?) -> String?)? = null,
     onDismiss: () -> Unit,
-    onConfirm: (productId: Long, vehicleId: Long?, quantity: Int, notes: String) -> Unit
+    onConfirm: (productId: Long, vehicleId: Long?, quantity: Int, notes: String, purchaseCompanyName: String) -> Unit
 ) {
     var selectedCategory by remember { mutableStateOf(ProductCategory.INDUSTRIAL_GAS) }
     val filteredProducts = remember(products, selectedCategory) {
@@ -388,6 +391,7 @@ fun TransactionEntryDialog(
     var vehicleMenuExpanded by remember { mutableStateOf(false) }
 
     var quantityText by remember { mutableStateOf("1") }
+    var purchaseCompanyName by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var localError by remember { mutableStateOf<String?>(null) }
 
@@ -596,6 +600,51 @@ fun TransactionEntryDialog(
                     }
                 }
 
+                if (showPurchaseCompanyField) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = purchaseCompanyName,
+                        onValueChange = { input ->
+                            if (input.length <= 120) {
+                                purchaseCompanyName = input
+                                localError = null
+                            }
+                        },
+                        label = { Text("Purchase Company Name") },
+                        placeholder = { Text("e.g., Emirates Gas, ADNOC, Concord Plant") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Business,
+                                contentDescription = "Purchase Company"
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("tx_purchase_company_input")
+                    )
+                    if (recentPurchaseCompanies.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            recentPurchaseCompanies.forEach { company ->
+                                FilterChip(
+                                    selected = purchaseCompanyName.equals(company, ignoreCase = true),
+                                    onClick = {
+                                        purchaseCompanyName = company
+                                        localError = null
+                                    },
+                                    label = { Text(company, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(10.dp))
 
                 OutlinedTextField(
@@ -633,16 +682,20 @@ fun TransactionEntryDialog(
                         onClick = {
                             val prod = selectedProduct
                             val qty = quantityText.toIntOrNull() ?: 0
+                            val cleanCompany = purchaseCompanyName.trim()
                             if (prod == null) {
                                 localError = "Please select a product."
                             } else if (qty <= 0) {
                                 localError = "Enter quantity greater than 0."
+                            } else if (showPurchaseCompanyField && cleanCompany.isEmpty()) {
+                                localError = "Please enter the purchase company name."
                             } else {
                                 onConfirm(
                                     prod.id,
                                     if (requireVehicleSelection) selectedVehicle?.id else null,
                                     qty,
-                                    notes
+                                    notes,
+                                    if (showPurchaseCompanyField) cleanCompany else ""
                                 )
                                 onDismiss()
                             }

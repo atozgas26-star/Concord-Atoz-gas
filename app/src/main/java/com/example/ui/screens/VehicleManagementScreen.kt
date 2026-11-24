@@ -275,7 +275,7 @@ fun VehicleDetailScreen(
                 }
             },
             onDismiss = { activeTxType = null },
-            onConfirm = { prodId, _, qty, notes ->
+            onConfirm = { prodId, _, qty, notes, _ ->
                 onRecordTransaction(type, prodId, vehicle.id, qty, notes)
             }
         )

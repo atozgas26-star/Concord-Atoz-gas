@@ -146,6 +146,7 @@ fun ConcordGasRootApp(
     val selectedVehicleRows by viewModel.selectedVehicleRows.collectAsStateWithLifecycle()
     val staffVehicleRows by viewModel.staffVehicleRows.collectAsStateWithLifecycle()
     val allTransactions by viewModel.allTransactionDisplayItems.collectAsStateWithLifecycle()
+    val recentPurchaseCompanies by viewModel.recentPurchaseCompanies.collectAsStateWithLifecycle()
     val warningAlert by viewModel.warningAlert.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
 
@@ -354,6 +355,7 @@ fun ConcordGasRootApp(
                                     products = activeProducts,
                                     vehicles = vehicles,
                                     transactions = allTransactions,
+                                    recentPurchaseCompanies = recentPurchaseCompanies,
                                     onDateSelected = viewModel::setSelectedDate,
                                     onRecordTransaction = viewModel::recordTransaction,
                                     onUpdateOpeningStock = { productId, full, empty ->
@@ -392,11 +394,13 @@ fun ConcordGasRootApp(
 
                                 AdminNavTab.SETTINGS -> AdminSettingsScreen(
                                     users = users,
+                                    vehicles = vehicles,
                                     products = allProducts,
                                     googleEmail = googleEmail,
                                     workspaceState = workspaceState,
                                     onSyncNow = viewModel::syncNow,
                                     onGoogleSignOut = handleGoogleSignOut,
+                                    onUpdateStaffName = viewModel::updateStaffName,
                                     onUpdatePin = viewModel::updateUserPin,
                                     onAddProduct = viewModel::addProduct,
                                     onToggleProductActive = viewModel::toggleProductActive,

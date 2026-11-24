@@ -25,6 +25,7 @@ import com.example.data.model.VehicleStockRow
 import com.example.data.remote.CloudSyncRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,6 +48,19 @@ class InventoryRepository(
     val openingsFlow: Flow<List<OpeningStockEntity>> = openingDao.observeAllOpenings()
     val transactionsFlow: Flow<List<StockTransactionEntity>> = txDao.observeAllTransactions()
 
+    val recentPurchaseCompaniesFlow: Flow<List<String>> = transactionsFlow.map { txs ->
+        val seen = LinkedHashSet<String>()
+        val dedupLower = HashSet<String>()
+        for (tx in txs) {
+            val company = tx.purchaseCompanyName.trim()
+            if (company.isNotEmpty() && dedupLower.add(company.lowercase(Locale.US))) {
+                seen.add(company)
+                if (seen.size >= 12) break
+            }
+        }
+        seen.toList()
+    }
+
     suspend fun initializeDatabase() {
         db.ensureSeeded()
     }
@@ -68,9 +82,60 @@ class InventoryRepository(
         }
         userDao.updatePin(targetUserId, newPin)
         userDao.getUserById(targetUserId)?.let { updatedUser ->
-            cloudSync?.pushUserPin(updatedUser)
+            cloudSync?.pushStaffAccount(updatedUser)
         }
         return OperationResult.Success("PIN updated successfully.")
+    }
+
+    suspend fun updateStaffName(
+        targetUserId: Long,
+        newDisplayName: String,
+        newVehicleName: String? = null
+    ): OperationResult {
+        val cleanName = newDisplayName.trim().take(100)
+        if (cleanName.isEmpty()) {
+            return OperationResult.ValidationError("Staff name cannot be empty.")
+        }
+
+        var updatedUser: UserAccountEntity? = null
+        var updatedVehicle: VehicleEntity? = null
+
+        val result = db.withTransaction {
+            val user = userDao.getUserById(targetUserId)
+                ?: return@withTransaction OperationResult.ValidationError("Staff account not found.")
+
+            val linkedVehicle = if (user.role == UserRole.STAFF) {
+                vehicleDao.getVehicleByStaffUserId(user.id)
+            } else {
+                null
+            }
+
+            if (linkedVehicle != null && newVehicleName != null) {
+                val cleanVehicle = newVehicleName.trim().take(64)
+                if (cleanVehicle.isEmpty()) {
+                    return@withTransaction OperationResult.ValidationError("Vehicle name cannot be empty.")
+                }
+                val otherVehicles = vehicleDao.getAllVehiclesOnce().filter { it.id != linkedVehicle.id }
+                if (otherVehicles.any { it.name.equals(cleanVehicle, ignoreCase = true) }) {
+                    return@withTransaction OperationResult.ValidationError("Vehicle name '$cleanVehicle' is already in use.")
+                }
+                if (cleanVehicle != linkedVehicle.name) {
+                    vehicleDao.updateName(linkedVehicle.id, cleanVehicle)
+                    updatedVehicle = linkedVehicle.copy(name = cleanVehicle)
+                }
+            }
+
+            userDao.updateDisplayName(user.id, cleanName)
+            updatedUser = user.copy(displayName = cleanName)
+            val vehNote = updatedVehicle?.let { " & vehicle '${it.name}'" } ?: ""
+            OperationResult.Success("Updated name to '$cleanName'$vehNote.")
+        }
+
+        if (result is OperationResult.Success && cloudSync != null) {
+            updatedUser?.let { cloudSync.pushStaffAccount(it) }
+            updatedVehicle?.let { cloudSync.pushVehicle(it) }
+        }
+        return result
     }
 
     suspend fun addProduct(category: ProductCategory, name: String): OperationResult {
@@ -206,7 +271,8 @@ class InventoryRepository(
         vehicleId: Long?,
         actor: UserAccountEntity,
         quantity: Int,
-        notes: String
+        notes: String,
+        purchaseCompanyName: String = ""
     ): OperationResult {
         if (quantity <= 0 || quantity > 100000) {
             return OperationResult.ValidationError("Quantity must be between 1 and 100,000.")
@@ -311,6 +377,7 @@ class InventoryRepository(
                 staffId = actor.id,
                 staffName = actor.displayName,
                 quantity = quantity,
+                purchaseCompanyName = purchaseCompanyName.trim().take(120),
                 notes = notes.trim().take(300),
                 remoteId = remoteId
             )

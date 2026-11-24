@@ -50,5 +50,6 @@ enum class ReportType(val title: String, val subtitle: String) {
     MONTHLY_SALES("Monthly Sales Report", "Day-by-day & monthly cylinder sales summary"),
     PRODUCT_WISE_SALES("Product-Wise Sales", "Sales breakdown by gas category & cylinder"),
     STAFF_WISE_SALES("Staff-Wise Sales", "Performance & balances by staff/vehicle"),
-    FULL_EMPTY_STOCK("Full & Empty Stock", "Combined Store + Vehicles inventory balance")
+    FULL_EMPTY_STOCK("Full & Empty Stock", "Combined Store + Vehicles inventory balance"),
+    PURCHASE_REGISTER("Purchase Register", "Supplier company-wise cylinder purchases")
 }

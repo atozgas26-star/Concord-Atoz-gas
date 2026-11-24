@@ -394,7 +394,7 @@ fun StaffDashboardScreen(
                 }
             },
             onDismiss = { activeTxType = null },
-            onConfirm = { prodId, _, qty, notes ->
+            onConfirm = { prodId, _, qty, notes, _ ->
                 onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes)
             }
         )

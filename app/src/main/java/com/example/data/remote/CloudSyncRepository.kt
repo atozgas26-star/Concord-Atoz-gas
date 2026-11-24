@@ -428,12 +428,27 @@ class CloudSyncRepository(
                     .collectLatest { cloudVehicles ->
                         if (cloudVehicles.isNotEmpty()) {
                             localDb.withTransaction {
-                                val existingByName = localDb.vehicleDao().getAllVehiclesOnce().associateBy { it.name }
-                                val toInsert = cloudVehicles.map { cv ->
-                                    val existing = existingByName[cv.name]
-                                    if (existing != null) existing.copy(isActive = cv.active) else cv.toEntity()
+                                val existing = localDb.vehicleDao().getAllVehiclesOnce()
+                                val byId = existing.associateBy { it.id }
+                                val byStaffId = existing.associateBy { it.staffUserId }
+                                val byName = existing.associateBy { it.name.lowercase() }
+                                cloudVehicles.forEach { cv ->
+                                    val match = byId[cv.localId]
+                                        ?: byStaffId[cv.staffUserId]
+                                        ?: byName[cv.name.lowercase()]
+                                    if (match != null) {
+                                        val updated = match.copy(
+                                            name = cv.name,
+                                            staffUserId = cv.staffUserId,
+                                            isActive = cv.active
+                                        )
+                                        if (updated != match) {
+                                            localDb.vehicleDao().insert(updated)
+                                        }
+                                    } else {
+                                        localDb.vehicleDao().insert(cv.toEntity())
+                                    }
                                 }
-                                localDb.vehicleDao().insertAll(toInsert)
                             }
                         }
                     }
@@ -590,7 +605,10 @@ class CloudSyncRepository(
             val uid = requireUserId()
             val members = currentMembersIncluding(uid)
             val payload = CloudStockTransaction.toCreateMap(
-                entity = tx.copy(notes = tx.notes.take(300)),
+                entity = tx.copy(
+                    purchaseCompanyName = tx.purchaseCompanyName.take(120),
+                    notes = tx.notes.take(300)
+                ),
                 remoteTxId = remoteId,
                 memberUids = members,
                 uid = uid
@@ -691,7 +709,10 @@ class CloudSyncRepository(
         }
     }
 
-    suspend fun pushUserPin(user: UserAccountEntity): Result<Unit> {
+    suspend fun pushUserPin(user: UserAccountEntity): Result<Unit> =
+        pushStaffAccount(user)
+
+    suspend fun pushStaffAccount(user: UserAccountEntity): Result<Unit> {
         val wsId = activeWorkspaceId ?: return Result.success(Unit)
         val docId = "user_${user.username}"
         val docPath = "workspaces/$wsId/staff_accounts/$docId"
@@ -713,6 +734,38 @@ class CloudSyncRepository(
                 ).await()
             } else {
                 docRef.set(CloudStaffAccount.toCreateMap(user, members, uid)).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun pushVehicle(vehicle: VehicleEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = "veh_${vehicle.id}"
+        val docPath = "workspaces/$wsId/vehicles/$docId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val docRef = db.collection("workspaces").document(wsId).collection("vehicles").document(docId)
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "name" to vehicle.name.take(64),
+                        "staffUserId" to vehicle.staffUserId,
+                        "active" to vehicle.isActive,
+                        "memberUids" to members,
+                        "updatedByUid" to uid,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(CloudVehicle.toCreateMap(vehicle, members, uid)).await()
             }
             Result.success(Unit)
         } catch (e: CancellationException) {

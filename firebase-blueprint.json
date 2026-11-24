@@ -213,6 +213,7 @@
         "staffId": { "type": "integer", "description": "Staff/Admin localId." },
         "staffName": { "type": "string", "description": "Staff/Admin display name." },
         "quantity": { "type": "integer", "description": "Positive cylinder count." },
+        "purchaseCompanyName": { "type": "string", "description": "Optional supplier or purchase company name." },
         "notes": { "type": "string", "description": "Optional entry notes." },
         "createdByUid": { "type": "string", "description": "Google UID of user who entered this transaction." },
         "memberUids": { "type": "array", "description": "Denormalized workspace member UIDs." },

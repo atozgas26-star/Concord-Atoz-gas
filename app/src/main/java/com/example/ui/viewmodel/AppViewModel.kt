@@ -126,6 +126,9 @@ class AppViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val recentPurchaseCompanies: StateFlow<List<String>> = repository.recentPurchaseCompaniesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val monthlySalesReport: StateFlow<List<MonthlyDailySaleRow>> = _selectedYearMonth
         .flatMapLatest { ym -> repository.observeMonthlySalesReport(ym) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -271,7 +274,8 @@ class AppViewModel(
         productId: Long,
         vehicleId: Long?,
         quantity: Int,
-        notes: String = ""
+        notes: String = "",
+        purchaseCompanyName: String = ""
     ) {
         val session = _authSession.value ?: return
         // Enforce strict staff permissions
@@ -299,7 +303,8 @@ class AppViewModel(
                 vehicleId = vehicleId,
                 actor = session.user,
                 quantity = quantity,
-                notes = notes
+                notes = notes,
+                purchaseCompanyName = purchaseCompanyName
             )
             handleOperationResult(result)
         }
@@ -348,6 +353,24 @@ class AppViewModel(
         if (session.user.role != UserRole.ADMIN) return
         viewModelScope.launch {
             val result = repository.updateUserPin(targetUserId, newPin)
+            handleOperationResult(result)
+        }
+    }
+
+    fun updateStaffName(
+        targetUserId: Long,
+        newDisplayName: String,
+        newVehicleName: String? = null
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) return
+        viewModelScope.launch {
+            val result = repository.updateStaffName(targetUserId, newDisplayName, newVehicleName)
+            if (result is OperationResult.Success && targetUserId == session.user.id) {
+                _authSession.value = session.copy(
+                    user = session.user.copy(displayName = newDisplayName.trim().take(100))
+                )
+            }
             handleOperationResult(result)
         }
     }
@@ -639,6 +662,49 @@ class AppViewModel(
                         rows.sumOf { it.storeEmpty }.toString(),
                         rows.sumOf { it.vehiclesEmpty }.toString(),
                         rows.sumOf { it.totalEmpty }.toString()
+                    )
+                )
+            }
+
+            ReportType.PURCHASE_REGISTER -> {
+                val purchaseItems = allTransactionDisplayItems.value.filter { item ->
+                    val t = item.transaction
+                    t.businessDate.startsWith(ym) &&
+                        (t.type == TransactionType.STORE_PURCHASE_FULL || t.type == TransactionType.STORE_PURCHASE_EMPTY)
+                }.sortedByDescending { it.transaction.businessDate }
+
+                val totalFullPur = purchaseItems
+                    .filter { it.transaction.type == TransactionType.STORE_PURCHASE_FULL }
+                    .sumOf { it.transaction.quantity }
+                val totalEmptyPur = purchaseItems
+                    .filter { it.transaction.type == TransactionType.STORE_PURCHASE_EMPTY }
+                    .sumOf { it.transaction.quantity }
+
+                ReportTable(
+                    reportTitle = "Purchase Register (Company-Wise)",
+                    subtitle = "Month: $ym • Full: $totalFullPur | Empty: $totalEmptyPur",
+                    generatedBy = actorName,
+                    headers = listOf("Company Name", "Date", "Purchase Type", "Product", "Qty", "Entered By", "Notes"),
+                    rows = purchaseItems.map { item ->
+                        val t = item.transaction
+                        listOf(
+                            t.purchaseCompanyName.ifBlank { "Unspecified Supplier" },
+                            t.businessDate,
+                            if (t.type == TransactionType.STORE_PURCHASE_FULL) "Full Pur" else "Empty Pur",
+                            "${item.productCategory.shortCode} - ${item.productName}",
+                            t.quantity.toString(),
+                            t.staffName,
+                            t.notes
+                        )
+                    },
+                    footerTotals = listOf(
+                        "TOTAL",
+                        "${purchaseItems.size} Entries",
+                        "Full:$totalFullPur",
+                        "Empty:$totalEmptyPur",
+                        (totalFullPur + totalEmptyPur).toString(),
+                        "",
+                        ""
                     )
                 )
             }

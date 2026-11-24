@@ -134,6 +134,8 @@ service cloud.firestore {
              data.type in [
                'STORE_PURCHASE_FULL',
                'STORE_PURCHASE_EMPTY',
+               'STORE_FULL_INWARD',
+               'STORE_EMPTY_INWARD',
                'STORE_FULL_DISPATCH_DIRECT',
                'STORE_EMPTY_DISPATCH',
                'STORE_ADJUST_FULL_IN',
@@ -155,6 +157,7 @@ service cloud.firestore {
              data.staffId is int && data.staffId >= 1 &&
              data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
              data.quantity is int && data.quantity > 0 && data.quantity <= 100000 &&
+             (!('purchaseCompanyName' in data) || (data.purchaseCompanyName is string && data.purchaseCompanyName.size() <= 120)) &&
              data.notes is string && data.notes.size() <= 300 &&
              data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
              isValidMemberUids(data.memberUids) &&
@@ -407,7 +410,7 @@ service cloud.firestore {
                          incoming().createdByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
                          incoming().keys().hasAll(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'staffId', 'staffName', 'quantity', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'vehicleId', 'vehicleName', 'staffId', 'staffName', 'quantity', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'vehicleId', 'vehicleName', 'staffId', 'staffName', 'quantity', 'purchaseCompanyName', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
                          isValidTransaction(incoming()) &&
                          isWorkspaceMember(workspaceId);
 

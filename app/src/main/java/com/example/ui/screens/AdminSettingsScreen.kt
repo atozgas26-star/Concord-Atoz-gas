@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Restore
@@ -31,11 +32,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
@@ -61,6 +64,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.UserAccountEntity
+import com.example.data.local.VehicleEntity
 import com.example.data.model.ProductCategory
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
@@ -78,11 +82,13 @@ import java.util.Locale
 @Composable
 fun AdminSettingsScreen(
     users: List<UserAccountEntity>,
+    vehicles: List<VehicleEntity> = emptyList(),
     products: List<ProductEntity>,
     googleEmail: String = "",
     workspaceState: WorkspaceConnectionState = WorkspaceConnectionState.Checking,
     onSyncNow: () -> Unit = {},
     onGoogleSignOut: () -> Unit = {},
+    onUpdateStaffName: (userId: Long, newDisplayName: String, newVehicleName: String?) -> Unit = { _, _, _ -> },
     onUpdatePin: (userId: Long, newPin: String) -> Unit,
     onAddProduct: (ProductCategory, String) -> Unit,
     onToggleProductActive: (ProductEntity) -> Unit,
@@ -95,6 +101,7 @@ fun AdminSettingsScreen(
     val scope = rememberCoroutineScope()
     var activeTab by remember { mutableIntStateOf(0) }
     var editingPinUser by remember { mutableStateOf<UserAccountEntity?>(null) }
+    var editingNameUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var showAddProductDialog by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
 
@@ -219,13 +226,14 @@ fun AdminSettingsScreen(
 
                 item {
                     Text(
-                        text = "Admin & Staff PIN Management",
+                        text = "Admin & Staff Name / PIN Management",
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
 
                 items(users, key = { it.id }) { user ->
                     val isAdmin = user.role == UserRole.ADMIN
+                    val linkedVehicle = if (isAdmin) null else vehicles.firstOrNull { it.staffUserId == user.id }
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -250,6 +258,13 @@ fun AdminSettingsScreen(
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
+                                    if (linkedVehicle != null) {
+                                        Text(
+                                            text = "Vehicle: ${linkedVehicle.name}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = BrandGreenPrimary
+                                        )
+                                    }
                                     Text(
                                         text = "Current PIN: ${user.pin}",
                                         style = MaterialTheme.typography.bodySmall,
@@ -258,11 +273,26 @@ fun AdminSettingsScreen(
                                     )
                                 }
                             }
-                            OutlinedButton(
-                                onClick = { editingPinUser = user },
-                                modifier = Modifier.testTag("change_pin_${user.username}")
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Text("Change PIN")
+                                IconButton(
+                                    onClick = { editingNameUser = user },
+                                    modifier = Modifier.testTag("edit_name_${user.username}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit name for ${user.displayName}",
+                                        tint = BrandGreenPrimary
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { editingPinUser = user },
+                                    modifier = Modifier.testTag("change_pin_${user.username}")
+                                ) {
+                                    Text("Change PIN")
+                                }
                             }
                         }
                     }
@@ -417,6 +447,23 @@ fun AdminSettingsScreen(
         )
     }
 
+    editingNameUser?.let { user ->
+        val linkedVehicle = if (user.role == UserRole.STAFF) {
+            vehicles.firstOrNull { it.staffUserId == user.id }
+        } else {
+            null
+        }
+        EditStaffNameDialog(
+            user = user,
+            linkedVehicle = linkedVehicle,
+            onDismiss = { editingNameUser = null },
+            onConfirm = { newName, newVehicleName ->
+                onUpdateStaffName(user.id, newName, newVehicleName)
+                editingNameUser = null
+            }
+        )
+    }
+
     if (showAddProductDialog) {
         AddProductDialog(
             onDismiss = { showAddProductDialog = false },
@@ -496,6 +543,117 @@ private fun ChangePinDialog(
                 },
                 modifier = Modifier.testTag("save_pin_button")
             ) { Text("Save PIN") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun EditStaffNameDialog(
+    user: UserAccountEntity,
+    linkedVehicle: VehicleEntity?,
+    onDismiss: () -> Unit,
+    onConfirm: (newDisplayName: String, newVehicleName: String?) -> Unit
+) {
+    var displayName by remember(user.id) { mutableStateOf(user.displayName) }
+    var vehicleName by remember(user.id, linkedVehicle?.id) {
+        mutableStateOf(linkedVehicle?.name ?: "")
+    }
+    var syncVehicleWithStaff by remember(user.id, linkedVehicle?.id) {
+        mutableStateOf(
+            linkedVehicle != null && linkedVehicle.name.equals(user.displayName, ignoreCase = true)
+        )
+    }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (user.role == UserRole.ADMIN) "Edit Admin Name" else "Edit Staff Name"
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { input ->
+                        if (input.length <= 100) {
+                            displayName = input
+                            if (syncVehicleWithStaff && linkedVehicle != null) {
+                                vehicleName = input.trim().uppercase().take(64)
+                            }
+                            error = null
+                        }
+                    },
+                    label = { Text(if (user.role == UserRole.ADMIN) "Admin Name" else "Staff Name") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit_staff_name_input")
+                )
+
+                if (linkedVehicle != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = syncVehicleWithStaff,
+                            onCheckedChange = { checked ->
+                                syncVehicleWithStaff = checked
+                                if (checked) {
+                                    vehicleName = displayName.trim().uppercase().take(64)
+                                }
+                            }
+                        )
+                        Text(
+                            text = "Also update Vehicle Name automatically",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    OutlinedTextField(
+                        value = vehicleName,
+                        onValueChange = { input ->
+                            if (input.length <= 64) {
+                                vehicleName = input
+                                syncVehicleWithStaff = false
+                                error = null
+                            }
+                        },
+                        label = { Text("Assigned Vehicle Name") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("edit_vehicle_name_input")
+                    )
+                }
+
+                if (error != null) {
+                    Text(error!!, color = BrandRedSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cleanName = displayName.trim()
+                    val cleanVehicle = if (linkedVehicle != null) vehicleName.trim() else null
+                    if (cleanName.isEmpty()) {
+                        error = "Name cannot be empty."
+                    } else if (linkedVehicle != null && cleanVehicle.isNullOrEmpty()) {
+                        error = "Vehicle name cannot be empty."
+                    } else {
+                        onConfirm(cleanName, cleanVehicle)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                modifier = Modifier.testTag("save_staff_name_button")
+            ) {
+                Text("Save Name")
+            }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

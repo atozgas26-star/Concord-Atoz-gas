@@ -187,7 +187,8 @@ fun ReportsScreen(
             when (selectedReport) {
                 ReportType.MONTHLY_SALES,
                 ReportType.PRODUCT_WISE_SALES,
-                ReportType.STAFF_WISE_SALES -> {
+                ReportType.STAFF_WISE_SALES,
+                ReportType.PURCHASE_REGISTER -> {
                     MonthSelectorBar(
                         yearMonth = selectedYearMonth,
                         onYearMonthChanged = onYearMonthSelected

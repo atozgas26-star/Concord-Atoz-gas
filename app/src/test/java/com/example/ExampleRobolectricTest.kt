@@ -216,4 +216,55 @@ class ExampleRobolectricTest {
         assertTrue(entryNames.contains("xl/styles.xml"))
         assertTrue(entryNames.contains("xl/worksheets/sheet1.xml"))
     }
+
+    @Test
+    fun `purchase company name and staff name editing persist accurately`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val oxygen = repository.activeProductsFlow.first().first {
+            it.category == ProductCategory.INDUSTRIAL_GAS && it.name == "Oxygen"
+        }
+
+        // Record purchase with Purchase Company Name
+        val purRes = repository.recordTransaction(
+            businessDate = "2026-11-24",
+            type = TransactionType.STORE_PURCHASE_FULL,
+            productId = oxygen.id,
+            vehicleId = null,
+            actor = admin,
+            quantity = 15,
+            notes = "Batch A",
+            purchaseCompanyName = "Emirates Gas LLC"
+        )
+        assertTrue(purRes is OperationResult.Success)
+        val companies = repository.recentPurchaseCompaniesFlow.first()
+        assertEquals(listOf("Emirates Gas LLC"), companies)
+
+        // Backup & restore preserves purchaseCompanyName
+        val json = backupManager.exportBackupJson()
+        assertTrue(backupManager.restoreBackupJson(json) is OperationResult.Success)
+        val restoredTx = repository.transactionsFlow.first().first()
+        assertEquals("Emirates Gas LLC", restoredTx.purchaseCompanyName)
+
+        // Edit staff name and linked vehicle name
+        val editRes = repository.updateStaffName(
+            targetUserId = nadeem.id,
+            newDisplayName = "Nadeem Khan",
+            newVehicleName = "NADEEM KHAN"
+        )
+        assertTrue(editRes is OperationResult.Success)
+        val updatedNadeem = repository.usersFlow.first().first { it.id == nadeem.id }
+        val updatedVehicle = repository.vehiclesFlow.first().first { it.staffUserId == nadeem.id }
+        assertEquals("Nadeem Khan", updatedNadeem.displayName)
+        assertEquals("NADEEM KHAN", updatedVehicle.name)
+
+        // Duplicate vehicle name is blocked cleanly
+        val dupRes = repository.updateStaffName(
+            targetUserId = nadeem.id,
+            newDisplayName = "Nadeem Khan",
+            newVehicleName = "SAJAN"
+        )
+        assertTrue(dupRes is OperationResult.ValidationError)
+    }
 }
