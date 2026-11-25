@@ -31,7 +31,9 @@ data class VehicleStockRow(
     val customerEmptyReceived: Int,
     val emptyReturnedToStore: Int,
     val emptyBalance: Int,
-    val complaintReplaced: Int = 0
+    val complaintReplaced: Int = 0,
+    val fullTransferredOut: Int = 0,
+    val emptyTransferredOut: Int = 0
 )
 
 data class VehicleOverview(
@@ -45,7 +47,9 @@ data class VehicleOverview(
     val totalCustomerEmptyReceived: Int,
     val totalEmptyReturnedToStore: Int,
     val totalEmptyBalance: Int,
-    val totalComplaintReplaced: Int = 0
+    val totalComplaintReplaced: Int = 0,
+    val totalFullTransferredOut: Int = 0,
+    val totalEmptyTransferredOut: Int = 0
 )
 
 data class DashboardSummary(

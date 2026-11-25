@@ -3,10 +3,10 @@ package com.example
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -63,6 +63,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.audio.SoundEffectsManager
+import com.example.auth.BiometricAuthManager
+import com.example.auth.BiometricAvailability
 import com.example.auth.GoogleAuthScreen
 import com.example.auth.authStateFlow
 import com.example.auth.signOutGoogle
@@ -102,7 +104,7 @@ private enum class AdminNavTab(
     SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -160,6 +162,7 @@ class MainActivity : ComponentActivity() {
                             ConcordGasRootApp(
                                 viewModel = viewModel,
                                 googleEmail = user.email.orEmpty(),
+                                isSplashVisible = showSplash,
                                 onPreviewStartupSplash = { showSplash = true }
                             )
                         }
@@ -185,6 +188,7 @@ class MainActivity : ComponentActivity() {
 fun ConcordGasRootApp(
     viewModel: AppViewModel,
     googleEmail: String = "",
+    isSplashVisible: Boolean = false,
     onPreviewStartupSplash: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -234,8 +238,58 @@ fun ConcordGasRootApp(
     val ownerViewConfigured by viewModel.ownerViewConfigured.collectAsStateWithLifecycle()
     val staffLoginNotifications by viewModel.staffLoginNotifications.collectAsStateWithLifecycle()
     val latestStaffLoginBanner by viewModel.latestStaffLoginBanner.collectAsStateWithLifecycle()
+    val biometricUnlockState by viewModel.biometricUnlockState.collectAsStateWithLifecycle()
+    val biometricAvailability by viewModel.biometricAvailability.collectAsStateWithLifecycle()
+    val shouldAutoPromptBiometric by viewModel.shouldAutoPromptBiometric.collectAsStateWithLifecycle()
     var showQuickCalculator by rememberSaveable { mutableStateOf(false) }
     var promptedNotifPermission by rememberSaveable { mutableStateOf(false) }
+
+    val triggerBiometricUnlock: () -> Unit = {
+        val fragmentActivity = context as? FragmentActivity
+        if (fragmentActivity == null) {
+            viewModel.showMessage("Biometric prompt unavailable in current window. Sign in with Password / PIN.")
+        } else {
+            val roleLabel = when (biometricUnlockState.role) {
+                UserRole.ADMIN -> "Admin"
+                UserRole.OWNER_VIEW -> "Owner View"
+                UserRole.STAFF -> "Staff"
+                null -> "User"
+            }
+            val userDisplay = biometricUnlockState.displayName.ifBlank { roleLabel }
+            BiometricAuthManager.authenticate(
+                activity = fragmentActivity,
+                title = "Concord & Atoz Gas Trading LLC",
+                subtitle = "Unlock $roleLabel ($userDisplay) with Fingerprint or Face",
+                negativeButtonText = "Use Password / PIN",
+                onSuccess = {
+                    SoundEffectsManager.playSuccessChime(soundEnabled)
+                    viewModel.completeBiometricUnlock()
+                },
+                onError = { message ->
+                    viewModel.showMessage(message)
+                },
+                onCancelled = { /* Stay on Login screen so user can tap retry or enter password */ }
+            )
+        }
+    }
+
+    LaunchedEffect(
+        authSession == null,
+        isSplashVisible,
+        shouldAutoPromptBiometric,
+        biometricUnlockState.isReadyForBiometric,
+        biometricAvailability
+    ) {
+        if (authSession == null &&
+            !isSplashVisible &&
+            shouldAutoPromptBiometric &&
+            biometricUnlockState.isReadyForBiometric &&
+            biometricAvailability == BiometricAvailability.AVAILABLE
+        ) {
+            viewModel.consumeAutoPromptBiometric()
+            triggerBiometricUnlock()
+        }
+    }
 
     // Subscribe to report flows so report tables stay live
     viewModel.monthlySalesReport.collectAsStateWithLifecycle()
@@ -324,6 +378,7 @@ fun ConcordGasRootApp(
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     viewModel.refreshPermissionsStatus()
+                    viewModel.refreshBiometricAvailability()
                     val pausedAt = backgroundedAtMs
                     backgroundedAtMs = null
                     if (authSession != null && pausedAt != null) {
@@ -391,6 +446,9 @@ fun ConcordGasRootApp(
                         adminCredentials = adminCredentials,
                         adminRecoveryState = adminRecoveryState,
                         ownerViewConfigured = ownerViewConfigured,
+                        biometricUnlockState = biometricUnlockState,
+                        biometricAvailability = biometricAvailability,
+                        onRequestBiometricUnlock = triggerBiometricUnlock,
                         onThemeCycle = {
                             SoundEffectsManager.playTapTick(soundEnabled)
                             val next = ThemePreset.entries[(themePreset.ordinal + 1) % ThemePreset.entries.size]
@@ -440,6 +498,7 @@ fun ConcordGasRootApp(
                     StaffDashboardScreen(
                         staffUser = session.user,
                         assignedVehicle = session.assignedVehicle,
+                        allVehicles = vehicles,
                         selectedDate = selectedDate,
                         vehicleRows = staffVehicleRows,
                         storeRows = storeRows,
@@ -469,6 +528,7 @@ fun ConcordGasRootApp(
                                 emptyCollectedNow = empNow
                             )
                         },
+                        onTransferBetweenVehicles = viewModel::transferBetweenVehicles,
                         onLogout = viewModel::logout
                     )
                 }
@@ -578,6 +638,7 @@ fun ConcordGasRootApp(
                                 val activeVehicle = vehicles.firstOrNull { it.id == selectedVehicleId }
                                 VehicleDetailScreen(
                                     vehicle = activeVehicle,
+                                    allVehicles = vehicles,
                                     selectedDate = selectedDate,
                                     rows = selectedVehicleRows,
                                     storeRows = storeRows,
@@ -599,6 +660,7 @@ fun ConcordGasRootApp(
                                             emptyCollectedNow = empNow
                                         )
                                     },
+                                    onTransferBetweenVehicles = viewModel::transferBetweenVehicles,
                                     onUpdateTransaction = viewModel::updateTransaction,
                                     onDeleteTransaction = viewModel::deleteTransaction,
                                     onUpdateVehicleOpening = { vId, pId, oldFull, oldEmpty ->

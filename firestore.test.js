@@ -354,6 +354,56 @@ test("Master data & Staff online transaction sync enforces Admin-only deletions/
       })
   );
 
+  // Staff CAN record Vehicle-to-Vehicle Full & Empty transfers
+  await assertSucceeds(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc("tx_v2v_full_out_001")
+      .set({
+        clientTxId: "tx_v2v_full_out_001",
+        businessDate: "2026-11-25",
+        clientTimestampMs: Date.now() - 900,
+        type: "VEHICLE_TRANSFER_FULL_OUT",
+        productId: 1,
+        vehicleId: 1,
+        vehicleName: "NADEEM",
+        staffId: 2,
+        staffName: "Nadeem",
+        quantity: 3,
+        notes: "Transfer Full → ARAFATH",
+        createdByUid: STAFF_NADEEM_UID,
+        memberUids: members,
+        createdAt: pastDate(900),
+        updatedAt: pastDate(900),
+      })
+  );
+  await assertSucceeds(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc("tx_v2v_empty_in_001")
+      .set({
+        clientTxId: "tx_v2v_empty_in_001",
+        businessDate: "2026-11-25",
+        clientTimestampMs: Date.now() - 800,
+        type: "VEHICLE_TRANSFER_EMPTY_IN",
+        productId: 1,
+        vehicleId: 2,
+        vehicleName: "ARAFATH",
+        staffId: 2,
+        staffName: "Nadeem",
+        quantity: 2,
+        notes: "Transfer Empty ← NADEEM",
+        createdByUid: STAFF_NADEEM_UID,
+        memberUids: members,
+        createdAt: pastDate(800),
+        updatedAt: pastDate(800),
+      })
+  );
+
   // Staff CANNOT forge a STORE_PURCHASE_FULL transaction
   await assertFails(
     staffDb

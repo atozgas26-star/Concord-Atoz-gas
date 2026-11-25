@@ -408,13 +408,13 @@ fun GoogleAuthScreen(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "C&A GAS",
-                                style = MaterialTheme.typography.headlineSmall,
+                                text = "CONCORD & ATOZ GAS TRADING LLC",
+                                style = MaterialTheme.typography.titleMedium,
                                 color = Color.White,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                text = "Fleet Online Entry, Store & Vehicle Cloud Sync",
+                                text = "C&A Gas • Fleet Online Entry, Store & Vehicle Cloud Sync",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.88f)
                             )

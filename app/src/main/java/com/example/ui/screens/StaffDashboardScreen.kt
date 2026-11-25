@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LockClock
@@ -80,6 +81,7 @@ import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.PendingCustomerCard
 import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.TransactionEntryDialog
+import com.example.ui.components.VehicleTransferDialog
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -100,6 +102,7 @@ fun StaffDashboardScreen(
     storeRows: List<StoreStockRow>,
     products: List<ProductEntity>,
     allTransactions: List<TransactionDisplayItem>,
+    allVehicles: List<VehicleEntity> = emptyList(),
     pendingCustomers: List<CustomerPendingRow> = emptyList(),
     recentCustomerNames: List<String> = emptyList(),
     isOnlineSynced: Boolean = true,
@@ -111,6 +114,14 @@ fun StaffDashboardScreen(
     onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
     onDateSelected: (String) -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
+    onTransferBetweenVehicles: (
+        sourceVehicleId: Long,
+        targetVehicleId: Long,
+        productId: Long,
+        fullQty: Int,
+        emptyQty: Int,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
     onLogout: () -> Unit
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
@@ -120,6 +131,7 @@ fun StaffDashboardScreen(
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
     var showCalculator by remember { mutableStateOf(false) }
+    var showVehicleTransferDialog by remember { mutableStateOf(false) }
     var showAutoSessionDialog by remember { mutableStateOf(false) }
 
     val filteredRows = remember(vehicleRows, selectedCategory, searchQuery) {
@@ -154,7 +166,7 @@ fun StaffDashboardScreen(
             .navigationBarsPadding()
     ) {
         BrandHeaderBanner(
-            title = "C&A GAS",
+            title = "Concord & Atoz Gas Trading LLC",
             subtitle = "Staff: ${staffUser.displayName}  •  Vehicle: ${assignedVehicle?.name ?: "N/A"}",
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -354,6 +366,25 @@ fun StaffDashboardScreen(
                         .testTag("staff_action_calculate")
                 ) {
                     Icon(Icons.Default.Calculate, contentDescription = "Calculate")
+                }
+            }
+            if (assignedVehicle != null && allVehicles.any { it.id != assignedVehicle.id }) {
+                Button(
+                    onClick = { showVehicleTransferDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("staff_action_vehicle_transfer")
+                ) {
+                    Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Vehicle → Vehicle Transfer (Full & Empty)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -610,6 +641,26 @@ fun StaffDashboardScreen(
             onDismiss = { activeTxType = null },
             onConfirm = { prodId, _, qty, notes, _, custName, empNow ->
                 onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes, custName, empNow)
+            }
+        )
+    }
+
+    if (showVehicleTransferDialog && assignedVehicle != null) {
+        VehicleTransferDialog(
+            sourceVehicle = assignedVehicle,
+            allVehicles = allVehicles,
+            products = products,
+            sourceVehicleRows = vehicleRows,
+            onDismiss = { showVehicleTransferDialog = false },
+            onConfirmTransfer = { targetId, prodId, fullQty, emptyQty, notes ->
+                onTransferBetweenVehicles(
+                    assignedVehicle.id,
+                    targetId,
+                    prodId,
+                    fullQty,
+                    emptyQty,
+                    notes
+                )
             }
         )
     }

@@ -1361,4 +1361,209 @@ class ExampleRobolectricTest {
         assertEquals(initialTxCount, repository.transactionsFlow.first().size)
         assertEquals(initialVehicleCount, repository.vehiclesFlow.first().size)
     }
+
+    @Test
+    fun `staff vehicle to vehicle transfer moves full and empty cylinders atomically with negative stock and RBAC guards`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        prefs.clearBiometricUnlockState()
+
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val vehicles = repository.vehiclesFlow.first()
+        val nadeemVehicle = vehicles.first { it.staffUserId == nadeem.id }
+        val arafathVehicle = vehicles.first { it.id != nadeemVehicle.id }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        val today = java.time.LocalDate.now().toString()
+
+        // Seed store with 20 Full -> dispatch 10 Full to Nadeem -> Nadeem collects 5 Empty from customer
+        assertTrue(
+            repository.recordTransaction(today, TransactionType.STORE_PURCHASE_FULL, oxygen.id, null, admin, 20, "Opening")
+                is OperationResult.Success
+        )
+        assertTrue(
+            repository.recordTransaction(today, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, nadeemVehicle.id, admin, 10, "Load")
+                is OperationResult.Success
+        )
+        assertTrue(
+            repository.recordTransaction(today, TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER, oxygen.id, nadeemVehicle.id, nadeem, 5, "Collected")
+                is OperationResult.Success
+        )
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = null,
+            appContext = context
+        )
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+
+        waitUntil { vm.isInitialized.value }
+        vm.login(nadeem.id, nadeem.pin, expectedRole = UserRole.STAFF)
+        waitUntil { vm.authSession.value?.user?.id == nadeem.id }
+        vm.clearSnackbar()
+
+        // 1. Transfer 4 Full + 2 Empty from Nadeem -> Arafath
+        vm.transferBetweenVehicles(
+            sourceVehicleId = nadeemVehicle.id,
+            targetVehicleId = arafathVehicle.id,
+            productId = oxygen.id,
+            fullQuantity = 4,
+            emptyQuantity = 2,
+            notes = "Mid-route cylinder swap"
+        )
+        waitUntil { vm.snackbarMessage.value != null }
+        assertTrue(
+            "Expected transfer confirmation but got: ${vm.snackbarMessage.value}",
+            vm.snackbarMessage.value!!.contains("Transferred")
+        )
+        vm.clearSnackbar()
+
+        val nadeemRow = repository.observeVehicleStock(nadeemVehicle.id, today).first().first { it.product.id == oxygen.id }
+        val arafathRow = repository.observeVehicleStock(arafathVehicle.id, today).first().first { it.product.id == oxygen.id }
+        val storeRow = repository.observeStoreStock(today).first().first { it.product.id == oxygen.id }
+
+        // Nadeem: 10-4 = 6 Full, 5-2 = 3 Empty; Arafath: 0+4 = 4 Full, 0+2 = 2 Empty; Store unchanged (10 Full, 0 Empty)
+        assertEquals(6, nadeemRow.fullBalance)
+        assertEquals(3, nadeemRow.emptyBalance)
+        assertEquals(4, nadeemRow.fullTransferredOut)
+        assertEquals(2, nadeemRow.emptyTransferredOut)
+        assertEquals(4, arafathRow.fullBalance)
+        assertEquals(2, arafathRow.emptyBalance)
+        assertEquals(10, storeRow.storeFullBalance)
+        assertEquals(0, storeRow.storeEmptyBalance)
+
+        // 2. Negative stock prevention: trying to transfer 7 Full when only 6 available must fail without modifying stock
+        vm.transferBetweenVehicles(
+            sourceVehicleId = nadeemVehicle.id,
+            targetVehicleId = arafathVehicle.id,
+            productId = oxygen.id,
+            fullQuantity = 7,
+            emptyQuantity = 0,
+            notes = "Too many"
+        )
+        waitUntil { vm.warningAlert.value != null }
+        assertEquals("Insufficient Vehicle Full Stock", vm.warningAlert.value!!.title)
+        vm.dismissWarningAlert()
+        assertEquals(6, repository.observeVehicleStock(nadeemVehicle.id, today).first().first { it.product.id == oxygen.id }.fullBalance)
+
+        // 3. Staff cannot transfer OUT of another staff member's vehicle
+        vm.transferBetweenVehicles(
+            sourceVehicleId = arafathVehicle.id,
+            targetVehicleId = nadeemVehicle.id,
+            productId = oxygen.id,
+            fullQuantity = 1,
+            emptyQuantity = 0,
+            notes = "Unauthorized"
+        )
+        waitUntil { vm.warningAlert.value != null }
+        assertEquals("Permission Denied", vm.warningAlert.value!!.title)
+        vm.dismissWarningAlert()
+
+        // 4. Owner View is strictly blocked from performing vehicle-to-vehicle transfers
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+        vm.setupOwnerViewPassword("OwnerLock@26", "OwnerLock@26")
+        waitUntil { vm.authSession.value?.user?.role == UserRole.OWNER_VIEW }
+
+        vm.transferBetweenVehicles(
+            sourceVehicleId = nadeemVehicle.id,
+            targetVehicleId = arafathVehicle.id,
+            productId = oxygen.id,
+            fullQuantity = 1,
+            emptyQuantity = 1,
+            notes = "Owner blocked"
+        )
+        waitUntil { vm.warningAlert.value != null }
+        assertTrue(vm.warningAlert.value!!.title.contains("Owner View"))
+    }
+
+    @Test
+    fun `biometric unlock arms after first password login, unlocks via biometric callback, and resets on explicit logout`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        prefs.clearAdminCredentials()
+        prefs.clearBiometricUnlockState()
+
+        // Verify branding strings: full company headline & short Play-Policy launcher label
+        assertEquals("Concord & Atoz Gas Trading LLC", context.getString(R.string.company_full_name))
+        assertEquals("C&A Gas", context.getString(R.string.app_name))
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = null,
+            appContext = context
+        )
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+
+        waitUntil { vm.isInitialized.value }
+        assertFalse(vm.biometricUnlockState.value.isReadyForBiometric)
+
+        // 1. First-time Admin password setup arms Fingerprint/Face unlock
+        vm.setupInitialAdminCredentials(
+            username = "concord_boss",
+            password = "FirstLogin@26",
+            confirmPassword = "FirstLogin@26",
+            recoveryEmail = "atozgas26@gmail.com"
+        )
+        waitUntil {
+            vm.authSession.value?.user?.role == UserRole.ADMIN &&
+                vm.biometricUnlockState.value.isReadyForBiometric
+        }
+        assertEquals(UserRole.ADMIN, vm.biometricUnlockState.value.role)
+        assertFalse(vm.biometricUnlockState.value.passwordRequiredAfterLogout)
+
+        // 2. Auto-lock (background/minimize) keeps biometric unlock armed -> Fingerprint/Face restores session without password
+        vm.lockSessionOnAutoLogout("Locked on minimize")
+        waitUntil { vm.authSession.value == null }
+        assertTrue(vm.biometricUnlockState.value.isReadyForBiometric)
+
+        vm.completeBiometricUnlock()
+        waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
+        assertEquals(UserRole.ADMIN, vm.authSession.value?.user?.role)
+
+        // 3. Explicit Logout (1 time) disarms biometric unlock and requires Password once before re-enabling
+        vm.logout()
+        waitUntil {
+            vm.authSession.value == null &&
+                !vm.biometricUnlockState.value.armed &&
+                vm.biometricUnlockState.value.passwordRequiredAfterLogout
+        }
+        assertFalse(vm.biometricUnlockState.value.isReadyForBiometric)
+
+        // Attempting biometric unlock while logged out must be rejected
+        vm.completeBiometricUnlock()
+        waitUntil { vm.loginError.value != null }
+        assertNull(vm.authSession.value)
+
+        // 4. Signing in once with Password opens app AND re-arms Fingerprint/Face unlock for next opens
+        vm.loginAdminWithPassword("concord_boss", "FirstLogin@26")
+        waitUntil {
+            vm.authSession.value?.user?.role == UserRole.ADMIN &&
+                vm.biometricUnlockState.value.isReadyForBiometric
+        }
+        assertFalse(vm.biometricUnlockState.value.passwordRequiredAfterLogout)
+        assertTrue(vm.biometricUnlockState.value.armed)
+    }
 }

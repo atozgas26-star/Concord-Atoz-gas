@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalShipping
@@ -79,6 +80,7 @@ import com.example.ui.components.PendingCustomerCard
 import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
+import com.example.ui.components.VehicleTransferDialog
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -220,12 +222,21 @@ fun VehicleDetailScreen(
     storeRows: List<StoreStockRow>,
     products: List<ProductEntity>,
     transactions: List<TransactionDisplayItem> = emptyList(),
+    allVehicles: List<VehicleEntity> = emptyList(),
     pendingCustomers: List<CustomerPendingRow> = emptyList(),
     recentCustomerNames: List<String> = emptyList(),
     isReadOnly: Boolean = false,
     onDateSelected: (String) -> Unit,
     onBack: () -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
+    onTransferBetweenVehicles: (
+        sourceVehicleId: Long,
+        targetVehicleId: Long,
+        productId: Long,
+        fullQty: Int,
+        emptyQty: Int,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onDeleteTransaction: (Long) -> Unit = {},
     onUpdateVehicleOpening: (vehicleId: Long, productId: Long, oldFull: Int, oldEmpty: Int) -> Unit
@@ -238,6 +249,7 @@ fun VehicleDetailScreen(
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
     var showCalculator by remember { mutableStateOf(false) }
+    var showVehicleTransferDialog by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<VehicleStockRow?>(null) }
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
@@ -354,6 +366,14 @@ fun VehicleDetailScreen(
                         label = { Text("Return Empty to Store") },
                         leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = BrandRedSecondary) }
                     )
+                    if (vehicle != null && allVehicles.any { it.id != vehicle.id }) {
+                        AssistChip(
+                            onClick = { showVehicleTransferDialog = true },
+                            label = { Text("Vehicle → Vehicle") },
+                            leadingIcon = { Icon(Icons.Default.CompareArrows, contentDescription = null, tint = BrandGreenPrimary) },
+                            modifier = Modifier.testTag("vehicle_detail_transfer_chip")
+                        )
+                    }
                 }
             }
         }
@@ -611,6 +631,19 @@ fun VehicleDetailScreen(
         )
     }
 
+    if (!isReadOnly && showVehicleTransferDialog && vehicle != null) {
+        VehicleTransferDialog(
+            sourceVehicle = vehicle,
+            allVehicles = allVehicles,
+            products = products,
+            sourceVehicleRows = rows,
+            onDismiss = { showVehicleTransferDialog = false },
+            onConfirmTransfer = { targetId, prodId, fullQty, emptyQty, notes ->
+                onTransferBetweenVehicles(vehicle.id, targetId, prodId, fullQty, emptyQty, notes)
+            }
+        )
+    }
+
     if (showCalculator && vehicle != null) {
         StockCalculatorDialog(
             products = products,
@@ -736,8 +769,9 @@ fun VehicleProductRowCard(
                             color = BrandGreenOnContainer
                         )
                         val replFull = if (row.complaintReplaced > 0) " • Repl: -${row.complaintReplaced}" else ""
+                        val xferFull = if (row.fullTransferredOut > 0) " • Xfer: -${row.fullTransferredOut}" else ""
                         Text(
-                            text = "Old: ${row.oldFull}  •  Recd: ${row.fullReceived}\nTot: ${row.totalFull}  •  Sale: ${row.customerSales}$replFull\nBal: ${row.fullBalance}",
+                            text = "Old: ${row.oldFull}  •  Recd: ${row.fullReceived}\nTot: ${row.totalFull}  •  Sale: ${row.customerSales}$replFull$xferFull\nBal: ${row.fullBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
                             color = BrandGreenOnContainer
@@ -757,8 +791,9 @@ fun VehicleProductRowCard(
                             color = BrandRedOnContainer
                         )
                         val replEmp = if (row.complaintReplaced > 0) " • Repl: +${row.complaintReplaced}" else ""
+                        val xferEmp = if (row.emptyTransferredOut > 0) " • Xfer: -${row.emptyTransferredOut}" else ""
                         Text(
-                            text = "Old: ${row.oldEmpty}  •  Cust: ${row.customerEmptyReceived}$replEmp\nRet Store: ${row.emptyReturnedToStore}\nBal: ${row.emptyBalance}",
+                            text = "Old: ${row.oldEmpty}  •  Cust: ${row.customerEmptyReceived}$replEmp\nRet Store: ${row.emptyReturnedToStore}$xferEmp\nBal: ${row.emptyBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
                             color = BrandRedOnContainer

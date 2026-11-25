@@ -168,6 +168,10 @@ service cloud.firestore {
         'VEHICLE_CUSTOMER_COMPLAINT_REPLACE',
         'VEHICLE_EMPTY_FROM_CUSTOMER',
         'VEHICLE_EMPTY_RETURN_TO_STORE',
+        'VEHICLE_TRANSFER_FULL_OUT',
+        'VEHICLE_TRANSFER_FULL_IN',
+        'VEHICLE_TRANSFER_EMPTY_OUT',
+        'VEHICLE_TRANSFER_EMPTY_IN',
         'CUSTOMER_EMPTY_PENDING_ADD'
       ];
     }
@@ -194,6 +198,10 @@ service cloud.firestore {
                'VEHICLE_CUSTOMER_COMPLAINT_REPLACE',
                'VEHICLE_EMPTY_FROM_CUSTOMER',
                'VEHICLE_EMPTY_RETURN_TO_STORE',
+               'VEHICLE_TRANSFER_FULL_OUT',
+               'VEHICLE_TRANSFER_FULL_IN',
+               'VEHICLE_TRANSFER_EMPTY_OUT',
+               'VEHICLE_TRANSFER_EMPTY_IN',
                'VEHICLE_ADJUST_FULL_IN',
                'VEHICLE_ADJUST_FULL_OUT',
                'VEHICLE_ADJUST_EMPTY_IN',

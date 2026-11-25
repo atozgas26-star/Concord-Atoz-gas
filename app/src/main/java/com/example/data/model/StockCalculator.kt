@@ -131,31 +131,37 @@ object StockCalculator {
             var fullReceived = 0
             var customerSales = 0
             var complaintReplaced = 0
+            var fullTransferredOut = 0
             var customerEmptyReceived = 0
             var emptyReturnedToStore = 0
+            var emptyTransferredOut = 0
 
             for (tx in dayTx) {
                 when (tx.type) {
                     TransactionType.VEHICLE_FULL_RECEIVED,
+                    TransactionType.VEHICLE_TRANSFER_FULL_IN,
                     TransactionType.VEHICLE_ADJUST_FULL_IN -> fullReceived += tx.quantity
                     TransactionType.VEHICLE_CUSTOMER_SALE,
                     TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
                     TransactionType.VEHICLE_ADJUST_FULL_OUT -> customerSales += tx.quantity
+                    TransactionType.VEHICLE_TRANSFER_FULL_OUT -> fullTransferredOut += tx.quantity
                     TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE -> {
                         // 1-for-1 defective shell swap: full out (-qty), empty in (+qty)
                         complaintReplaced += tx.quantity
                     }
                     TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
+                    TransactionType.VEHICLE_TRANSFER_EMPTY_IN,
                     TransactionType.VEHICLE_ADJUST_EMPTY_IN -> customerEmptyReceived += tx.quantity
                     TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
                     TransactionType.VEHICLE_ADJUST_EMPTY_OUT -> emptyReturnedToStore += tx.quantity
+                    TransactionType.VEHICLE_TRANSFER_EMPTY_OUT -> emptyTransferredOut += tx.quantity
                     else -> Unit
                 }
             }
 
             val totalFull = oldFull + fullReceived
-            val fullBalance = totalFull - customerSales - complaintReplaced
-            val emptyBalance = oldEmpty + customerEmptyReceived + complaintReplaced - emptyReturnedToStore
+            val fullBalance = totalFull - customerSales - complaintReplaced - fullTransferredOut
+            val emptyBalance = oldEmpty + customerEmptyReceived + complaintReplaced - emptyReturnedToStore - emptyTransferredOut
 
             VehicleStockRow(
                 vehicle = vehicle,
@@ -169,7 +175,9 @@ object StockCalculator {
                 customerEmptyReceived = customerEmptyReceived,
                 emptyReturnedToStore = emptyReturnedToStore,
                 emptyBalance = emptyBalance,
-                complaintReplaced = complaintReplaced
+                complaintReplaced = complaintReplaced,
+                fullTransferredOut = fullTransferredOut,
+                emptyTransferredOut = emptyTransferredOut
             )
         }
     }
@@ -247,10 +255,12 @@ object StockCalculator {
 
     fun vehicleFullDelta(tx: StockTransactionEntity): Int = when (tx.type) {
         TransactionType.VEHICLE_FULL_RECEIVED,
+        TransactionType.VEHICLE_TRANSFER_FULL_IN,
         TransactionType.VEHICLE_ADJUST_FULL_IN -> tx.quantity
         TransactionType.VEHICLE_CUSTOMER_SALE,
         TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
         TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
+        TransactionType.VEHICLE_TRANSFER_FULL_OUT,
         TransactionType.VEHICLE_ADJUST_FULL_OUT -> -tx.quantity
         else -> 0
     }
@@ -258,8 +268,10 @@ object StockCalculator {
     fun vehicleEmptyDelta(tx: StockTransactionEntity): Int = when (tx.type) {
         TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
         TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
+        TransactionType.VEHICLE_TRANSFER_EMPTY_IN,
         TransactionType.VEHICLE_ADJUST_EMPTY_IN -> tx.quantity
         TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+        TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
         TransactionType.VEHICLE_ADJUST_EMPTY_OUT -> -tx.quantity
         TransactionType.CUSTOMER_EMPTY_PENDING_ADD,
         TransactionType.VEHICLE_NEW_CUSTOMER_SALE -> 0

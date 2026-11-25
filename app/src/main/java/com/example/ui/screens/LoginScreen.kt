@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockReset
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeOff
@@ -86,8 +89,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.auth.AdminRecoveryUiState
+import com.example.auth.BiometricAvailability
 import com.example.auth.RecoveryPurpose
 import com.example.data.local.AdminCredentialsState
+import com.example.data.local.BiometricUnlockState
 import com.example.data.local.UserAccountEntity
 import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
@@ -120,6 +125,9 @@ fun LoginScreen(
     adminCredentials: AdminCredentialsState = AdminCredentialsState(),
     adminRecoveryState: AdminRecoveryUiState = AdminRecoveryUiState(),
     ownerViewConfigured: Boolean = false,
+    biometricUnlockState: BiometricUnlockState = BiometricUnlockState(),
+    biometricAvailability: BiometricAvailability = BiometricAvailability.UNAVAILABLE,
+    onRequestBiometricUnlock: () -> Unit = {},
     onThemeCycle: () -> Unit = {},
     onToggleDarkMode: () -> Unit = {},
     onToggleSound: () -> Unit = {},
@@ -312,13 +320,14 @@ fun LoginScreen(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "C&A GAS",
-                                style = MaterialTheme.typography.headlineSmall,
+                                text = "CONCORD & ATOZ GAS TRADING LLC",
+                                style = MaterialTheme.typography.titleMedium,
                                 color = Color.White,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.testTag("login_company_headline")
                             )
                             Text(
-                                text = "Cylinder Store, Vehicle & Sales Management",
+                                text = "C&A Gas • Store, Vehicle & Sales Management",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.88f)
                             )
@@ -351,29 +360,165 @@ fun LoginScreen(
                     onGoogleSignOut = onGoogleSignOut
                 )
 
-                // Role Toggle (Staff, Admin, Owner View)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Biometric Quick Unlock (Fingerprint / Face Lock) OR Logout Password-Once Notice
+                if (biometricUnlockState.isReadyForBiometric &&
+                    biometricAvailability == BiometricAvailability.AVAILABLE &&
+                    !(biometricUnlockState.role == UserRole.ADMIN && isStaffRestrictedCloud)
+                ) {
+                    val savedRoleLabel = when (biometricUnlockState.role) {
+                        UserRole.ADMIN -> "Admin"
+                        UserRole.OWNER_VIEW -> "Owner View (Read-Only)"
+                        UserRole.STAFF -> "Staff"
+                        null -> ""
+                    }
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),
+                        border = BorderStroke(1.5.dp, BrandGreenPrimary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("biometric_quick_unlock_card")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandGreenPrimary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Fingerprint,
+                                        contentDescription = "Fingerprint or Face Unlock",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Fingerprint / Face Unlock Ready",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BrandGreenOnContainer
+                                    )
+                                    Text(
+                                        text = "${biometricUnlockState.displayName.ifBlank { savedRoleLabel }} • $savedRoleLabel",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = BrandGreenOnContainer.copy(alpha = 0.85f)
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.Face,
+                                    contentDescription = "Face Unlock",
+                                    tint = BrandGreenPrimary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Button(
+                                onClick = onRequestBiometricUnlock,
+                                enabled = !isAuthenticating,
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("biometric_unlock_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Fingerprint,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Unlock with Fingerprint / Face",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                } else if (biometricUnlockState.passwordRequiredAfterLogout) {
+                    Surface(
+                        color = BrandRedContainer.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, BrandRedSecondary.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("biometric_logout_reset_notice")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Password Required After Logout",
+                                tint = BrandRedSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Logged out — Sign in 1 time with Password / PIN to re-enable Fingerprint & Face Lock.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                } else if (biometricAvailability == BiometricAvailability.AVAILABLE) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fingerprint,
+                                contentDescription = null,
+                                tint = BrandGreenPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "First-time login uses Password / PIN • Next open unlocks with Fingerprint or Face Lock.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Separate Login Portals with Unique Icons (Admin, Owner View, Staff)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "CHOOSE LOGIN PORTAL",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        RoleToggleButton(
-                            title = "Staff Login",
-                            subtitle = "${staffUsers.size} Vehicles",
-                            icon = Icons.Default.LocalShipping,
-                            selected = selectedRole == UserRole.STAFF,
-                            onClick = {
-                                userTouchedRole = true
-                                selectedRole = UserRole.STAFF
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("role_staff_tab")
-                        )
-                        RoleToggleButton(
-                            title = "Admin Login",
-                            subtitle = if (isStaffRestrictedCloud) "Restricted" else "Full Access",
+                        RolePortalCard(
+                            title = "Admin",
+                            subtitle = if (isStaffRestrictedCloud) "Locked" else "Full Control",
                             icon = Icons.Default.AdminPanelSettings,
+                            accentColor = BrandGreenPrimary,
+                            badgeContainer = BrandGreenContainer,
+                            badgeTint = BrandGreenOnContainer,
                             selected = selectedRole == UserRole.ADMIN,
                             enabled = !isStaffRestrictedCloud,
                             onClick = {
@@ -386,27 +531,41 @@ fun LoginScreen(
                                 .weight(1f)
                                 .testTag("role_admin_tab")
                         )
+                        RolePortalCard(
+                            title = "Owner View",
+                            subtitle = "View Only",
+                            icon = Icons.Default.VerifiedUser,
+                            accentColor = Color(0xFFB45309),
+                            badgeContainer = Color(0xFFFEF3C7),
+                            badgeTint = Color(0xFF78350F),
+                            selected = selectedRole == UserRole.OWNER_VIEW,
+                            enabled = !isStaffRestrictedCloud || ownerViewConfigured,
+                            onClick = {
+                                userTouchedRole = true
+                                selectedRole = UserRole.OWNER_VIEW
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("role_owner_view_tab")
+                        )
+                        RolePortalCard(
+                            title = "Staff",
+                            subtitle = "${staffUsers.size} Vehicles",
+                            icon = Icons.Default.LocalShipping,
+                            accentColor = BrandRedSecondary,
+                            badgeContainer = BrandRedContainer,
+                            badgeTint = BrandRedSecondary,
+                            selected = selectedRole == UserRole.STAFF,
+                            enabled = true,
+                            onClick = {
+                                userTouchedRole = true
+                                selectedRole = UserRole.STAFF
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("role_staff_tab")
+                        )
                     }
-                    RoleToggleButton(
-                        title = "Owner View",
-                        subtitle = if (ownerViewConfigured) {
-                            "One Password • View Only (No Entry or Modification)"
-                        } else if (isStaffRestrictedCloud) {
-                            "Not yet configured by Admin"
-                        } else {
-                            "Create 1 Password • Strictly View Only"
-                        },
-                        icon = Icons.Default.Visibility,
-                        selected = selectedRole == UserRole.OWNER_VIEW,
-                        enabled = !isStaffRestrictedCloud || ownerViewConfigured,
-                        onClick = {
-                            userTouchedRole = true
-                            selectedRole = UserRole.OWNER_VIEW
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("role_owner_view_tab")
-                    )
                 }
 
                 // Account Selection
@@ -422,22 +581,24 @@ fun LoginScreen(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(42.dp)
+                                        .size(44.dp)
                                         .clip(CircleShape)
                                         .background(BrandGreenContainer),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         Icons.Default.AdminPanelSettings,
-                                        contentDescription = "Admin",
-                                        tint = BrandGreenOnContainer
+                                        contentDescription = "Admin Portal",
+                                        tint = BrandGreenOnContainer,
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "Admin: ${adminUser?.displayName ?: "Ragavan"}",
-                                        style = MaterialTheme.typography.titleMedium
+                                        text = "Admin Portal • ${adminUser?.displayName ?: "Ragavan"}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = "Full Store, Vehicle, Reports & PIN Control",
@@ -453,21 +614,22 @@ fun LoginScreen(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(42.dp)
+                                        .size(44.dp)
                                         .clip(CircleShape)
-                                        .background(BrandGreenContainer),
+                                        .background(Color(0xFFFEF3C7)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        Icons.Default.Visibility,
-                                        contentDescription = "Owner View",
-                                        tint = BrandGreenOnContainer
+                                        Icons.Default.VerifiedUser,
+                                        contentDescription = "Owner View Portal",
+                                        tint = Color(0xFF78350F),
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Owner View (Read-Only)",
+                                        text = "Owner View Portal (Read-Only)",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -479,11 +641,31 @@ fun LoginScreen(
                                 }
                             }
                         } else {
-                            Text(
-                                text = "Select Staff / Vehicle Account",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandRedContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.LocalShipping,
+                                        contentDescription = "Staff Vehicle Portal",
+                                        tint = BrandRedSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = "Select Staff / Vehicle Account",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Spacer(Modifier.height(8.dp))
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1294,7 +1476,7 @@ fun LoginScreen(
                 }
 
                 Text(
-                    text = "C&A GAS • Built by Ragavan",
+                    text = "Concord & Atoz Gas Trading LLC • C&A Gas • Built by Ragavan",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -1324,10 +1506,13 @@ fun LoginScreen(
 }
 
 @Composable
-private fun RoleToggleButton(
+private fun RolePortalCard(
     title: String,
     subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accentColor: Color,
+    badgeContainer: Color,
+    badgeTint: Color,
     selected: Boolean,
     enabled: Boolean = true,
     onClick: () -> Unit,
@@ -1335,55 +1520,75 @@ private fun RoleToggleButton(
 ) {
     Surface(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = when {
             !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
-            selected -> BrandGreenPrimary
+            selected -> accentColor
             else -> MaterialTheme.colorScheme.surface
         },
         border = BorderStroke(
-            width = if (selected) 0.dp else 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) accentColor else MaterialTheme.colorScheme.outlineVariant
         ),
-        tonalElevation = if (selected) 3.dp else 0.dp
+        tonalElevation = if (selected) 4.dp else 1.dp,
+        shadowElevation = if (selected) 4.dp else 0.dp
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = when {
-                    !enabled -> MaterialTheme.colorScheme.outline
-                    selected -> Color.White
-                    else -> BrandGreenPrimary
-                },
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = when {
-                        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(
+                        when {
+                            !enabled -> MaterialTheme.colorScheme.surfaceVariant
+                            selected -> Color.White.copy(alpha = 0.22f)
+                            else -> badgeContainer
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = "$title Portal",
+                    tint = when {
+                        !enabled -> MaterialTheme.colorScheme.outline
                         selected -> Color.White
-                        else -> MaterialTheme.colorScheme.onSurface
-                    }
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
-                        selected -> Color.White.copy(alpha = 0.85f)
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                        else -> badgeTint
+                    },
+                    modifier = Modifier.size(24.dp)
                 )
             }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                color = when {
+                    !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                    selected -> Color.White
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                color = when {
+                    !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    selected -> Color.White.copy(alpha = 0.88f)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
         }
     }
 }

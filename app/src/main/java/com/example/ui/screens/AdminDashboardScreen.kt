@@ -147,7 +147,7 @@ fun AdminDashboardScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "C&A GAS",
+            title = "Concord & Atoz Gas Trading LLC",
             subtitle = if (isReadOnly) {
                 "Owner View (Read-Only) • No Entry or Modification"
             } else {

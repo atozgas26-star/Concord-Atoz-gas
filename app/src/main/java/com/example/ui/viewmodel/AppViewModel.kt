@@ -9,11 +9,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.auth.AdminCredentialCrypto
 import com.example.auth.AdminRecoveryUiState
+import com.example.auth.BiometricAuthManager
+import com.example.auth.BiometricAvailability
 import com.example.auth.GmailAuthResult
 import com.example.auth.GmailVerificationManager
 import com.example.auth.RecoveryPurpose
 import com.example.auth.RecoveryStep
 import com.example.data.local.AdminCredentialsState
+import com.example.data.local.BiometricUnlockState
 import com.example.data.local.ProductEntity
 import com.example.data.local.SessionPreferences
 import com.example.data.local.UserAccountEntity
@@ -190,6 +193,16 @@ class AppViewModel(
         (sessionPreferences?.ownerViewConfiguredFlow ?: flowOf(false))
             .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val biometricUnlockState: StateFlow<BiometricUnlockState> =
+        (sessionPreferences?.biometricUnlockStateFlow ?: flowOf(BiometricUnlockState()))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, BiometricUnlockState())
+
+    private val _biometricAvailability = MutableStateFlow(BiometricAvailability.UNAVAILABLE)
+    val biometricAvailability: StateFlow<BiometricAvailability> = _biometricAvailability.asStateFlow()
+
+    private val _shouldAutoPromptBiometric = MutableStateFlow(false)
+    val shouldAutoPromptBiometric: StateFlow<Boolean> = _shouldAutoPromptBiometric.asStateFlow()
+
     private val _adminRecoveryState = MutableStateFlow(AdminRecoveryUiState())
     val adminRecoveryState: StateFlow<AdminRecoveryUiState> = _adminRecoveryState.asStateFlow()
 
@@ -324,29 +337,37 @@ class AppViewModel(
     init {
         viewModelScope.launch {
             repository.initializeDatabase()
+            val bioAvail = appContext?.let { BiometricAuthManager.checkAvailability(it) }
+                ?: BiometricAvailability.UNAVAILABLE
+            _biometricAvailability.value = bioAvail
+
+            val bioState = sessionPreferences?.biometricUnlockStateFlow?.first() ?: BiometricUnlockState()
             val shouldAutoLogin = sessionPreferences?.autoLoginEnabledFlow?.first() ?: true
             val logoutMode = sessionPreferences?.autoLogoutModeFlow?.first() ?: AutoLogoutMode.OFF
-            val savedRole = if (shouldAutoLogin && logoutMode != AutoLogoutMode.ON_MINIMIZE) {
-                sessionPreferences?.getLoggedInRole()
+
+            if (bioState.isReadyForBiometric && bioAvail == BiometricAvailability.AVAILABLE) {
+                // Armed after first-time password login: require Fingerprint / Face Unlock on next app open
+                _authSession.value = null
+                _shouldAutoPromptBiometric.value = true
             } else {
-                null
-            }
-            val savedUserId = if (shouldAutoLogin && logoutMode != AutoLogoutMode.ON_MINIMIZE) {
-                sessionPreferences?.getLoggedInUserId()
-            } else {
-                null
-            }
-            if (savedRole == UserRole.OWNER_VIEW && (sessionPreferences?.ownerViewConfiguredFlow?.first() == true)) {
-                _authSession.value = buildOwnerViewSession()
-            } else if (savedUserId != null) {
-                val restored = repository.getSessionForUserId(savedUserId)
-                if (restored != null) {
-                    _authSession.value = restored
-                    if (restored.assignedVehicle != null) {
-                        _selectedVehicleId.value = restored.assignedVehicle.id
+                val canRestoreWithoutPrompt = shouldAutoLogin &&
+                    logoutMode != AutoLogoutMode.ON_MINIMIZE &&
+                    !bioState.passwordRequiredAfterLogout
+                val savedRole = if (canRestoreWithoutPrompt) sessionPreferences?.getLoggedInRole() else null
+                val savedUserId = if (canRestoreWithoutPrompt) sessionPreferences?.getLoggedInUserId() else null
+
+                if (savedRole == UserRole.OWNER_VIEW && (sessionPreferences?.ownerViewConfiguredFlow?.first() == true)) {
+                    _authSession.value = buildOwnerViewSession()
+                } else if (savedUserId != null) {
+                    val restored = repository.getSessionForUserId(savedUserId)
+                    if (restored != null) {
+                        _authSession.value = restored
+                        if (restored.assignedVehicle != null) {
+                            _selectedVehicleId.value = restored.assignedVehicle.id
+                        }
+                    } else {
+                        sessionPreferences?.clearLoggedInUserId()
                     }
-                } else {
-                    sessionPreferences?.clearLoggedInUserId()
                 }
             }
             _isInitialized.value = true
@@ -965,10 +986,107 @@ class AppViewModel(
         if (_authSession.value != null) {
             _authSession.value = null
             _loginError.value = reason
+            val bioState = biometricUnlockState.value
+            if (bioState.isReadyForBiometric && _biometricAvailability.value == BiometricAvailability.AVAILABLE) {
+                _shouldAutoPromptBiometric.value = true
+            }
             viewModelScope.launch {
                 sessionPreferences?.clearLoggedInUserId()
                 cloudSync?.clearLinkedStaffMetadata()
             }
+        }
+    }
+
+    fun refreshBiometricAvailability() {
+        _biometricAvailability.value = appContext?.let { BiometricAuthManager.checkAvailability(it) }
+            ?: BiometricAvailability.UNAVAILABLE
+    }
+
+    fun consumeAutoPromptBiometric() {
+        _shouldAutoPromptBiometric.value = false
+    }
+
+    fun completeBiometricUnlock() {
+        if (_isAuthenticating.value) return
+        viewModelScope.launch {
+            _isAuthenticating.value = true
+            try {
+                val bioState = sessionPreferences?.biometricUnlockStateFlow?.first() ?: biometricUnlockState.value
+                if (!bioState.isReadyForBiometric) {
+                    _loginError.value = "Sign in once with Password / PIN first to unlock with Fingerprint or Face."
+                    return@launch
+                }
+                val role = bioState.role ?: return@launch
+                if (role == UserRole.ADMIN && isStaffRestrictedDevice()) {
+                    _loginError.value = "Admin login is restricted on this Staff device."
+                    return@launch
+                }
+                val session = when (role) {
+                    UserRole.OWNER_VIEW -> {
+                        val configured = sessionPreferences?.ownerViewConfiguredFlow?.first() ?: ownerViewConfigured.value
+                        if (!configured) {
+                            _loginError.value = "Owner View password is not configured."
+                            return@launch
+                        }
+                        buildOwnerViewSession()
+                    }
+                    UserRole.ADMIN, UserRole.STAFF -> {
+                        val restored = repository.getSessionForUserId(bioState.userId)
+                        if (restored == null || !restored.user.isActive || restored.user.role != role) {
+                            _loginError.value = "Saved account is unavailable. Please sign in with Password / PIN."
+                            return@launch
+                        }
+                        restored
+                    }
+                }
+                if (autoLoginEnabled.value) {
+                    sessionPreferences?.saveLoggedInUserId(session.user.id, session.user.role)
+                }
+                _shouldAutoPromptBiometric.value = false
+                _authSession.value = session
+                _loginError.value = null
+                _selectedDate.value = InventoryRepository.todayIsoDate()
+                if (session.assignedVehicle != null) {
+                    _selectedVehicleId.value = session.assignedVehicle.id
+                }
+                if (session.user.role == UserRole.STAFF) {
+                    emitStaffLoginNotification(session)
+                }
+            } finally {
+                _isAuthenticating.value = false
+            }
+        }
+    }
+
+    private fun emitStaffLoginNotification(session: AuthSession) {
+        val nowMs = System.currentTimeMillis()
+        val vehicleName = session.assignedVehicle?.name.orEmpty()
+        val localEvent = StaffLoginNotificationItem(
+            eventId = "local_login_${session.user.id}_$nowMs",
+            staffId = session.user.id,
+            staffName = session.user.displayName,
+            vehicleName = vehicleName,
+            loginTimestampMs = nowMs
+        )
+        _localStaffLoginEvents.value = (listOf(localEvent) + _localStaffLoginEvents.value).take(30)
+        _latestStaffLoginBanner.value = localEvent
+        appContext?.let { ctx ->
+            StaffLoginNotificationManager.notifyStaffLogin(
+                context = ctx,
+                staffName = session.user.displayName,
+                vehicleName = vehicleName,
+                loginTimestampMs = nowMs
+            )
+        }
+        val vehicleLabel = vehicleName.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+        _snackbarMessage.value = "Staff Login Alert: ${session.user.displayName}$vehicleLabel signed in"
+        viewModelScope.launch {
+            cloudSync?.recordStaffLoginEvent(
+                staffId = session.user.id,
+                staffName = session.user.displayName,
+                vehicleName = vehicleName,
+                loginTimestampMs = nowMs
+            )
         }
     }
 
@@ -1076,6 +1194,12 @@ class AppViewModel(
                     } else {
                         sessionPreferences?.clearLoggedInUserId()
                     }
+                    sessionPreferences?.armBiometricUnlock(
+                        userId = session.user.id,
+                        role = session.user.role,
+                        displayName = session.user.displayName
+                    )
+                    _shouldAutoPromptBiometric.value = false
                     _authSession.value = session
                     _loginError.value = null
                     _selectedDate.value = InventoryRepository.todayIsoDate()
@@ -1083,35 +1207,7 @@ class AppViewModel(
                         _selectedVehicleId.value = session.assignedVehicle.id
                     }
                     if (session.user.role == UserRole.STAFF) {
-                        val nowMs = System.currentTimeMillis()
-                        val vehicleName = session.assignedVehicle?.name.orEmpty()
-                        val localEvent = StaffLoginNotificationItem(
-                            eventId = "local_login_${session.user.id}_$nowMs",
-                            staffId = session.user.id,
-                            staffName = session.user.displayName,
-                            vehicleName = vehicleName,
-                            loginTimestampMs = nowMs
-                        )
-                        _localStaffLoginEvents.value = (listOf(localEvent) + _localStaffLoginEvents.value).take(30)
-                        _latestStaffLoginBanner.value = localEvent
-                        appContext?.let { ctx ->
-                            StaffLoginNotificationManager.notifyStaffLogin(
-                                context = ctx,
-                                staffName = session.user.displayName,
-                                vehicleName = vehicleName,
-                                loginTimestampMs = nowMs
-                            )
-                        }
-                        val vehicleLabel = vehicleName.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
-                        _snackbarMessage.value = "Staff Login Alert: ${session.user.displayName}$vehicleLabel signed in"
-                        viewModelScope.launch {
-                            cloudSync?.recordStaffLoginEvent(
-                                staffId = session.user.id,
-                                staffName = session.user.displayName,
-                                vehicleName = vehicleName,
-                                loginTimestampMs = nowMs
-                            )
-                        }
+                        emitStaffLoginNotification(session)
                     }
                 } else {
                     _loginError.value = "Invalid or duplicate PIN for ${targetRole.name} '${localUser.displayName}'."
@@ -1169,10 +1265,16 @@ class AppViewModel(
                 } else {
                     sessionPreferences?.clearLoggedInUserId()
                 }
+                sessionPreferences?.armBiometricUnlock(
+                    userId = OWNER_VIEW_SYNTHETIC_USER_ID,
+                    role = UserRole.OWNER_VIEW,
+                    displayName = ownerSession.user.displayName
+                )
+                _shouldAutoPromptBiometric.value = false
                 _authSession.value = ownerSession
                 _loginError.value = null
                 _selectedDate.value = InventoryRepository.todayIsoDate()
-                _snackbarMessage.value = "Owner View password created. Read-only mode active."
+                _snackbarMessage.value = "Owner View password created. Fingerprint & Face Unlock enabled for next open."
             } finally {
                 _isAuthenticating.value = false
             }
@@ -1221,6 +1323,12 @@ class AppViewModel(
                 } else {
                     sessionPreferences?.clearLoggedInUserId()
                 }
+                sessionPreferences?.armBiometricUnlock(
+                    userId = OWNER_VIEW_SYNTHETIC_USER_ID,
+                    role = UserRole.OWNER_VIEW,
+                    displayName = ownerSession.user.displayName
+                )
+                _shouldAutoPromptBiometric.value = false
                 _authSession.value = ownerSession
                 _loginError.value = null
                 _selectedDate.value = InventoryRepository.todayIsoDate()
@@ -1331,10 +1439,16 @@ class AppViewModel(
                     } else {
                         sessionPreferences?.clearLoggedInUserId()
                     }
+                    sessionPreferences?.armBiometricUnlock(
+                        userId = session.user.id,
+                        role = UserRole.ADMIN,
+                        displayName = session.user.displayName
+                    )
+                    _shouldAutoPromptBiometric.value = false
                     _authSession.value = session
                     _loginError.value = null
                     _selectedDate.value = InventoryRepository.todayIsoDate()
-                    _snackbarMessage.value = "Admin username & password saved with Gmail recovery."
+                    _snackbarMessage.value = "Admin credentials saved. Fingerprint & Face Unlock enabled for next open."
                 }
             } finally {
                 _isAuthenticating.value = false
@@ -1400,6 +1514,12 @@ class AppViewModel(
                     } else {
                         sessionPreferences?.clearLoggedInUserId()
                     }
+                    sessionPreferences?.armBiometricUnlock(
+                        userId = session.user.id,
+                        role = UserRole.ADMIN,
+                        displayName = session.user.displayName
+                    )
+                    _shouldAutoPromptBiometric.value = false
                     _authSession.value = session
                     _loginError.value = null
                     _selectedDate.value = InventoryRepository.todayIsoDate()
@@ -1820,8 +1940,9 @@ class AppViewModel(
     fun logout() {
         _authSession.value = null
         _loginError.value = null
+        _shouldAutoPromptBiometric.value = false
         viewModelScope.launch {
-            sessionPreferences?.clearLoggedInUserId()
+            sessionPreferences?.disarmBiometricUnlockOnLogout()
             cloudSync?.clearLinkedStaffMetadata()
         }
     }
@@ -1876,6 +1997,10 @@ class AppViewModel(
                 TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
                 TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
                 TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+                TransactionType.VEHICLE_TRANSFER_FULL_OUT,
+                TransactionType.VEHICLE_TRANSFER_FULL_IN,
+                TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
+                TransactionType.VEHICLE_TRANSFER_EMPTY_IN,
                 TransactionType.CUSTOMER_EMPTY_PENDING_ADD
             )
             if (type !in allowedStaffTypes || vehicleId != session.assignedVehicle?.id) {
@@ -1912,6 +2037,44 @@ class AppViewModel(
                     customerName = customerName
                 )
             }
+            handleOperationResult(result)
+        }
+    }
+
+    fun transferBetweenVehicles(
+        sourceVehicleId: Long,
+        targetVehicleId: Long,
+        productId: Long,
+        fullQuantity: Int,
+        emptyQuantity: Int,
+        notes: String = ""
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert(
+                title = "Owner View (Read-Only)",
+                message = "Owner View is view-only. Vehicle transfers and entries are disabled."
+            )
+            return
+        }
+        if (session.user.role == UserRole.STAFF && sourceVehicleId != session.assignedVehicle?.id) {
+            _warningAlert.value = WarningAlert(
+                title = "Permission Denied",
+                message = "Staff can only transfer cylinders out of their own assigned vehicle."
+            )
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.transferBetweenVehicles(
+                businessDate = _selectedDate.value,
+                sourceVehicleId = sourceVehicleId,
+                targetVehicleId = targetVehicleId,
+                productId = productId,
+                fullQuantity = fullQuantity,
+                emptyQuantity = emptyQuantity,
+                actor = session.user,
+                notes = notes
+            )
             handleOperationResult(result)
         }
     }

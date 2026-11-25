@@ -527,11 +527,11 @@ fun StartupSplashOverlay(
                     }
                 ) {
                     Text(
-                        text = "INDUSTRIAL GASES & LPG FLEET",
+                        text = "C&A GAS • INDUSTRIAL & LPG FLEET",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.4.sp,
+                        letterSpacing = 1.2.sp,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                     )
                 }
@@ -540,15 +540,18 @@ fun StartupSplashOverlay(
 
                 // Staggered Headline Reveal
                 Text(
-                    text = "C&A GAS",
-                    style = MaterialTheme.typography.headlineLarge,
+                    text = "CONCORD & ATOZ\nGAS TRADING LLC",
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.graphicsLayer {
-                        alpha = titleProgress.value
-                        translationY = (1f - titleProgress.value) * 22.dp.toPx()
-                    }
+                    lineHeight = 32.sp,
+                    modifier = Modifier
+                        .testTag("splash_company_headline")
+                        .graphicsLayer {
+                            alpha = titleProgress.value
+                            translationY = (1f - titleProgress.value) * 22.dp.toPx()
+                        }
                 )
 
                 Spacer(Modifier.height(8.dp))

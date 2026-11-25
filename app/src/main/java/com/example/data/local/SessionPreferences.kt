@@ -26,6 +26,17 @@ data class AdminCredentialsState(
         get() = username.isNotBlank() && passwordHash.isNotBlank()
 }
 
+data class BiometricUnlockState(
+    val armed: Boolean = false,
+    val userId: Long = 0L,
+    val role: UserRole? = null,
+    val displayName: String = "",
+    val passwordRequiredAfterLogout: Boolean = false
+) {
+    val isReadyForBiometric: Boolean
+        get() = armed && !passwordRequiredAfterLogout && role != null
+}
+
 private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "concord_session_prefs")
 
 class SessionPreferences(private val context: Context) {
@@ -45,6 +56,11 @@ class SessionPreferences(private val context: Context) {
     private val keyAdminRecoveryEmail = stringPreferencesKey("admin_recovery_email")
     private val keyOwnerViewPasswordHash = stringPreferencesKey("owner_view_password_hash")
     private val keyLoggedInRole = stringPreferencesKey("logged_in_user_role")
+    private val keyBiometricArmed = booleanPreferencesKey("biometric_unlock_armed")
+    private val keyBiometricUserId = longPreferencesKey("biometric_unlock_user_id")
+    private val keyBiometricRole = stringPreferencesKey("biometric_unlock_role")
+    private val keyBiometricDisplayName = stringPreferencesKey("biometric_unlock_display_name")
+    private val keyBiometricRequiresPasswordAfterLogout = booleanPreferencesKey("biometric_requires_password_after_logout")
 
     val autoLoginEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
         .map { prefs -> prefs[keyAutoLoginEnabled] ?: true }
@@ -93,6 +109,18 @@ class SessionPreferences(private val context: Context) {
 
     val ownerViewConfiguredFlow: Flow<Boolean> = ownerViewPasswordHashFlow
         .map { it.isNotBlank() }
+
+    val biometricUnlockStateFlow: Flow<BiometricUnlockState> = context.sessionDataStore.data
+        .map { prefs ->
+            val rawRole = prefs[keyBiometricRole]
+            BiometricUnlockState(
+                armed = prefs[keyBiometricArmed] ?: false,
+                userId = prefs[keyBiometricUserId] ?: 0L,
+                role = UserRole.entries.firstOrNull { it.name == rawRole },
+                displayName = prefs[keyBiometricDisplayName].orEmpty(),
+                passwordRequiredAfterLogout = prefs[keyBiometricRequiresPasswordAfterLogout] ?: false
+            )
+        }
 
     suspend fun getLoggedInUserId(): Long? {
         return context.sessionDataStore.data
@@ -222,6 +250,39 @@ class SessionPreferences(private val context: Context) {
     suspend fun clearOwnerViewPasswordHash() {
         context.sessionDataStore.edit { prefs ->
             prefs.remove(keyOwnerViewPasswordHash)
+        }
+    }
+
+    suspend fun armBiometricUnlock(
+        userId: Long,
+        role: UserRole,
+        displayName: String
+    ) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyBiometricArmed] = true
+            prefs[keyBiometricUserId] = userId
+            prefs[keyBiometricRole] = role.name
+            prefs[keyBiometricDisplayName] = displayName.trim().take(100)
+            prefs[keyBiometricRequiresPasswordAfterLogout] = false
+        }
+    }
+
+    suspend fun disarmBiometricUnlockOnLogout() {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyBiometricArmed] = false
+            prefs[keyBiometricRequiresPasswordAfterLogout] = true
+            prefs.remove(keyLoggedInUserId)
+            prefs.remove(keyLoggedInRole)
+        }
+    }
+
+    suspend fun clearBiometricUnlockState() {
+        context.sessionDataStore.edit { prefs ->
+            prefs.remove(keyBiometricArmed)
+            prefs.remove(keyBiometricUserId)
+            prefs.remove(keyBiometricRole)
+            prefs.remove(keyBiometricDisplayName)
+            prefs.remove(keyBiometricRequiresPasswordAfterLogout)
         }
     }
 }

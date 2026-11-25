@@ -358,7 +358,9 @@ class InventoryRepository(
                     totalCustomerEmptyReceived = vRows.sumOf { it.customerEmptyReceived },
                     totalEmptyReturnedToStore = vRows.sumOf { it.emptyReturnedToStore },
                     totalEmptyBalance = vRows.sumOf { it.emptyBalance },
-                    totalComplaintReplaced = vRows.sumOf { it.complaintReplaced }
+                    totalComplaintReplaced = vRows.sumOf { it.complaintReplaced },
+                    totalFullTransferredOut = vRows.sumOf { it.fullTransferredOut },
+                    totalEmptyTransferredOut = vRows.sumOf { it.emptyTransferredOut }
                 )
             }
 
@@ -491,6 +493,7 @@ class InventoryRepository(
                 TransactionType.VEHICLE_CUSTOMER_SALE,
                 TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
                 TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
+                TransactionType.VEHICLE_TRANSFER_FULL_OUT,
                 TransactionType.VEHICLE_ADJUST_FULL_OUT -> {
                     if (liveVehicleFull < quantity) {
                         return@withTransaction OperationResult.InsufficientStock(
@@ -500,11 +503,12 @@ class InventoryRepository(
                     }
                 }
                 TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+                TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
                 TransactionType.VEHICLE_ADJUST_EMPTY_OUT -> {
                     if (liveVehicleEmpty < quantity) {
                         return@withTransaction OperationResult.InsufficientStock(
                             title = "Insufficient Vehicle Empty Stock",
-                            message = "${vehicle!!.name} cannot return $quantity empty $productLabel cylinders.\n\nAvailable Vehicle Empty Balance: $liveVehicleEmpty"
+                            message = "${vehicle!!.name} cannot move $quantity empty $productLabel cylinders.\n\nAvailable Vehicle Empty Balance: $liveVehicleEmpty"
                         )
                     }
                 }
@@ -590,6 +594,143 @@ class InventoryRepository(
         } else {
             emptyRes
         }
+    }
+
+    /**
+     * Atomically transfers Full and/or Empty cylinders directly from [sourceVehicleId] to [targetVehicleId].
+     * Strictly prevents negative source stock and records paired OUT/IN ledger entries on both vehicles.
+     */
+    suspend fun transferBetweenVehicles(
+        businessDate: String,
+        sourceVehicleId: Long,
+        targetVehicleId: Long,
+        productId: Long,
+        fullQuantity: Int,
+        emptyQuantity: Int,
+        actor: UserAccountEntity,
+        notes: String = ""
+    ): OperationResult {
+        if (sourceVehicleId == targetVehicleId) {
+            return OperationResult.ValidationError("Source and destination vehicles must be different.")
+        }
+        if (fullQuantity < 0 || emptyQuantity < 0 || (fullQuantity + emptyQuantity) <= 0) {
+            return OperationResult.ValidationError("Enter at least 1 Full or Empty cylinder to transfer.")
+        }
+        if (fullQuantity > 100000 || emptyQuantity > 100000) {
+            return OperationResult.ValidationError("Transfer quantity must be 100,000 or less.")
+        }
+
+        val insertedEntities = mutableListOf<StockTransactionEntity>()
+        var summaryMessage = ""
+
+        val localResult = db.withTransaction {
+            val product = productDao.getProductById(productId)
+                ?: return@withTransaction OperationResult.ValidationError("Selected product not found.")
+            val sourceVehicle = vehicleDao.getVehicleById(sourceVehicleId)
+                ?: return@withTransaction OperationResult.ValidationError("Source vehicle not found.")
+            val targetVehicle = vehicleDao.getVehicleById(targetVehicleId)
+                ?: return@withTransaction OperationResult.ValidationError("Destination vehicle not found.")
+
+            val openings = openingDao.getAllOpeningsOnce()
+            val allTxs = txDao.getAllTransactionsOnce()
+            val (liveSourceFull, liveSourceEmpty) = StockCalculator.currentVehicleBalance(
+                vehicleId = sourceVehicle.id,
+                productId = product.id,
+                openings = openings,
+                transactions = allTxs
+            )
+
+            val productLabel = "${product.category.displayName} • ${product.name}"
+            if (fullQuantity > liveSourceFull) {
+                return@withTransaction OperationResult.InsufficientStock(
+                    title = "Insufficient Vehicle Full Stock",
+                    message = "${sourceVehicle.name} does not have $fullQuantity Full $productLabel cylinders to transfer.\n\nAvailable Full: $liveSourceFull"
+                )
+            }
+            if (emptyQuantity > liveSourceEmpty) {
+                return@withTransaction OperationResult.InsufficientStock(
+                    title = "Insufficient Vehicle Empty Stock",
+                    message = "${sourceVehicle.name} does not have $emptyQuantity Empty $productLabel cylinders to transfer.\n\nAvailable Empty: $liveSourceEmpty"
+                )
+            }
+
+            val cleanNote = notes.trim()
+            val noteSuffix = if (cleanNote.isNotBlank()) " • $cleanNote" else ""
+            val nowMs = System.currentTimeMillis()
+
+            suspend fun insertPair(outType: TransactionType, inType: TransactionType, label: String, qty: Int, offsetMs: Long) {
+                val outEntity = StockTransactionEntity(
+                    businessDate = businessDate,
+                    timestamp = nowMs + offsetMs,
+                    type = outType,
+                    productId = product.id,
+                    vehicleId = sourceVehicle.id,
+                    vehicleName = sourceVehicle.name,
+                    staffId = actor.id,
+                    staffName = actor.displayName,
+                    quantity = qty,
+                    notes = "Transfer $label → ${targetVehicle.name}$noteSuffix".take(300),
+                    remoteId = CloudSyncRepository.generateRemoteTxId()
+                )
+                val outId = txDao.insert(outEntity)
+                insertedEntities.add(outEntity.copy(id = outId))
+
+                val inEntity = StockTransactionEntity(
+                    businessDate = businessDate,
+                    timestamp = nowMs + offsetMs + 1L,
+                    type = inType,
+                    productId = product.id,
+                    vehicleId = targetVehicle.id,
+                    vehicleName = targetVehicle.name,
+                    staffId = actor.id,
+                    staffName = actor.displayName,
+                    quantity = qty,
+                    notes = "Transfer $label ← ${sourceVehicle.name}$noteSuffix".take(300),
+                    remoteId = CloudSyncRepository.generateRemoteTxId()
+                )
+                val inId = txDao.insert(inEntity)
+                insertedEntities.add(inEntity.copy(id = inId))
+            }
+
+            if (fullQuantity > 0) {
+                insertPair(
+                    outType = TransactionType.VEHICLE_TRANSFER_FULL_OUT,
+                    inType = TransactionType.VEHICLE_TRANSFER_FULL_IN,
+                    label = "Full",
+                    qty = fullQuantity,
+                    offsetMs = 0L
+                )
+            }
+            if (emptyQuantity > 0) {
+                insertPair(
+                    outType = TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
+                    inType = TransactionType.VEHICLE_TRANSFER_EMPTY_IN,
+                    label = "Empty",
+                    qty = emptyQuantity,
+                    offsetMs = 2L
+                )
+            }
+
+            val parts = buildList {
+                if (fullQuantity > 0) add("$fullQuantity Full")
+                if (emptyQuantity > 0) add("$emptyQuantity Empty")
+            }.joinToString(" & ")
+            summaryMessage = "Transferred $parts ${product.name}: ${sourceVehicle.name} → ${targetVehicle.name}."
+            OperationResult.Success(summaryMessage)
+        }
+
+        if (localResult is OperationResult.Success && cloudSync != null && insertedEntities.isNotEmpty()) {
+            var anySyncFailed = false
+            for (tx in insertedEntities) {
+                if (cloudSync.pushTransaction(tx).isFailure) {
+                    anySyncFailed = true
+                }
+            }
+            if (anySyncFailed) {
+                return OperationResult.Success("$summaryMessage Saved locally (will sync when online).")
+            }
+        }
+        return localResult
     }
 
     /**
