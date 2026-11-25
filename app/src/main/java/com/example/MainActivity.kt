@@ -63,6 +63,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.audio.SoundEffectsManager
+import com.example.audio.StartupSoundStyle
 import com.example.auth.BiometricAuthManager
 import com.example.auth.BiometricAvailability
 import com.example.auth.GoogleAuthScreen
@@ -117,6 +118,8 @@ class MainActivity : FragmentActivity() {
                 .collectAsStateWithLifecycle(initialValue = false)
             val soundEnabled by app.container.sessionPreferences.soundEnabledFlow
                 .collectAsStateWithLifecycle(initialValue = true)
+            val startupSoundStyle by app.container.sessionPreferences.startupSoundStyleFlow
+                .collectAsStateWithLifecycle(initialValue = StartupSoundStyle.ROYAL_FANFARE)
             val rootScope = rememberCoroutineScope()
             val effectiveDarkMode = darkModeEnabled || themePreset == ThemePreset.MIDNIGHT_DARK
             var showSplash by rememberSaveable { mutableStateOf(true) }
@@ -171,12 +174,16 @@ class MainActivity : FragmentActivity() {
 
                     if (showSplash) {
                         LaunchedEffect(Unit) {
-                            SoundEffectsManager.playStartupChime(soundEnabled)
+                            SoundEffectsManager.playStartupChime(soundEnabled, startupSoundStyle)
                         }
                         StartupSplashOverlay(
                             themePreset = themePreset,
                             soundEnabled = soundEnabled,
-                            onSplashFinished = { showSplash = false }
+                            startupSoundStyle = startupSoundStyle,
+                            onSplashFinished = {
+                                SoundEffectsManager.stopStartupSound()
+                                showSplash = false
+                            }
                         )
                     }
                 }
@@ -207,6 +214,7 @@ fun ConcordGasRootApp(
     val darkModeEnabled by viewModel.darkModeEnabled.collectAsStateWithLifecycle()
     val effectiveDarkMode = darkModeEnabled || themePreset == ThemePreset.MIDNIGHT_DARK
     val soundEnabled by viewModel.soundEnabled.collectAsStateWithLifecycle()
+    val startupSoundStyle by viewModel.startupSoundStyle.collectAsStateWithLifecycle()
     val autoLoginEnabled by viewModel.autoLoginEnabled.collectAsStateWithLifecycle()
     val autoLogoutMode by viewModel.autoLogoutMode.collectAsStateWithLifecycle()
     val users by viewModel.users.collectAsStateWithLifecycle()
@@ -811,6 +819,7 @@ fun ConcordGasRootApp(
                                         themePreset = themePreset,
                                         darkModeEnabled = effectiveDarkMode,
                                         soundEnabled = soundEnabled,
+                                        startupSoundStyle = startupSoundStyle,
                                         autoLoginEnabled = autoLoginEnabled,
                                         autoLogoutMode = autoLogoutMode,
                                         adminCredentials = adminCredentials,
@@ -829,6 +838,12 @@ fun ConcordGasRootApp(
                                         onSoundEnabledChanged = { enabled ->
                                             viewModel.setSoundEnabled(enabled)
                                             if (enabled) SoundEffectsManager.playSuccessChime(true)
+                                        },
+                                        onStartupSoundStyleChanged = { style ->
+                                            viewModel.setStartupSoundStyle(style)
+                                            if (soundEnabled) {
+                                                SoundEffectsManager.playStartupChime(true, style)
+                                            }
                                         },
                                         onAutoLoginChanged = viewModel::setAutoLoginEnabled,
                                         onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,

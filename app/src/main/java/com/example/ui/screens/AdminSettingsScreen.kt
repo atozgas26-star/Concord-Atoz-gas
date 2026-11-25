@@ -44,9 +44,11 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockClock
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
@@ -94,6 +96,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.audio.StartupSoundStyle
 import com.example.data.local.AdminCredentialsState
 import com.example.data.local.ProductEntity
 import com.example.data.local.UserAccountEntity
@@ -133,6 +136,7 @@ fun AdminSettingsScreen(
     themePreset: ThemePreset = ThemePreset.EMERALD_CORPORATE,
     darkModeEnabled: Boolean = false,
     soundEnabled: Boolean = true,
+    startupSoundStyle: StartupSoundStyle = StartupSoundStyle.ROYAL_FANFARE,
     autoLoginEnabled: Boolean = true,
     autoLogoutMode: AutoLogoutMode = AutoLogoutMode.OFF,
     adminCredentials: AdminCredentialsState = AdminCredentialsState(),
@@ -143,6 +147,7 @@ fun AdminSettingsScreen(
     onThemePresetChanged: (ThemePreset) -> Unit = {},
     onDarkModeChanged: (Boolean) -> Unit = {},
     onSoundEnabledChanged: (Boolean) -> Unit = {},
+    onStartupSoundStyleChanged: (StartupSoundStyle) -> Unit = {},
     onAutoLoginChanged: (Boolean) -> Unit = {},
     onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
     onUpdateAdminCredentials: (currentPassword: String, newUsername: String, newPassword: String, newRecoveryEmail: String) -> Unit = { _, _, _, _ -> },
@@ -886,11 +891,51 @@ fun AdminSettingsScreen(
                                 }
                             }
 
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = "Launch Screen Sound Style",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Launch Screen Sound Style (Tap to Change & Listen)",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                StartupSoundStyle.entries.forEach { style ->
+                                    FilterChip(
+                                        selected = startupSoundStyle == style,
+                                        onClick = { onStartupSoundStyleChanged(style) },
+                                        label = { Text(style.label) },
+                                        modifier = Modifier.testTag("sound_style_chip_${style.name.lowercase()}")
+                                    )
+                                }
+                            }
+
                             OutlinedButton(
                                 onClick = onPreviewStartupSplash,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("preview_10s_launch_button")
                             ) {
-                                Text("Preview 3s Launch Screen & Sound")
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Preview 10s Launch Screen & Sound")
                             }
                         }
                     }

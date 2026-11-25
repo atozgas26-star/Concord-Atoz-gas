@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.audio.StartupSoundStyle
 import com.example.data.model.AutoLogoutMode
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.ThemePreset
@@ -46,6 +47,7 @@ class SessionPreferences(private val context: Context) {
     private val keyAutoLogoutMode = stringPreferencesKey("auto_logout_mode")
     private val keyThemePreset = stringPreferencesKey("theme_preset")
     private val keySoundEnabled = booleanPreferencesKey("sound_enabled")
+    private val keyStartupSoundStyle = stringPreferencesKey("startup_sound_style")
     private val keyAutoDriveBackupEnabled = booleanPreferencesKey("auto_drive_backup_enabled")
     private val keyLastDriveBackupAtMs = longPreferencesKey("last_drive_backup_at_ms")
     private val keyLastDriveFileId = stringPreferencesKey("last_drive_file_id")
@@ -79,6 +81,12 @@ class SessionPreferences(private val context: Context) {
 
     val soundEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
         .map { prefs -> prefs[keySoundEnabled] ?: true }
+
+    val startupSoundStyleFlow: Flow<StartupSoundStyle> = context.sessionDataStore.data
+        .map { prefs ->
+            val raw = prefs[keyStartupSoundStyle]
+            StartupSoundStyle.entries.firstOrNull { it.name == raw } ?: StartupSoundStyle.ROYAL_FANFARE
+        }
 
     val autoDriveBackupEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
         .map { prefs -> prefs[keyAutoDriveBackupEnabled] ?: false }
@@ -174,6 +182,12 @@ class SessionPreferences(private val context: Context) {
     suspend fun setSoundEnabled(enabled: Boolean) {
         context.sessionDataStore.edit { prefs ->
             prefs[keySoundEnabled] = enabled
+        }
+    }
+
+    suspend fun setStartupSoundStyle(style: StartupSoundStyle) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyStartupSoundStyle] = style.name
         }
     }
 

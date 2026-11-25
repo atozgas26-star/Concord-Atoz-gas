@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.audio.StartupSoundStyle
 import com.example.auth.AdminCredentialCrypto
 import com.example.auth.AdminRecoveryUiState
 import com.example.auth.BiometricAuthManager
@@ -166,6 +167,10 @@ class AppViewModel(
     val soundEnabled: StateFlow<Boolean> =
         (sessionPreferences?.soundEnabledFlow ?: flowOf(true))
             .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val startupSoundStyle: StateFlow<StartupSoundStyle> =
+        (sessionPreferences?.startupSoundStyleFlow ?: flowOf(StartupSoundStyle.ROYAL_FANFARE))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, StartupSoundStyle.ROYAL_FANFARE)
 
     val autoLoginEnabled: StateFlow<Boolean> =
         (sessionPreferences?.autoLoginEnabledFlow ?: flowOf(true))
@@ -971,6 +976,10 @@ class AppViewModel(
 
     fun setSoundEnabled(enabled: Boolean) {
         viewModelScope.launch { sessionPreferences?.setSoundEnabled(enabled) }
+    }
+
+    fun setStartupSoundStyle(style: StartupSoundStyle) {
+        viewModelScope.launch { sessionPreferences?.setStartupSoundStyle(style) }
     }
 
     fun setAutoLoginEnabled(enabled: Boolean) {
