@@ -5,10 +5,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.LowStockAlertState
 import com.example.data.model.ThemePreset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -26,6 +28,7 @@ class SessionPreferences(private val context: Context) {
     private val keyAutoDriveBackupEnabled = booleanPreferencesKey("auto_drive_backup_enabled")
     private val keyLastDriveBackupAtMs = longPreferencesKey("last_drive_backup_at_ms")
     private val keyLastDriveFileId = stringPreferencesKey("last_drive_file_id")
+    private val keyLowStockThreshold = intPreferencesKey("low_stock_threshold")
 
     val autoLoginEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
         .map { prefs -> prefs[keyAutoLoginEnabled] ?: true }
@@ -53,6 +56,9 @@ class SessionPreferences(private val context: Context) {
 
     val lastDriveFileIdFlow: Flow<String> = context.sessionDataStore.data
         .map { prefs -> prefs[keyLastDriveFileId] ?: "" }
+
+    val lowStockThresholdFlow: Flow<Int> = context.sessionDataStore.data
+        .map { prefs -> prefs[keyLowStockThreshold] ?: LowStockAlertState.DEFAULT_LOW_STOCK_THRESHOLD }
 
     suspend fun getLoggedInUserId(): Long? {
         return context.sessionDataStore.data
@@ -106,6 +112,13 @@ class SessionPreferences(private val context: Context) {
         context.sessionDataStore.edit { prefs ->
             prefs[keyLastDriveBackupAtMs] = timestampMs
             prefs[keyLastDriveFileId] = fileId
+        }
+    }
+
+    suspend fun setLowStockThreshold(threshold: Int) {
+        val safeValue = threshold.coerceIn(0, 999)
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyLowStockThreshold] = safeValue
         }
     }
 }

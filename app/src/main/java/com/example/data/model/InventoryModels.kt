@@ -123,6 +123,36 @@ data class AuthSession(
     val assignedVehicle: VehicleEntity?
 )
 
+data class LowStockProductItem(
+    val productId: Long,
+    val productName: String,
+    val category: ProductCategory,
+    val storeFullBalance: Int,
+    val vehiclesFullBalance: Int,
+    val totalFullBalance: Int,
+    val threshold: Int
+)
+
+data class LowStockAlertState(
+    val isAlertVisible: Boolean = false,
+    val threshold: Int = DEFAULT_LOW_STOCK_THRESHOLD,
+    val lowStockItems: List<LowStockProductItem> = emptyList(),
+    val isDismissedForCurrentAlert: Boolean = false
+) {
+    val activeAlertCount: Int
+        get() = lowStockItems.size
+
+    val outOfStockCount: Int
+        get() = lowStockItems.count { it.storeFullBalance <= 0 }
+
+    val shouldShowBanner: Boolean
+        get() = isAlertVisible && !isDismissedForCurrentAlert && lowStockItems.isNotEmpty()
+
+    companion object {
+        const val DEFAULT_LOW_STOCK_THRESHOLD = 5
+    }
+}
+
 sealed class OperationResult {
     data class Success(val message: String) : OperationResult()
     data class InsufficientStock(

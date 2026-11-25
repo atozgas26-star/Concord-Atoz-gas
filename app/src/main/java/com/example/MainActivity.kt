@@ -198,6 +198,7 @@ fun ConcordGasRootApp(
     val driveConsentRequest by viewModel.driveConsentRequest.collectAsStateWithLifecycle()
     val pendingDriveRestoreJson by viewModel.pendingDriveRestoreJson.collectAsStateWithLifecycle()
     val permissionsStatus by viewModel.permissionsStatus.collectAsStateWithLifecycle()
+    val lowStockAlert by viewModel.lowStockAlertState.collectAsStateWithLifecycle()
 
     // Subscribe to report flows so report tables stay live
     viewModel.monthlySalesReport.collectAsStateWithLifecycle()
@@ -501,6 +502,7 @@ fun ConcordGasRootApp(
                                     products = allProducts,
                                     pendingCustomerCount = allCustomerPendingRows.count { it.pendingEmptyBalance > 0 },
                                     totalPendingEmptyCount = allCustomerPendingRows.sumOf { it.pendingEmptyBalance.coerceAtLeast(0) },
+                                    lowStockAlert = lowStockAlert,
                                     onDateSelected = viewModel::setSelectedDate,
                                     onOpenInventory = { viewingCompanyInventory = true },
                                     onOpenStore = { currentTab = AdminNavTab.STORE },
@@ -511,6 +513,8 @@ fun ConcordGasRootApp(
                                         viewingVehicleDetail = true
                                     },
                                     onOpenReports = { currentTab = AdminNavTab.REPORTS },
+                                    onUpdateLowStockThreshold = viewModel::updateLowStockThreshold,
+                                    onDismissLowStockAlert = viewModel::dismissLowStockAlert,
                                     onUpdateTransaction = viewModel::updateTransaction,
                                     onLogout = viewModel::logout
                                 )

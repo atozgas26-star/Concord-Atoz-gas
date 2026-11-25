@@ -7,6 +7,7 @@ import com.example.audio.SoundEffectsManager
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.SessionPreferences
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.CompanyStockRow
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ReportType
@@ -749,5 +750,79 @@ class ExampleRobolectricTest {
         vm.recordTransaction(TransactionType.STORE_PURCHASE_FULL, oxygen.id, null, 10)
         assertEquals("Permission Denied", vm.warningAlert.value?.title)
         assertTrue(repository.transactionsFlow.first().isEmpty())
+
+        // 6. Staff blocked from changing low stock threshold
+        vm.updateLowStockThreshold(12)
+        assertEquals("Admin Only", vm.warningAlert.value?.title)
+    }
+
+    @Test
+    fun `checkLowStockLevels updates StateFlow when product stock drops below threshold and supports dismiss and retrigger`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        prefs.setLowStockThreshold(5)
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            appContext = context
+        )
+        val deadline = System.currentTimeMillis() + 5000L
+        while (!vm.isInitialized.value && System.currentTimeMillis() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+
+        val products = repository.activeProductsFlow.first()
+        val oxygen = products.first { it.name == "Oxygen" }
+        val argon = products.first { it.name == "Argon" }
+
+        // 1. All products above threshold -> no alert shown
+        val healthyRows = listOf(
+            CompanyStockRow(oxygen, storeFull = 10, vehiclesFull = 2, totalFull = 12, storeEmpty = 3, vehiclesEmpty = 1, totalEmpty = 4),
+            CompanyStockRow(argon, storeFull = 5, vehiclesFull = 0, totalFull = 5, storeEmpty = 0, vehiclesEmpty = 0, totalEmpty = 0)
+        )
+        val healthyState = vm.checkLowStockLevels(stockRows = healthyRows, threshold = 5)
+        assertFalse(healthyState.isAlertVisible)
+        assertFalse(healthyState.shouldShowBanner)
+        assertTrue(vm.lowStockAlertState.value.lowStockItems.isEmpty())
+
+        // 2. Oxygen drops to 3 (< 5) -> StateFlow emits active alert
+        val droppedRows = listOf(
+            CompanyStockRow(oxygen, storeFull = 3, vehiclesFull = 2, totalFull = 5, storeEmpty = 3, vehiclesEmpty = 1, totalEmpty = 4),
+            CompanyStockRow(argon, storeFull = 6, vehiclesFull = 0, totalFull = 6, storeEmpty = 0, vehiclesEmpty = 0, totalEmpty = 0)
+        )
+        vm.checkLowStockLevels(stockRows = droppedRows, threshold = 5)
+        val alert1 = vm.lowStockAlertState.value
+        assertTrue(alert1.isAlertVisible)
+        assertTrue(alert1.shouldShowBanner)
+        assertEquals(1, alert1.activeAlertCount)
+        assertEquals("Oxygen", alert1.lowStockItems.first().productName)
+        assertEquals(3, alert1.lowStockItems.first().storeFullBalance)
+
+        // 3. Dismissing alert keeps banner hidden while stock stays identical
+        vm.dismissLowStockAlert()
+        assertFalse(vm.lowStockAlertState.value.shouldShowBanner)
+        vm.checkLowStockLevels(stockRows = droppedRows, threshold = 5)
+        assertFalse(vm.lowStockAlertState.value.shouldShowBanner)
+
+        // 4. Stock drops further (Oxygen -> 0) -> banner automatically re-appears
+        val outOfStockRows = listOf(
+            CompanyStockRow(oxygen, storeFull = 0, vehiclesFull = 2, totalFull = 2, storeEmpty = 3, vehiclesEmpty = 1, totalEmpty = 4),
+            CompanyStockRow(argon, storeFull = 6, vehiclesFull = 0, totalFull = 6, storeEmpty = 0, vehiclesEmpty = 0, totalEmpty = 0)
+        )
+        vm.checkLowStockLevels(stockRows = outOfStockRows, threshold = 5)
+        val alert2 = vm.lowStockAlertState.value
+        assertTrue(alert2.shouldShowBanner)
+        assertEquals(1, alert2.outOfStockCount)
+
+        // 5. Threshold 0 disables low-stock alerts cleanly
+        vm.checkLowStockLevels(stockRows = outOfStockRows, threshold = 0)
+        assertFalse(vm.lowStockAlertState.value.isAlertVisible)
+        assertFalse(vm.lowStockAlertState.value.shouldShowBanner)
     }
 }

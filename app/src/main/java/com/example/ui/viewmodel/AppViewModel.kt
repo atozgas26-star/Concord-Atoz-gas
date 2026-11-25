@@ -16,6 +16,8 @@ import com.example.data.model.AutoLogoutMode
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.DashboardSummary
+import com.example.data.model.LowStockAlertState
+import com.example.data.model.LowStockProductItem
 import com.example.data.model.MonthlyDailySaleRow
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
@@ -146,6 +148,15 @@ class AppViewModel(
     private val _permissionsStatus = MutableStateFlow(AppPermissionsStatus())
     val permissionsStatus: StateFlow<AppPermissionsStatus> = _permissionsStatus.asStateFlow()
 
+    private val _lowStockThreshold = MutableStateFlow(LowStockAlertState.DEFAULT_LOW_STOCK_THRESHOLD)
+    val lowStockThreshold: StateFlow<Int> = _lowStockThreshold.asStateFlow()
+
+    private val _lowStockAlertState = MutableStateFlow(LowStockAlertState())
+    val lowStockAlertState: StateFlow<LowStockAlertState> = _lowStockAlertState.asStateFlow()
+
+    private var lastAlertSignature: List<Pair<Long, Int>> = emptyList()
+    private var latestCompanyStockRows: List<CompanyStockRow> = emptyList()
+
     private var pendingDriveConsentAction = PendingDriveConsentAction.NONE
     private var autoDriveBackupJob: Job? = null
 
@@ -260,6 +271,102 @@ class AppViewModel(
             _isInitialized.value = true
             cloudSync?.connectForSignedInUser()
             loadDriveAndPermissionState()
+        }
+
+        if (sessionPreferences != null) {
+            viewModelScope.launch {
+                sessionPreferences.lowStockThresholdFlow.collect { savedThreshold ->
+                    _lowStockThreshold.value = savedThreshold
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            combine(
+                _selectedDate.flatMapLatest { date -> repository.observeCompanyStockReport(date) },
+                _lowStockThreshold
+            ) { stockRows, threshold ->
+                stockRows to threshold
+            }.collect { (stockRows, threshold) ->
+                latestCompanyStockRows = stockRows
+                checkLowStockLevels(stockRows = stockRows, threshold = threshold)
+            }
+        }
+    }
+
+    /**
+     * Checks whether active product store stock levels drop below the pre-set threshold
+     * and updates [lowStockAlertState] so the Dashboard can surface an actionable alert.
+     */
+    fun checkLowStockLevels(
+        stockRows: List<CompanyStockRow> = latestCompanyStockRows.ifEmpty { companyStockReport.value },
+        threshold: Int = _lowStockThreshold.value
+    ): LowStockAlertState {
+        val safeThreshold = threshold.coerceIn(0, 999)
+        val lowItems = if (safeThreshold <= 0) {
+            emptyList()
+        } else {
+            stockRows
+                .filter { it.product.isActive && it.storeFull < safeThreshold }
+                .sortedWith(compareBy<CompanyStockRow> { it.storeFull }.thenBy { it.product.name })
+                .map { row ->
+                    LowStockProductItem(
+                        productId = row.product.id,
+                        productName = row.product.name,
+                        category = row.product.category,
+                        storeFullBalance = row.storeFull,
+                        vehiclesFullBalance = row.vehiclesFull,
+                        totalFullBalance = row.totalFull,
+                        threshold = safeThreshold
+                    )
+                }
+        }
+
+        val currentSignature = lowItems.map { it.productId to it.storeFullBalance }
+        val previousState = _lowStockAlertState.value
+        val keepDismissed = previousState.isDismissedForCurrentAlert &&
+            previousState.threshold == safeThreshold &&
+            currentSignature == lastAlertSignature &&
+            lowItems.isNotEmpty()
+
+        lastAlertSignature = currentSignature
+        val updatedState = LowStockAlertState(
+            isAlertVisible = lowItems.isNotEmpty(),
+            threshold = safeThreshold,
+            lowStockItems = lowItems,
+            isDismissedForCurrentAlert = keepDismissed
+        )
+        _lowStockAlertState.value = updatedState
+        return updatedState
+    }
+
+    fun updateLowStockThreshold(newThreshold: Int) {
+        val session = _authSession.value
+        if (session != null && session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert(
+                "Admin Only",
+                "Only Admin can change the low stock alert threshold."
+            )
+            return
+        }
+        val safeThreshold = newThreshold.coerceIn(0, 999)
+        _lowStockThreshold.value = safeThreshold
+        lastAlertSignature = emptyList()
+        checkLowStockLevels(threshold = safeThreshold)
+        viewModelScope.launch {
+            sessionPreferences?.setLowStockThreshold(safeThreshold)
+            _snackbarMessage.value = if (safeThreshold == 0) {
+                "Low stock alert muted (threshold set to 0)."
+            } else {
+                "Low stock alert threshold updated to $safeThreshold full cylinders."
+            }
+        }
+    }
+
+    fun dismissLowStockAlert() {
+        val current = _lowStockAlertState.value
+        if (current.isAlertVisible) {
+            _lowStockAlertState.value = current.copy(isDismissedForCurrentAlert = true)
         }
     }
 

@@ -1,11 +1,18 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,12 +26,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
@@ -32,15 +43,25 @@ import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,11 +75,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.model.DashboardSummary
+import com.example.data.model.LowStockAlertState
 import com.example.data.model.StoreStockRow
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.DateSelectorBar
@@ -92,17 +115,21 @@ fun AdminDashboardScreen(
     products: List<ProductEntity> = emptyList(),
     pendingCustomerCount: Int = 0,
     totalPendingEmptyCount: Int = 0,
+    lowStockAlert: LowStockAlertState = LowStockAlertState(),
     onDateSelected: (String) -> Unit,
     onOpenInventory: () -> Unit,
     onOpenStore: () -> Unit,
     onOpenVehicles: () -> Unit,
     onOpenVehicleDetail: (Long) -> Unit,
     onOpenReports: () -> Unit,
+    onUpdateLowStockThreshold: (Int) -> Unit = {},
+    onDismissLowStockAlert: () -> Unit = {},
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onLogout: () -> Unit
 ) {
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var showCalculator by remember { mutableStateOf(false) }
+    var showThresholdDialog by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
@@ -182,6 +209,22 @@ fun AdminDashboardScreen(
                                 .testTag("quick_nav_vehicles")
                         )
                     }
+                }
+            }
+
+            // Reactive Low Stock Alert Card
+            item {
+                AnimatedVisibility(
+                    visible = lowStockAlert.shouldShowBanner,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    LowStockAlertBannerCard(
+                        alertState = lowStockAlert,
+                        onOpenStore = onOpenStore,
+                        onConfigureThreshold = { showThresholdDialog = true },
+                        onDismiss = onDismissLowStockAlert
+                    )
                 }
             }
 
@@ -318,7 +361,7 @@ fun AdminDashboardScreen(
                     }
                 }
 
-                // Reports + Calculate Shortcut Row
+                // Reports + Calculate + Alert Limit Shortcut Row
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -332,15 +375,26 @@ fun AdminDashboardScreen(
                         ) {
                             Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Reports (PDF/Excel)")
+                            Text("Reports", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         FilledTonalButton(
                             onClick = { showCalculator = true },
                             modifier = Modifier.testTag("dashboard_calculate_button")
                         ) {
                             Icon(Icons.Default.Calculate, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Calculate")
+                            Spacer(Modifier.width(4.dp))
+                            Text("Calc", maxLines = 1)
+                        }
+                        FilledTonalButton(
+                            onClick = { showThresholdDialog = true },
+                            modifier = Modifier.testTag("dashboard_threshold_button")
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = "Low Stock Threshold", modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = if (lowStockAlert.threshold == 0) "Min: Off" else "Min: ${lowStockAlert.threshold}",
+                                maxLines = 1
+                            )
                         }
                     }
                 }
@@ -548,6 +602,17 @@ fun AdminDashboardScreen(
         )
     }
 
+    if (showThresholdDialog) {
+        LowStockThresholdDialog(
+            currentThreshold = lowStockAlert.threshold,
+            onDismiss = { showThresholdDialog = false },
+            onSave = { newVal ->
+                onUpdateLowStockThreshold(newVal)
+                showThresholdDialog = false
+            }
+        )
+    }
+
     editingTransaction?.let { tx ->
         EditTransactionDialog(
             transaction = tx,
@@ -558,6 +623,269 @@ fun AdminDashboardScreen(
             }
         )
     }
+}
+
+@Composable
+private fun LowStockAlertBannerCard(
+    alertState: LowStockAlertState,
+    onOpenStore: () -> Unit,
+    onConfigureThreshold: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val visibleItems = if (expanded) alertState.lowStockItems else alertState.lowStockItems.take(3)
+    val hasOutOfStock = alertState.outOfStockCount > 0
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("dashboard_low_stock_alert_card"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = AmberContainer),
+        border = BorderStroke(1.5.dp, if (hasOutOfStock) BrandRedSecondary else AmberWarning)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(if (hasOutOfStock) BrandRedSecondary else AmberWarning),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WarningAmber,
+                            contentDescription = "Low Stock Alert",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Low Stock Alert",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = AmberOnContainer
+                            )
+                            Surface(
+                                color = if (hasOutOfStock) BrandRedSecondary else AmberWarning,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "${alertState.activeAlertCount} Low",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Store full stock below ${alertState.threshold} cylinders" +
+                                if (hasOutOfStock) " • ${alertState.outOfStockCount} out of stock" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AmberOnContainer
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("dismiss_low_stock_alert")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss low stock alert",
+                        tint = AmberOnContainer
+                    )
+                }
+            }
+
+            HorizontalDivider(color = AmberWarning.copy(alpha = 0.35f))
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                visibleItems.forEach { item ->
+                    val isZero = item.storeFullBalance <= 0
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${item.category.shortCode} • ${item.productName}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = AmberOnContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Fleet: ${item.vehiclesFullBalance} Full • Total: ${item.totalFullBalance}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMono,
+                                color = AmberOnContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                        Surface(
+                            color = if (isZero) BrandRedSecondary else AmberWarning,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = if (isZero) "OUT (0)" else "Store: ${item.storeFullBalance}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMono,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (alertState.lowStockItems.size > 3) {
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier.testTag("low_stock_expand_toggle")
+                ) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = AmberOnContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (expanded) "Show fewer products" else "Show all ${alertState.lowStockItems.size} low-stock products",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = AmberOnContainer
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onOpenStore,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("low_stock_restock_button")
+                ) {
+                    Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Restock Store")
+                }
+                OutlinedButton(
+                    onClick = onConfigureThreshold,
+                    border = BorderStroke(1.dp, AmberOnContainer.copy(alpha = 0.5f)),
+                    modifier = Modifier.testTag("low_stock_threshold_button")
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = null, tint = AmberOnContainer, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Min: ${alertState.threshold}", color = AmberOnContainer)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LowStockThresholdDialog(
+    currentThreshold: Int,
+    onDismiss: () -> Unit,
+    onSave: (Int) -> Unit
+) {
+    var thresholdText by remember(currentThreshold) { mutableStateOf(currentThreshold.toString()) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Low Stock Alert Threshold") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Alert on Dashboard whenever any active product's Store Full balance drops below this number (set 0 to disable alerts).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = thresholdText,
+                    onValueChange = { input ->
+                        if (input.length <= 3 && input.all { it.isDigit() }) {
+                            thresholdText = input
+                            errorText = null
+                        }
+                    },
+                    label = { Text("Minimum Full Cylinders") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = errorText != null,
+                    supportingText = errorText?.let { { Text(it) } },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("low_stock_threshold_input")
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(0 to "Off (0)", 3 to "3", 5 to "5", 10 to "10", 20 to "20").forEach { (preset, label) ->
+                        FilterChip(
+                            selected = thresholdText == preset.toString(),
+                            onClick = {
+                                thresholdText = preset.toString()
+                                errorText = null
+                            },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val parsed = thresholdText.toIntOrNull()
+                    if (parsed == null || parsed < 0 || parsed > 999) {
+                        errorText = "Enter a number between 0 and 999"
+                    } else {
+                        onSave(parsed)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                modifier = Modifier.testTag("save_low_stock_threshold_button")
+            ) {
+                Text("Save Threshold")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
