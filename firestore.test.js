@@ -658,6 +658,50 @@ test("Restricted Admin Settings and Admin Reports block Staff reads and writes",
   );
 
   await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("admin_reports")
+      .doc("STAFF_PRODUCT_SALES_2026_11")
+      .set({
+        reportId: "STAFF_PRODUCT_SALES_2026_11",
+        reportType: "STAFF_PRODUCT_SALES",
+        reportTitle: "Staff Sales Report — Product / Cylinder Wise",
+        subtitle: "Monthly (2026-11) • Sold: 42",
+        businessDate: "2026-11-25",
+        yearMonth: "2026-11",
+        generatedBy: "Ragavan",
+        rowCount: 8,
+        summaryTotals: "TOTAL | 8 Entries | 42",
+        createdByUid: ADMIN_UID,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+  );
+
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("admin_reports")
+      .doc("PURCHASE_COMPANY_PRODUCT_2026_11")
+      .set({
+        reportId: "PURCHASE_COMPANY_PRODUCT_2026_11",
+        reportType: "PURCHASE_COMPANY_PRODUCT",
+        reportTitle: "Purchase Company Report — Product / Cylinder Wise",
+        subtitle: "Monthly (2026-11) • Full: 80 | Empty: 10",
+        businessDate: "2026-11-25",
+        yearMonth: "2026-11",
+        generatedBy: "Ragavan",
+        rowCount: 6,
+        summaryTotals: "TOTAL | 6 Cylinders | 90",
+        createdByUid: ADMIN_UID,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+  );
+
+  await assertSucceeds(
     adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_reports").get()
   );
 

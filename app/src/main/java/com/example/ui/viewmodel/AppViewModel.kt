@@ -2365,6 +2365,280 @@ class AppViewModel(
                 }
             }
 
+            ReportType.STAFF_PRODUCT_SALES -> {
+                val selectedVeh = vehicles.value.firstOrNull { it.id == vehicleFilterId }
+                val periodLabel = if (purchaseDailyMode) "Daily ($date)" else "Monthly ($ym)"
+                val productMap = allProducts.value.associateBy { it.id }
+                val vehicleMap = vehicles.value.associateBy { it.id }
+
+                val relevantTxs = allTransactionDisplayItems.value.map { it.transaction }.filter { t ->
+                    val periodMatch = if (purchaseDailyMode) {
+                        t.businessDate == date
+                    } else {
+                        t.businessDate.startsWith(ym)
+                    }
+                    val vehMatch = t.vehicleId != null && (selectedVeh == null || t.vehicleId == selectedVeh.id)
+                    periodMatch && vehMatch
+                }
+
+                data class StaffProdAgg(
+                    var fullRecd: Int = 0,
+                    var regSales: Int = 0,
+                    var newCustSales: Int = 0,
+                    var custEmpty: Int = 0,
+                    var compRepl: Int = 0
+                ) {
+                    val totalSold: Int get() = regSales + newCustSales
+                    val hasAny: Boolean get() = fullRecd > 0 || totalSold > 0 || custEmpty > 0 || compRepl > 0
+                }
+
+                val aggMap = linkedMapOf<Pair<Long, Long>, StaffProdAgg>()
+                relevantTxs.forEach { t ->
+                    val vId = t.vehicleId ?: return@forEach
+                    val agg = aggMap.getOrPut(vId to t.productId) { StaffProdAgg() }
+                    when (t.type) {
+                        TransactionType.VEHICLE_FULL_RECEIVED -> agg.fullRecd += t.quantity
+                        TransactionType.VEHICLE_CUSTOMER_SALE -> agg.regSales += t.quantity
+                        TransactionType.VEHICLE_NEW_CUSTOMER_SALE -> agg.newCustSales += t.quantity
+                        TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER -> agg.custEmpty += t.quantity
+                        TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE -> agg.compRepl += t.quantity
+                        else -> Unit
+                    }
+                }
+
+                val sortedProducts = allProducts.value.sortedWith(
+                    compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.name })
+                )
+
+                var grandRecd = 0
+                var grandReg = 0
+                var grandNew = 0
+                var grandSold = 0
+                var grandEmp = 0
+                var grandComp = 0
+
+                if (selectedVeh != null) {
+                    val productRows = sortedProducts.filter { p ->
+                        p.isActive || (aggMap[selectedVeh.id to p.id]?.hasAny == true)
+                    }.map { p ->
+                        val a = aggMap[selectedVeh.id to p.id] ?: StaffProdAgg()
+                        grandRecd += a.fullRecd
+                        grandReg += a.regSales
+                        grandNew += a.newCustSales
+                        grandSold += a.totalSold
+                        grandEmp += a.custEmpty
+                        grandComp += a.compRepl
+                        listOf(
+                            p.category.displayName,
+                            p.name,
+                            a.fullRecd.toString(),
+                            a.regSales.toString(),
+                            a.newCustSales.toString(),
+                            a.totalSold.toString(),
+                            a.custEmpty.toString(),
+                            a.compRepl.toString()
+                        )
+                    }
+                    ReportTable(
+                        reportTitle = "Staff Sales (Product-Wise) — ${selectedVeh.name}",
+                        subtitle = "$periodLabel • Sold: $grandSold (Reg: $grandReg, New: $grandNew) | Empty: $grandEmp | Repl: $grandComp",
+                        generatedBy = actorName,
+                        headers = listOf(
+                            "Category", "Product / Cylinder", "Full Recd", "Reg. Sales",
+                            "New Cust", "Total Sold", "Cust Empty", "Comp. Repl"
+                        ),
+                        rows = productRows,
+                        footerTotals = listOf(
+                            "TOTAL",
+                            "${productRows.size} Cylinders",
+                            grandRecd.toString(),
+                            grandReg.toString(),
+                            grandNew.toString(),
+                            grandSold.toString(),
+                            grandEmp.toString(),
+                            grandComp.toString()
+                        )
+                    )
+                } else {
+                    val allPairs = aggMap.entries
+                        .filter { it.value.hasAny }
+                        .sortedWith(
+                            compareBy<Map.Entry<Pair<Long, Long>, StaffProdAgg>>(
+                                { vehicleMap[it.key.first]?.name ?: "Vehicle #${it.key.first}" },
+                                { productMap[it.key.second]?.category?.sortOrder ?: Int.MAX_VALUE },
+                                { productMap[it.key.second]?.sortOrder ?: Int.MAX_VALUE },
+                                { productMap[it.key.second]?.name ?: "" }
+                            )
+                        )
+                    val builtRows = allPairs.map { (key, a) ->
+                        val vName = vehicleMap[key.first]?.name ?: "Vehicle #${key.first}"
+                        val prod = productMap[key.second]
+                        val prodLabel = if (prod != null) "${prod.category.shortCode} - ${prod.name}" else "Product #${key.second}"
+                        grandRecd += a.fullRecd
+                        grandReg += a.regSales
+                        grandNew += a.newCustSales
+                        grandSold += a.totalSold
+                        grandEmp += a.custEmpty
+                        grandComp += a.compRepl
+                        listOf(
+                            vName,
+                            prodLabel,
+                            a.fullRecd.toString(),
+                            a.regSales.toString(),
+                            a.newCustSales.toString(),
+                            a.totalSold.toString(),
+                            a.custEmpty.toString(),
+                            a.compRepl.toString()
+                        )
+                    }
+                    val displayRows = builtRows.ifEmpty {
+                        listOf(listOf("No Staff Sales", "No entries in period", "0", "0", "0", "0", "0", "0"))
+                    }
+                    ReportTable(
+                        reportTitle = "Staff Sales Report — Product / Cylinder Wise",
+                        subtitle = "$periodLabel • All Staff • Sold: $grandSold (Reg: $grandReg, New: $grandNew) | Empty: $grandEmp",
+                        generatedBy = actorName,
+                        headers = listOf(
+                            "Staff / Vehicle", "Product / Cylinder", "Full Recd", "Reg. Sales",
+                            "New Cust", "Total Sold", "Cust Empty", "Comp. Repl"
+                        ),
+                        rows = displayRows,
+                        footerTotals = listOf(
+                            "TOTAL",
+                            "${builtRows.size} Entries",
+                            grandRecd.toString(),
+                            grandReg.toString(),
+                            grandNew.toString(),
+                            grandSold.toString(),
+                            grandEmp.toString(),
+                            grandComp.toString()
+                        )
+                    )
+                }
+            }
+
+            ReportType.PURCHASE_COMPANY_PRODUCT -> {
+                val cleanCompanyFilter = purchaseCompanyFilter?.trim().orEmpty()
+                val periodLabel = if (purchaseDailyMode) "Daily ($date)" else "Monthly ($ym)"
+                val productMap = allProducts.value.associateBy { it.id }
+
+                val purchaseTxs = allTransactionDisplayItems.value.map { it.transaction }.filter { t ->
+                    val periodMatch = if (purchaseDailyMode) {
+                        t.businessDate == date
+                    } else {
+                        t.businessDate.startsWith(ym)
+                    }
+                    val typeMatch = t.type == TransactionType.STORE_PURCHASE_FULL ||
+                        t.type == TransactionType.STORE_PURCHASE_EMPTY ||
+                        t.type == TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE
+                    val companyMatch = cleanCompanyFilter.isEmpty() ||
+                        t.purchaseCompanyName.trim().equals(cleanCompanyFilter, ignoreCase = true)
+                    periodMatch && typeMatch && companyMatch
+                }
+
+                data class PurchaseProdAgg(
+                    var displayCompany: String,
+                    var fullPur: Int = 0,
+                    var emptyPur: Int = 0,
+                    var compRepl: Int = 0,
+                    var entries: Int = 0
+                ) {
+                    val totalCyl: Int get() = fullPur + emptyPur + compRepl
+                }
+
+                val aggMap = linkedMapOf<Pair<String, Long>, PurchaseProdAgg>()
+                purchaseTxs.forEach { t ->
+                    val companyDisplay = t.purchaseCompanyName.trim().ifBlank { "Unspecified Supplier" }
+                    val key = companyDisplay.lowercase() to t.productId
+                    val agg = aggMap.getOrPut(key) { PurchaseProdAgg(displayCompany = companyDisplay) }
+                    agg.entries += 1
+                    when (t.type) {
+                        TransactionType.STORE_PURCHASE_FULL -> agg.fullPur += t.quantity
+                        TransactionType.STORE_PURCHASE_EMPTY -> agg.emptyPur += t.quantity
+                        TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE -> agg.compRepl += t.quantity
+                        else -> Unit
+                    }
+                }
+
+                val sortedEntries = aggMap.entries.sortedWith(
+                    compareBy<Map.Entry<Pair<String, Long>, PurchaseProdAgg>>(
+                        { it.value.displayCompany.lowercase() },
+                        { productMap[it.key.second]?.category?.sortOrder ?: Int.MAX_VALUE },
+                        { productMap[it.key.second]?.sortOrder ?: Int.MAX_VALUE },
+                        { productMap[it.key.second]?.name ?: "" }
+                    )
+                )
+
+                var grandFull = 0
+                var grandEmpty = 0
+                var grandComp = 0
+                var grandTotal = 0
+                var grandEntries = 0
+
+                val builtRows = sortedEntries.map { (key, a) ->
+                    val prod = productMap[key.second]
+                    grandFull += a.fullPur
+                    grandEmpty += a.emptyPur
+                    grandComp += a.compRepl
+                    grandTotal += a.totalCyl
+                    grandEntries += a.entries
+                    if (cleanCompanyFilter.isNotEmpty()) {
+                        listOf(
+                            prod?.category?.displayName ?: "GAS",
+                            prod?.name ?: "Product #${key.second}",
+                            a.fullPur.toString(),
+                            a.emptyPur.toString(),
+                            a.compRepl.toString(),
+                            a.totalCyl.toString(),
+                            a.entries.toString()
+                        )
+                    } else {
+                        val prodLabel = if (prod != null) "${prod.category.shortCode} - ${prod.name}" else "Product #${key.second}"
+                        listOf(
+                            a.displayCompany,
+                            prodLabel,
+                            a.fullPur.toString(),
+                            a.emptyPur.toString(),
+                            a.compRepl.toString(),
+                            a.totalCyl.toString(),
+                            a.entries.toString()
+                        )
+                    }
+                }
+
+                val displayRows = builtRows.ifEmpty {
+                    listOf(listOf("No Purchases", "No entries in period", "0", "0", "0", "0", "0"))
+                }
+                val companySuffix = if (cleanCompanyFilter.isNotEmpty()) " • $cleanCompanyFilter" else " • All Suppliers"
+                val reportTitle = if (cleanCompanyFilter.isNotEmpty()) {
+                    "Purchase Co. Product Report — $cleanCompanyFilter"
+                } else {
+                    "Purchase Company Report — Product / Cylinder Wise"
+                }
+                val headers = if (cleanCompanyFilter.isNotEmpty()) {
+                    listOf("Category", "Product / Cylinder", "Full Pur", "Empty Pur", "Comp. Repl", "Total Cyl", "Entries")
+                } else {
+                    listOf("Purchase Company", "Product / Cylinder", "Full Pur", "Empty Pur", "Comp. Repl", "Total Cyl", "Entries")
+                }
+
+                ReportTable(
+                    reportTitle = reportTitle,
+                    subtitle = "$periodLabel$companySuffix • Full: $grandFull | Empty: $grandEmpty | Comp.Repl: $grandComp | Total: $grandTotal",
+                    generatedBy = actorName,
+                    headers = headers,
+                    rows = displayRows,
+                    footerTotals = listOf(
+                        "TOTAL",
+                        "${builtRows.size} Cylinders",
+                        grandFull.toString(),
+                        grandEmpty.toString(),
+                        grandComp.toString(),
+                        grandTotal.toString(),
+                        grandEntries.toString()
+                    )
+                )
+            }
+
             ReportType.MONTHLY_SALES -> {
                 val rows = monthlySalesReport.value
                 ReportTable(
@@ -2416,36 +2690,69 @@ class AppViewModel(
             }
 
             ReportType.STAFF_WISE_SALES -> {
-                val rows = staffWiseSales.value
-                ReportTable(
-                    reportTitle = "Staff-Wise Sales Report",
-                    subtitle = "Month: $ym | Closing as of: $date",
-                    generatedBy = actorName,
-                    headers = listOf(
-                        "Staff / Vehicle", "Full Recd", "Sales", "Cust Empty",
-                        "Ret.Store", "Closing Full", "Closing Empty"
-                    ),
-                    rows = rows.map {
-                        listOf(
-                            it.vehicle.name,
-                            it.totalFullReceived.toString(),
-                            it.totalSold.toString(),
-                            it.totalEmptyCollected.toString(),
-                            it.totalEmptyReturned.toString(),
-                            it.closingFullBalance.toString(),
-                            it.closingEmptyBalance.toString()
+                if (purchaseDailyMode) {
+                    val overviews = dashboardSummary.value?.vehicleOverviews.orEmpty()
+                    ReportTable(
+                        reportTitle = "Staff-Wise Sales Report (Daily)",
+                        subtitle = "Business Date: $date",
+                        generatedBy = actorName,
+                        headers = listOf(
+                            "Staff / Vehicle", "Full Recd", "Sales", "Cust Empty",
+                            "Ret.Store", "Closing Full", "Closing Empty"
+                        ),
+                        rows = overviews.map {
+                            listOf(
+                                it.vehicle.name,
+                                it.totalFullReceived.toString(),
+                                it.totalCustomerSales.toString(),
+                                it.totalCustomerEmptyReceived.toString(),
+                                it.totalEmptyReturnedToStore.toString(),
+                                it.totalFullBalance.toString(),
+                                it.totalEmptyBalance.toString()
+                            )
+                        },
+                        footerTotals = listOf(
+                            "TOTAL",
+                            overviews.sumOf { it.totalFullReceived }.toString(),
+                            overviews.sumOf { it.totalCustomerSales }.toString(),
+                            overviews.sumOf { it.totalCustomerEmptyReceived }.toString(),
+                            overviews.sumOf { it.totalEmptyReturnedToStore }.toString(),
+                            overviews.sumOf { it.totalFullBalance }.toString(),
+                            overviews.sumOf { it.totalEmptyBalance }.toString()
                         )
-                    },
-                    footerTotals = listOf(
-                        "TOTAL",
-                        rows.sumOf { it.totalFullReceived }.toString(),
-                        rows.sumOf { it.totalSold }.toString(),
-                        rows.sumOf { it.totalEmptyCollected }.toString(),
-                        rows.sumOf { it.totalEmptyReturned }.toString(),
-                        rows.sumOf { it.closingFullBalance }.toString(),
-                        rows.sumOf { it.closingEmptyBalance }.toString()
                     )
-                )
+                } else {
+                    val rows = staffWiseSales.value
+                    ReportTable(
+                        reportTitle = "Staff-Wise Sales Report (Monthly)",
+                        subtitle = "Month: $ym | Closing as of: $date",
+                        generatedBy = actorName,
+                        headers = listOf(
+                            "Staff / Vehicle", "Full Recd", "Sales", "Cust Empty",
+                            "Ret.Store", "Closing Full", "Closing Empty"
+                        ),
+                        rows = rows.map {
+                            listOf(
+                                it.vehicle.name,
+                                it.totalFullReceived.toString(),
+                                it.totalSold.toString(),
+                                it.totalEmptyCollected.toString(),
+                                it.totalEmptyReturned.toString(),
+                                it.closingFullBalance.toString(),
+                                it.closingEmptyBalance.toString()
+                            )
+                        },
+                        footerTotals = listOf(
+                            "TOTAL",
+                            rows.sumOf { it.totalFullReceived }.toString(),
+                            rows.sumOf { it.totalSold }.toString(),
+                            rows.sumOf { it.totalEmptyCollected }.toString(),
+                            rows.sumOf { it.totalEmptyReturned }.toString(),
+                            rows.sumOf { it.closingFullBalance }.toString(),
+                            rows.sumOf { it.closingEmptyBalance }.toString()
+                        )
+                    )
+                }
             }
 
             ReportType.FULL_EMPTY_STOCK -> {

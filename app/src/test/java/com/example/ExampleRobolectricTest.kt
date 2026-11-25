@@ -33,6 +33,7 @@ import com.example.ui.viewmodel.AppViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -1565,5 +1566,157 @@ class ExampleRobolectricTest {
         }
         assertFalse(vm.biometricUnlockState.value.passwordRequiredAfterLogout)
         assertTrue(vm.biometricUnlockState.value.armed)
+    }
+
+    @Test
+    fun `staff daily and monthly product cylinder wise sales report and purchase company product cylinder wise report compute accurately`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        prefs.clearBiometricUnlockState()
+
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val vehicles = repository.vehiclesFlow.first()
+        val nadeemVehicle = vehicles.first { it.staffUserId == nadeem.id }
+        val sivanVehicle = vehicles.first { it.name == "SIVAN" }
+        val products = repository.activeProductsFlow.first()
+        val oxygen = products.first { it.name == "Oxygen" }
+        val argon = products.first { it.name == "Argon" }
+
+        val day1 = "2026-11-10"
+        val day2 = "2026-11-25"
+        val month = "2026-11"
+
+        // Purchases from two companies across 2 days of the same month
+        // Emirates Gas on day1: 20 Full Oxygen, 5 Empty Oxygen; on day2: 12 Full Oxygen, 4 Comp Repl Oxygen, 10 Full Argon
+        assertTrue(repository.recordTransaction(day1, TransactionType.STORE_PURCHASE_FULL, oxygen.id, null, admin, 20, "", purchaseCompanyName = "Emirates Gas") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day1, TransactionType.STORE_PURCHASE_EMPTY, oxygen.id, null, admin, 5, "", purchaseCompanyName = "Emirates Gas") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.STORE_PURCHASE_FULL, oxygen.id, null, admin, 12, "", purchaseCompanyName = "Emirates Gas") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE, oxygen.id, null, admin, 4, "", purchaseCompanyName = "Emirates Gas") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.STORE_PURCHASE_FULL, argon.id, null, admin, 10, "", purchaseCompanyName = "Emirates Gas") is OperationResult.Success)
+        // ADNOC on day2: 8 Full Argon
+        assertTrue(repository.recordTransaction(day2, TransactionType.STORE_PURCHASE_FULL, argon.id, null, admin, 8, "", purchaseCompanyName = "ADNOC Gas") is OperationResult.Success)
+
+        // Dispatch full to Nadeem & Sivan across day1 and day2
+        assertTrue(repository.recordTransaction(day1, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, nadeemVehicle.id, admin, 10, "") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, nadeemVehicle.id, admin, 8, "") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_FULL_RECEIVED, argon.id, nadeemVehicle.id, admin, 6, "") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_FULL_RECEIVED, argon.id, sivanVehicle.id, admin, 5, "") is OperationResult.Success)
+
+        // Sales by Nadeem & Sivan across day1 & day2
+        // Day1: Nadeem sells 4 Reg Oxygen + collects 3 Empty Oxygen
+        assertTrue(repository.recordTransaction(day1, TransactionType.VEHICLE_CUSTOMER_SALE, oxygen.id, nadeemVehicle.id, nadeem, 4, "", customerName = "Alpha Fab") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day1, TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER, oxygen.id, nadeemVehicle.id, nadeem, 3, "", customerName = "Alpha Fab") is OperationResult.Success)
+        // Day2: Nadeem sells 3 Reg Oxygen, 2 New Cust Oxygen, 1 Comp Repl Oxygen, 5 Reg Argon; Sivan sells 2 Reg Argon
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_CUSTOMER_SALE, oxygen.id, nadeemVehicle.id, nadeem, 3, "", customerName = "Beta Steel") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_NEW_CUSTOMER_SALE, oxygen.id, nadeemVehicle.id, nadeem, 2, "", customerName = "New Grill") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE, oxygen.id, nadeemVehicle.id, nadeem, 1, "", customerName = "Beta Steel") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_CUSTOMER_SALE, argon.id, nadeemVehicle.id, nadeem, 5, "", customerName = "Welding Hub") is OperationResult.Success)
+        assertTrue(repository.recordTransaction(day2, TransactionType.VEHICLE_CUSTOMER_SALE, argon.id, sivanVehicle.id, admin, 2, "", customerName = "Gulf Fab") is OperationResult.Success)
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = null,
+            appContext = context
+        )
+        val txCollector = backgroundScope.launch(Dispatchers.Unconfined) { vm.allTransactionDisplayItems.collect {} }
+        val vehCollector = backgroundScope.launch(Dispatchers.Unconfined) { vm.vehicles.collect {} }
+        val prodCollector = backgroundScope.launch(Dispatchers.Unconfined) { vm.allProducts.collect {} }
+
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+        waitUntil {
+            vm.isInitialized.value &&
+                vm.vehicles.value.isNotEmpty() &&
+                vm.allProducts.value.isNotEmpty() &&
+                vm.allTransactionDisplayItems.value.size >= 16
+        }
+        vm.setSelectedDate(day2)
+        vm.setSelectedYearMonth(month)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        // 1. Staff DAILY Product Cylinder-Wise Report (Nadeem only on day2)
+        val staffDailyNadeem = vm.buildReportTable(
+            reportType = ReportType.STAFF_PRODUCT_SALES,
+            vehicleFilterId = nadeemVehicle.id,
+            purchaseDailyMode = true
+        )
+        val nadeemDailyOx = staffDailyNadeem.rows.first { it[1] == "Oxygen" }
+        val nadeemDailyAr = staffDailyNadeem.rows.first { it[1] == "Argon" }
+        // Columns: Category, Product, Full Recd, Reg. Sales, New Cust, Total Sold, Cust Empty, Comp. Repl
+        assertEquals(listOf("8", "3", "2", "5", "0", "1"), nadeemDailyOx.subList(2, 8))
+        assertEquals(listOf("6", "5", "0", "5", "0", "0"), nadeemDailyAr.subList(2, 8))
+        assertEquals("10", staffDailyNadeem.footerTotals?.get(5)) // 5 Oxygen + 5 Argon = 10 sold on day2
+
+        // 2. Staff MONTHLY Product Cylinder-Wise Report (Nadeem across day1 + day2)
+        val staffMonthlyNadeem = vm.buildReportTable(
+            reportType = ReportType.STAFF_PRODUCT_SALES,
+            vehicleFilterId = nadeemVehicle.id,
+            purchaseDailyMode = false
+        )
+        val nadeemMonthlyOx = staffMonthlyNadeem.rows.first { it[1] == "Oxygen" }
+        // Monthly Oxygen: Full Recd 10+8=18, Reg 4+3=7, New 2, Total Sold 9, Cust Empty 3, Comp Repl 1
+        assertEquals(listOf("18", "7", "2", "9", "3", "1"), nadeemMonthlyOx.subList(2, 8))
+        assertEquals("14", staffMonthlyNadeem.footerTotals?.get(5)) // 9 Oxygen + 5 Argon = 14
+
+        // 3. Staff MONTHLY Product Cylinder-Wise Report (All Staff includes Nadeem + Sivan)
+        val staffMonthlyAll = vm.buildReportTable(
+            reportType = ReportType.STAFF_PRODUCT_SALES,
+            vehicleFilterId = null,
+            purchaseDailyMode = false
+        )
+        assertEquals("16", staffMonthlyAll.footerTotals?.get(5)) // Nadeem 14 + Sivan 2 = 16
+
+        // 4. Purchase Company DAILY Product Cylinder-Wise Report (All Suppliers on day2)
+        val purchaseDailyAll = vm.buildReportTable(
+            reportType = ReportType.PURCHASE_COMPANY_PRODUCT,
+            vehicleFilterId = null,
+            purchaseDailyMode = true,
+            purchaseCompanyFilter = null
+        )
+        // Day2: ADNOC Gas Argon (8 Full), Emirates Gas Oxygen (12 Full + 4 Comp Repl = 16), Emirates Gas Argon (10 Full)
+        assertEquals(3, purchaseDailyAll.rows.size)
+        assertEquals("30", purchaseDailyAll.footerTotals?.get(2)) // Full Pur: 8 + 12 + 10
+        assertEquals("4", purchaseDailyAll.footerTotals?.get(4))  // Comp Repl: 4
+        assertEquals("34", purchaseDailyAll.footerTotals?.get(5)) // Total Cyl: 34
+
+        // 5. Purchase Company MONTHLY Product Cylinder-Wise Report (Emirates Gas only across day1 + day2)
+        val purchaseMonthlyEmirates = vm.buildReportTable(
+            reportType = ReportType.PURCHASE_COMPANY_PRODUCT,
+            vehicleFilterId = null,
+            purchaseDailyMode = false,
+            purchaseCompanyFilter = "Emirates Gas"
+        )
+        assertEquals(2, purchaseMonthlyEmirates.rows.size) // Oxygen & Argon
+        val emiratesOx = purchaseMonthlyEmirates.rows.first { it[1] == "Oxygen" }
+        val emiratesAr = purchaseMonthlyEmirates.rows.first { it[1] == "Argon" }
+        // Columns: Category, Product, Full Pur, Empty Pur, Comp. Repl, Total Cyl, Entries
+        assertEquals(listOf("32", "5", "4", "41", "4"), emiratesOx.subList(2, 7))
+        assertEquals(listOf("10", "0", "0", "10", "1"), emiratesAr.subList(2, 7))
+        assertEquals("51", purchaseMonthlyEmirates.footerTotals?.get(5))
+        txCollector.cancel()
+        vehCollector.cancel()
+        prodCollector.cancel()
+
+        // 6. Verify both reports export valid XLSX (.xlsx ZIP) bytes
+        val staffXlsxOut = ByteArrayOutputStream()
+        ReportExporter.writeXlsx(staffMonthlyAll, staffXlsxOut)
+        val staffBytes = staffXlsxOut.toByteArray()
+        assertTrue(staffBytes.size > 100 && staffBytes[0] == 0x50.toByte() && staffBytes[1] == 0x4B.toByte())
+
+        val purchaseXlsxOut = ByteArrayOutputStream()
+        ReportExporter.writeXlsx(purchaseMonthlyEmirates, purchaseXlsxOut)
+        val purchaseBytes = purchaseXlsxOut.toByteArray()
+        assertTrue(purchaseBytes.size > 100 && purchaseBytes[0] == 0x50.toByte() && purchaseBytes[1] == 0x4B.toByte())
     }
 }

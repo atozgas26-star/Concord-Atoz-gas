@@ -57,11 +57,13 @@ enum class TransactionType(
 enum class ReportType(val title: String, val subtitle: String) {
     DAILY_STORE("Daily Store Report", "Opening, purchases, returns, dispatch & closing"),
     DAILY_VEHICLE("Daily Vehicle Report", "Vehicle-wise full & empty stock movement"),
+    STAFF_PRODUCT_SALES("Staff Product Sales", "Daily & monthly staff sales breakdown product / cylinder wise"),
+    PURCHASE_COMPANY_PRODUCT("Purchase Co. Product", "Daily & monthly purchase company breakdown product / cylinder wise"),
     MONTHLY_SALES("Monthly Sales Report", "Day-by-day & monthly cylinder sales summary"),
     PRODUCT_WISE_SALES("Product-Wise Sales", "Sales breakdown by gas category & cylinder"),
     STAFF_WISE_SALES("Staff-Wise Sales", "Performance & balances by staff/vehicle"),
     FULL_EMPTY_STOCK("Full & Empty Stock", "Combined Store + Vehicles inventory balance"),
-    PURCHASE_REGISTER("Purchase Register", "Daily & monthly supplier purchases & complaint replacements"),
+    PURCHASE_REGISTER("Purchase Register", "Daily & monthly supplier entry log & complaint replacements"),
     CUSTOMER_PENDING("Customer Pending Empty", "Customer-wise full sold, empty collected & pending balance")
 }
 

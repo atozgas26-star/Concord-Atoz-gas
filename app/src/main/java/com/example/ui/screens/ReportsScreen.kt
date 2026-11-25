@@ -158,7 +158,7 @@ fun ReportsScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Reports (View Only)" else "Reports & Export",
-            subtitle = "PDF & Excel (.xlsx) • C&A Gas Business Analytics"
+            subtitle = "Concord & Atoz Gas Trading LLC • PDF & Excel (.xlsx)"
         )
 
         Column(
@@ -188,22 +188,17 @@ fun ReportsScreen(
                 }
             }
 
-            // Period Selector (Date or Month — Purchase Register supports both Daily and Monthly)
-            if (selectedReport == ReportType.PURCHASE_REGISTER) {
+            // Period Toggle (Daily / Monthly) for Staff Product Sales, Purchase Co. Product, Purchase Register & Staff-Wise Sales
+            val supportsDailyMonthlyToggle = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+                selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
+                selectedReport == ReportType.PURCHASE_REGISTER ||
+                selectedReport == ReportType.STAFF_WISE_SALES
+
+            if (supportsDailyMonthlyToggle) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilterChip(
-                        selected = !purchaseDailyMode,
-                        onClick = { purchaseDailyMode = false },
-                        label = { Text("Monthly Report") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = BrandGreenPrimary,
-                            selectedLabelColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("purchase_report_monthly_chip")
-                    )
                     FilterChip(
                         selected = purchaseDailyMode,
                         onClick = { purchaseDailyMode = true },
@@ -214,40 +209,47 @@ fun ReportsScreen(
                         ),
                         modifier = Modifier.testTag("purchase_report_daily_chip")
                     )
+                    FilterChip(
+                        selected = !purchaseDailyMode,
+                        onClick = { purchaseDailyMode = false },
+                        label = { Text("Monthly Report") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BrandGreenPrimary,
+                            selectedLabelColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("purchase_report_monthly_chip")
+                    )
                 }
-                if (recentPurchaseCompanies.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+            }
+
+            // Supplier / Purchase Company filter chips for Purchase reports
+            if ((selectedReport == ReportType.PURCHASE_REGISTER || selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT) &&
+                recentPurchaseCompanies.isNotEmpty()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = purchaseCompanyFilter == null,
+                        onClick = { purchaseCompanyFilter = null },
+                        label = { Text("All Suppliers") },
+                        modifier = Modifier.testTag("report_supplier_all")
+                    )
+                    recentPurchaseCompanies.forEach { company ->
                         FilterChip(
-                            selected = purchaseCompanyFilter == null,
-                            onClick = { purchaseCompanyFilter = null },
-                            label = { Text("All Suppliers") }
+                            selected = purchaseCompanyFilter.equals(company, ignoreCase = true),
+                            onClick = { purchaseCompanyFilter = company },
+                            label = { Text(company) }
                         )
-                        recentPurchaseCompanies.forEach { company ->
-                            FilterChip(
-                                selected = purchaseCompanyFilter.equals(company, ignoreCase = true),
-                                onClick = { purchaseCompanyFilter = company },
-                                label = { Text(company) }
-                            )
-                        }
                     }
                 }
             }
 
-            when (selectedReport) {
-                ReportType.MONTHLY_SALES,
-                ReportType.PRODUCT_WISE_SALES,
-                ReportType.STAFF_WISE_SALES -> {
-                    MonthSelectorBar(
-                        yearMonth = selectedYearMonth,
-                        onYearMonthChanged = onYearMonthSelected
-                    )
-                }
-                ReportType.PURCHASE_REGISTER -> {
+            when {
+                supportsDailyMonthlyToggle -> {
                     if (purchaseDailyMode) {
                         DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
                     } else {
@@ -257,13 +259,23 @@ fun ReportsScreen(
                         )
                     }
                 }
+                selectedReport == ReportType.MONTHLY_SALES ||
+                    selectedReport == ReportType.PRODUCT_WISE_SALES -> {
+                    MonthSelectorBar(
+                        yearMonth = selectedYearMonth,
+                        onYearMonthChanged = onYearMonthSelected
+                    )
+                }
                 else -> {
                     DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
                 }
             }
 
-            // Vehicle filter for Daily Vehicle & Customer Pending Reports
-            if (selectedReport == ReportType.DAILY_VEHICLE || selectedReport == ReportType.CUSTOMER_PENDING) {
+            // Staff / Vehicle filter for Daily Vehicle, Staff Product Sales & Customer Pending Reports
+            if (selectedReport == ReportType.DAILY_VEHICLE ||
+                selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+                selectedReport == ReportType.CUSTOMER_PENDING
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -276,7 +288,16 @@ fun ReportsScreen(
                             vehicleFilterId = null
                             onSelectVehicle(null)
                         },
-                        label = { Text("All ${vehicles.size} Vehicles") }
+                        label = {
+                            Text(
+                                if (selectedReport == ReportType.STAFF_PRODUCT_SALES) {
+                                    "All Staff (${vehicles.size})"
+                                } else {
+                                    "All ${vehicles.size} Vehicles"
+                                }
+                            )
+                        },
+                        modifier = Modifier.testTag("report_vehicle_all")
                     )
                     vehicles.forEach { v ->
                         FilterChip(
@@ -396,13 +417,21 @@ fun ReportsScreen(
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 item {
+                    val hasWideSecondCol = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+                        selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
+                        selectedReport == ReportType.PRODUCT_WISE_SALES ||
+                        selectedReport == ReportType.FULL_EMPTY_STOCK
+                    fun colWidth(idx: Int) = when {
+                        idx == 0 -> 150.dp
+                        idx == 1 && hasWideSecondCol -> 148.dp
+                        else -> 86.dp
+                    }
                     Row(
                         modifier = Modifier
                             .background(BrandGreenContainer)
                             .padding(vertical = 8.dp, horizontal = 8.dp)
                     ) {
                         table.headers.forEachIndexed { idx, header ->
-                            val w = if (idx == 0) 150.dp else 86.dp
                             Text(
                                 text = header,
                                 style = MaterialTheme.typography.labelMedium,
@@ -411,7 +440,7 @@ fun ReportsScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
-                                    .width(w)
+                                    .width(colWidth(idx))
                                     .padding(horizontal = 4.dp)
                             )
                         }
@@ -419,6 +448,10 @@ fun ReportsScreen(
                 }
 
                 itemsIndexed(table.rows) { rowIdx, row ->
+                    val hasWideSecondCol = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+                        selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
+                        selectedReport == ReportType.PRODUCT_WISE_SALES ||
+                        selectedReport == ReportType.FULL_EMPTY_STOCK
                     val bg = if (rowIdx % 2 == 0) MaterialTheme.colorScheme.surface
                     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     Row(
@@ -427,11 +460,16 @@ fun ReportsScreen(
                             .padding(vertical = 8.dp, horizontal = 8.dp)
                     ) {
                         row.forEachIndexed { idx, value ->
-                            val w = if (idx == 0) 150.dp else 86.dp
+                            val w = when {
+                                idx == 0 -> 150.dp
+                                idx == 1 && hasWideSecondCol -> 148.dp
+                                else -> 86.dp
+                            }
+                            val isNumericCol = idx > if (hasWideSecondCol) 1 else 0
                             Text(
                                 text = value,
                                 style = MaterialTheme.typography.bodySmall,
-                                fontFamily = if (idx > 0) JetBrainsMono else MaterialTheme.typography.bodySmall.fontFamily,
+                                fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.bodySmall.fontFamily,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
@@ -444,17 +482,26 @@ fun ReportsScreen(
 
                 table.footerTotals?.let { totals ->
                     item {
+                        val hasWideSecondCol = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+                            selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
+                            selectedReport == ReportType.PRODUCT_WISE_SALES ||
+                            selectedReport == ReportType.FULL_EMPTY_STOCK
                         Row(
                             modifier = Modifier
                                 .background(BrandRedContainer)
                                 .padding(vertical = 10.dp, horizontal = 8.dp)
                         ) {
                             totals.forEachIndexed { idx, value ->
-                                val w = if (idx == 0) 150.dp else 86.dp
+                                val w = when {
+                                    idx == 0 -> 150.dp
+                                    idx == 1 && hasWideSecondCol -> 148.dp
+                                    else -> 86.dp
+                                }
+                                val isNumericCol = idx > if (hasWideSecondCol) 1 else 0
                                 Text(
                                     text = value,
                                     style = MaterialTheme.typography.labelMedium,
-                                    fontFamily = if (idx > 0) JetBrainsMono else MaterialTheme.typography.labelMedium.fontFamily,
+                                    fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.labelMedium.fontFamily,
                                     fontWeight = FontWeight.Bold,
                                     color = BrandRedOnContainer,
                                     maxLines = 1,

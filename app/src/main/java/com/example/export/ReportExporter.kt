@@ -95,7 +95,7 @@ object ReportExporter {
         fun drawBannerAndHeader(c: Canvas, pNum: Int): Float {
             c.drawRect(0f, 0f, pageWidth.toFloat(), 44f, brandGreen)
             c.drawRect(0f, 44f, pageWidth.toFloat(), 48f, brandRed)
-            c.drawText("C&A GAS — Industrial & LPG Inventory", margin, 27f, companyPaint)
+            c.drawText("CONCORD & ATOZ GAS TRADING LLC — C&A Gas", margin, 27f, companyPaint)
             val stamp = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date())
             val rightMeta = "Page $pNum • $stamp"
             val rightMetaPaint = Paint(companyPaint).apply {

@@ -237,6 +237,8 @@
           "enum": [
             "DAILY_STORE",
             "DAILY_VEHICLE",
+            "STAFF_PRODUCT_SALES",
+            "PURCHASE_COMPANY_PRODUCT",
             "MONTHLY_SALES",
             "PRODUCT_WISE_SALES",
             "STAFF_WISE_SALES",

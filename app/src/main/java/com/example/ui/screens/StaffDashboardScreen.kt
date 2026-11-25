@@ -40,6 +40,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -133,6 +134,7 @@ fun StaffDashboardScreen(
     var showCalculator by remember { mutableStateOf(false) }
     var showVehicleTransferDialog by remember { mutableStateOf(false) }
     var showAutoSessionDialog by remember { mutableStateOf(false) }
+    var staffSalesDailyMode by remember { mutableStateOf(true) }
 
     val filteredRows = remember(vehicleRows, selectedCategory, searchQuery) {
         vehicleRows.filter { row ->
@@ -393,18 +395,24 @@ fun StaffDashboardScreen(
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                text = { Text("Stock") }
+                text = { Text("Stock", maxLines = 1) }
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
-                text = { Text("Pending ($activePendingCount)") },
-                modifier = Modifier.testTag("staff_tab_pending")
+                text = { Text("Sales", maxLines = 1) },
+                modifier = Modifier.testTag("staff_tab_sales")
             )
             Tab(
                 selected = activeTab == 2,
                 onClick = { activeTab = 2 },
-                text = { Text("Activity (${myVehicleTransactions.size})") }
+                text = { Text("Pending ($activePendingCount)", maxLines = 1) },
+                modifier = Modifier.testTag("staff_tab_pending")
+            )
+            Tab(
+                selected = activeTab == 3,
+                onClick = { activeTab = 3 },
+                text = { Text("Activity (${myVehicleTransactions.size})", maxLines = 1) }
             )
         }
 
@@ -443,6 +451,198 @@ fun StaffDashboardScreen(
             }
 
             1 -> {
+                val activeYearMonth = selectedDate.take(7)
+                val scopedSalesTxs = remember(allTransactions, assignedVehicle, selectedDate, staffSalesDailyMode) {
+                    if (assignedVehicle == null) emptyList()
+                    else allTransactions.filter { item ->
+                        val t = item.transaction
+                        val periodMatch = if (staffSalesDailyMode) {
+                            t.businessDate == selectedDate
+                        } else {
+                            t.businessDate.startsWith(activeYearMonth)
+                        }
+                        t.vehicleId == assignedVehicle.id && periodMatch
+                    }
+                }
+                data class StaffProductSaleSummary(
+                    val product: ProductEntity,
+                    val fullRecd: Int,
+                    val regSales: Int,
+                    val newCustSales: Int,
+                    val custEmpty: Int,
+                    val compRepl: Int
+                ) {
+                    val totalSold: Int get() = regSales + newCustSales
+                }
+                val productSummaries = remember(products, scopedSalesTxs) {
+                    products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.name })).map { p ->
+                        val pTxs = scopedSalesTxs.filter { it.transaction.productId == p.id }.map { it.transaction }
+                        StaffProductSaleSummary(
+                            product = p,
+                            fullRecd = pTxs.filter { it.type == TransactionType.VEHICLE_FULL_RECEIVED }.sumOf { it.quantity },
+                            regSales = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_SALE }.sumOf { it.quantity },
+                            newCustSales = pTxs.filter { it.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE }.sumOf { it.quantity },
+                            custEmpty = pTxs.filter { it.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER }.sumOf { it.quantity },
+                            compRepl = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE }.sumOf { it.quantity }
+                        )
+                    }.filter { it.totalSold > 0 || it.fullRecd > 0 || it.custEmpty > 0 || it.compRepl > 0 }
+                }
+                val totalSoldSum = productSummaries.sumOf { it.totalSold }
+                val regSoldSum = productSummaries.sumOf { it.regSales }
+                val newSoldSum = productSummaries.sumOf { it.newCustSales }
+                val emptyCollSum = productSummaries.sumOf { it.custEmpty }
+                val compReplSum = productSummaries.sumOf { it.compRepl }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = staffSalesDailyMode,
+                                onClick = { staffSalesDailyMode = true },
+                                label = { Text("Daily ($selectedDate)") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BrandRedSecondary,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("staff_sales_daily_chip")
+                            )
+                            FilterChip(
+                                selected = !staffSalesDailyMode,
+                                onClick = { staffSalesDailyMode = false },
+                                label = { Text("Monthly ($activeYearMonth)") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BrandGreenPrimary,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("staff_sales_monthly_chip")
+                            )
+                        }
+                    }
+                    item {
+                        Surface(
+                            color = BrandGreenContainer,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, BrandGreenPrimary.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = if (staffSalesDailyMode) {
+                                        "Daily Cylinder Sales • ${assignedVehicle?.name ?: "Vehicle"}"
+                                    } else {
+                                        "Monthly Cylinder Sales ($activeYearMonth) • ${assignedVehicle?.name ?: "Vehicle"}"
+                                    },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BrandGreenOnContainer
+                                )
+                                Text(
+                                    text = "Total Sold: $totalSoldSum (Reg $regSoldSum • New $newSoldSum)  •  Cust Empty: $emptyCollSum  •  Comp.Repl: $compReplSum",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = BrandGreenOnContainer
+                                )
+                            }
+                        }
+                    }
+                    if (productSummaries.isEmpty()) {
+                        item {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (staffSalesDailyMode) {
+                                        "No cylinder sales recorded for ${assignedVehicle?.name ?: "your vehicle"} on $selectedDate."
+                                    } else {
+                                        "No cylinder sales recorded for ${assignedVehicle?.name ?: "your vehicle"} in $activeYearMonth."
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        items(productSummaries, key = { it.product.id }) { item ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.product.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = item.product.category.displayName,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Surface(
+                                            color = BrandRedContainer,
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "Sold: ${item.totalSold}",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BrandRedOnContainer,
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Recd: ${item.fullRecd}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "Reg: ${item.regSales} • New: ${item.newCustSales}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "Empty: ${item.custEmpty} • Repl: ${item.compRepl}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            2 -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
