@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory2
@@ -58,10 +59,12 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.model.DashboardSummary
+import com.example.data.model.StoreStockRow
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.StockPill
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberOnContainer
@@ -85,6 +88,7 @@ fun AdminDashboardScreen(
     adminName: String,
     selectedDate: String,
     summary: DashboardSummary?,
+    storeRows: List<StoreStockRow> = emptyList(),
     products: List<ProductEntity> = emptyList(),
     pendingCustomerCount: Int = 0,
     totalPendingEmptyCount: Int = 0,
@@ -98,6 +102,7 @@ fun AdminDashboardScreen(
     onLogout: () -> Unit
 ) {
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
+    var showCalculator by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
@@ -313,17 +318,30 @@ fun AdminDashboardScreen(
                     }
                 }
 
-                // Reports Shortcut
+                // Reports + Calculate Shortcut Row
                 item {
-                    FilledTonalButton(
-                        onClick = onOpenReports,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("quick_reports_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Open Daily & Monthly Reports (PDF / Excel)")
+                        FilledTonalButton(
+                            onClick = onOpenReports,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("quick_reports_button")
+                        ) {
+                            Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Reports (PDF/Excel)")
+                        }
+                        FilledTonalButton(
+                            onClick = { showCalculator = true },
+                            modifier = Modifier.testTag("dashboard_calculate_button")
+                        ) {
+                            Icon(Icons.Default.Calculate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Calculate")
+                        }
                     }
                 }
 
@@ -500,7 +518,34 @@ fun AdminDashboardScreen(
                     }
                 }
             }
+
+            item {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "CONCORD & A TO Z GAS • Built by Ragavan",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp)
+                    )
+                }
+            }
         }
+    }
+
+    if (showCalculator) {
+        StockCalculatorDialog(
+            products = products.filter { it.isActive }.ifEmpty { products },
+            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
+            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
+            onDismiss = { showCalculator = false }
+        )
     }
 
     editingTransaction?.let { tx ->

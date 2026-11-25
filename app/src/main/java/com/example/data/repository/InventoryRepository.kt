@@ -79,9 +79,20 @@ class InventoryRepository(
         db.ensureSeeded()
     }
 
-    suspend fun authenticate(userId: Long, pin: String): AuthSession? {
+    suspend fun getUserById(userId: Long): UserAccountEntity? =
+        userDao.getUserById(userId)
+
+    suspend fun authenticate(
+        userId: Long,
+        pin: String,
+        expectedRole: UserRole? = null
+    ): AuthSession? {
         val user = userDao.getUserById(userId) ?: return null
         if (!user.isActive || user.pin != pin) return null
+        if (expectedRole != null && user.role != expectedRole) return null
+        // Enforce unique PIN invariant across active accounts
+        val activeWithSamePin = userDao.getAllUsersOnce().filter { it.isActive && it.pin == pin }
+        if (activeWithSamePin.size > 1) return null
         val vehicle = if (user.role == UserRole.STAFF) {
             vehicleDao.getVehicleByStaffUserId(user.id)
         } else {
@@ -105,11 +116,26 @@ class InventoryRepository(
         if (newPin.length != 4 || !newPin.all { it.isDigit() }) {
             return OperationResult.ValidationError("PIN must be exactly 4 digits.")
         }
+        val allUsers = userDao.getAllUsersOnce()
+        val targetUser = allUsers.firstOrNull { it.id == targetUserId }
+            ?: return OperationResult.ValidationError("Account not found.")
+        val localCollision = allUsers.firstOrNull { it.id != targetUserId && it.pin == newPin }
+        if (localCollision != null) {
+            return OperationResult.ValidationError(
+                "PIN '$newPin' is already used by ${localCollision.displayName} (${localCollision.role.name}). Each Admin and Staff must have a unique PIN."
+            )
+        }
+        val cloudCollision = cloudSync?.findCloudPinCollisionDisplayName(targetUser.username, newPin)
+        if (cloudCollision != null) {
+            return OperationResult.ValidationError(
+                "PIN '$newPin' is already registered in cloud for $cloudCollision. Choose a unique PIN."
+            )
+        }
         userDao.updatePin(targetUserId, newPin)
         userDao.getUserById(targetUserId)?.let { updatedUser ->
             cloudSync?.pushStaffAccount(updatedUser)
         }
-        return OperationResult.Success("PIN updated successfully.")
+        return OperationResult.Success("Unique PIN updated for ${targetUser.displayName}.")
     }
 
     suspend fun updateStaffName(
@@ -181,11 +207,24 @@ class InventoryRepository(
             return OperationResult.ValidationError("PIN must be exactly 4 digits.")
         }
 
+        val cloudPinCollision = cloudSync?.findCloudPinCollisionDisplayName(null, cleanPin)
+        if (cloudPinCollision != null) {
+            return OperationResult.ValidationError(
+                "PIN '$cleanPin' is already registered in cloud for $cloudPinCollision. Choose a unique 4-digit PIN."
+            )
+        }
+
         var createdUser: UserAccountEntity? = null
         var createdVehicle: VehicleEntity? = null
 
         val result = db.withTransaction {
             val existingUsers = userDao.getAllUsersOnce()
+            val pinCollision = existingUsers.firstOrNull { it.pin == cleanPin }
+            if (pinCollision != null) {
+                return@withTransaction OperationResult.ValidationError(
+                    "PIN '$cleanPin' is already used by ${pinCollision.displayName} (${pinCollision.role.name}). Each login requires a unique PIN."
+                )
+            }
             val existingVehicles = vehicleDao.getAllVehiclesOnce()
             if (existingVehicles.any { it.name.equals(cleanVehicle, ignoreCase = true) }) {
                 return@withTransaction OperationResult.ValidationError("Vehicle '$cleanVehicle' already exists.")
@@ -318,7 +357,8 @@ class InventoryRepository(
                     totalOldEmpty = vRows.sumOf { it.oldEmpty },
                     totalCustomerEmptyReceived = vRows.sumOf { it.customerEmptyReceived },
                     totalEmptyReturnedToStore = vRows.sumOf { it.emptyReturnedToStore },
-                    totalEmptyBalance = vRows.sumOf { it.emptyBalance }
+                    totalEmptyBalance = vRows.sumOf { it.emptyBalance },
+                    totalComplaintReplaced = vRows.sumOf { it.complaintReplaced }
                 )
             }
 
@@ -433,16 +473,19 @@ class InventoryRepository(
                         )
                     }
                 }
+                TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE,
                 TransactionType.STORE_EMPTY_DISPATCH,
                 TransactionType.STORE_ADJUST_EMPTY_OUT -> {
                     if (liveStoreEmpty < quantity) {
                         return@withTransaction OperationResult.InsufficientStock(
                             title = "Insufficient Store Empty Stock",
-                            message = "Cannot dispatch/deduct $quantity × $productLabel empty cylinders.\n\nAvailable Store Empty Balance: $liveStoreEmpty"
+                            message = "Cannot dispatch/replace $quantity × $productLabel empty cylinders.\n\nAvailable Store Empty Balance: $liveStoreEmpty"
                         )
                     }
                 }
                 TransactionType.VEHICLE_CUSTOMER_SALE,
+                TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
                 TransactionType.VEHICLE_ADJUST_FULL_OUT -> {
                     if (liveVehicleFull < quantity) {
                         return@withTransaction OperationResult.InsufficientStock(
@@ -836,11 +879,14 @@ class InventoryRepository(
                 .map { (date, dayList) ->
                     MonthlyDailySaleRow(
                         date = date,
-                        totalSold = dayList.filter { it.type == TransactionType.VEHICLE_CUSTOMER_SALE }
-                            .sumOf { it.quantity },
+                        totalSold = dayList.filter {
+                            it.type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+                                it.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                        }.sumOf { it.quantity },
                         totalPurchases = dayList.filter {
                             it.type == TransactionType.STORE_PURCHASE_FULL ||
-                                it.type == TransactionType.STORE_PURCHASE_EMPTY
+                                it.type == TransactionType.STORE_PURCHASE_EMPTY ||
+                                it.type == TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE
                         }.sumOf { it.quantity },
                         totalDispatch = dayList.filter {
                             it.type == TransactionType.VEHICLE_FULL_RECEIVED ||
@@ -860,8 +906,10 @@ class InventoryRepository(
                 val pTxs = monthTxs.filter { it.productId == product.id }
                 ProductSalesRow(
                     product = product,
-                    totalSold = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_SALE }
-                        .sumOf { it.quantity },
+                    totalSold = pTxs.filter {
+                        it.type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+                            it.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                    }.sumOf { it.quantity },
                     emptyCollected = pTxs.filter { it.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER }
                         .sumOf { it.quantity }
                 )
@@ -884,8 +932,10 @@ class InventoryRepository(
                     vehicle = vehicle,
                     totalFullReceived = vMonthTxs.filter { it.type == TransactionType.VEHICLE_FULL_RECEIVED }
                         .sumOf { it.quantity },
-                    totalSold = vMonthTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_SALE }
-                        .sumOf { it.quantity },
+                    totalSold = vMonthTxs.filter {
+                        it.type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+                            it.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                    }.sumOf { it.quantity },
                     totalEmptyCollected = vMonthTxs.filter { it.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER }
                         .sumOf { it.quantity },
                     totalEmptyReturned = vMonthTxs.filter { it.type == TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE }

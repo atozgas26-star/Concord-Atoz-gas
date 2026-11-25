@@ -30,6 +30,14 @@ service cloud.firestore {
              ('email_verified' in request.auth.token) &&
              request.auth.token.email_verified == true;
     }
+    function userProfileExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+    function userHasAdminRole() {
+      return isSignedIn() &&
+             userProfileExists(request.auth.uid) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
+    }
     function workspaceExists(workspaceId) {
       return exists(/databases/$(database)/documents/workspaces/$(workspaceId));
     }
@@ -46,17 +54,42 @@ service cloud.firestore {
              workspaceExists(workspaceId) &&
              (isBootstrappedAdmin() || workspaceData(workspaceId).ownerUid == request.auth.uid);
     }
+    function isWorkspaceAdmin(workspaceId) {
+      return isSignedIn() &&
+             workspaceExists(workspaceId) &&
+             (
+               isBootstrappedAdmin() ||
+               workspaceData(workspaceId).ownerUid == request.auth.uid ||
+               (request.auth.uid in workspaceData(workspaceId).memberUids && userHasAdminRole())
+             );
+    }
 
     // --- ENTITY VALIDATION HELPERS ---
 
     function isValidUserProfile(data) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.role in ['ADMIN', 'STAFF'] &&
              (!('email' in data) || (data.email is string && data.email.size() <= 200)) &&
              (!('activeWorkspaceId' in data) || (data.activeWorkspaceId is string && data.activeWorkspaceId.size() <= 128)) &&
              (!('linkedStaffUsername' in data) || (data.linkedStaffUsername is string && data.linkedStaffUsername.size() <= 64)) &&
+             (!('linkedStaffRole' in data) || (data.linkedStaffRole in ['', 'ADMIN', 'STAFF'])) &&
+             (!('autoDriveBackupEnabled' in data) || (data.autoDriveBackupEnabled is bool)) &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
+    }
+
+    function canSetLinkedStaffRole(data) {
+      return !('linkedStaffRole' in data) ||
+             data.linkedStaffRole != 'ADMIN' ||
+             isBootstrappedAdmin() ||
+             data.role == 'ADMIN' ||
+             (
+               ('activeWorkspaceId' in data) &&
+               data.activeWorkspaceId is string &&
+               data.activeWorkspaceId.size() >= 1 &&
+               isWorkspaceAdmin(data.activeWorkspaceId)
+             );
     }
 
     function isValidWorkspaceInvite(data) {
@@ -127,6 +160,18 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
+    function isStaffAllowedTransactionType(txType) {
+      return txType in [
+        'VEHICLE_FULL_RECEIVED',
+        'VEHICLE_CUSTOMER_SALE',
+        'VEHICLE_NEW_CUSTOMER_SALE',
+        'VEHICLE_CUSTOMER_COMPLAINT_REPLACE',
+        'VEHICLE_EMPTY_FROM_CUSTOMER',
+        'VEHICLE_EMPTY_RETURN_TO_STORE',
+        'CUSTOMER_EMPTY_PENDING_ADD'
+      ];
+    }
+
     function isValidTransaction(data) {
       return data.clientTxId is string && isValidId(data.clientTxId) &&
              data.businessDate is string && data.businessDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
@@ -134,6 +179,7 @@ service cloud.firestore {
              data.type in [
                'STORE_PURCHASE_FULL',
                'STORE_PURCHASE_EMPTY',
+               'STORE_PURCHASE_COMPLAINT_REPLACE',
                'STORE_FULL_INWARD',
                'STORE_EMPTY_INWARD',
                'STORE_FULL_DISPATCH_DIRECT',
@@ -144,6 +190,8 @@ service cloud.firestore {
                'STORE_ADJUST_EMPTY_OUT',
                'VEHICLE_FULL_RECEIVED',
                'VEHICLE_CUSTOMER_SALE',
+               'VEHICLE_NEW_CUSTOMER_SALE',
+               'VEHICLE_CUSTOMER_COMPLAINT_REPLACE',
                'VEHICLE_EMPTY_FROM_CUSTOMER',
                'VEHICLE_EMPTY_RETURN_TO_STORE',
                'VEHICLE_ADJUST_FULL_IN',
@@ -167,29 +215,87 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
+    function isValidAdminSettings(data, settingId) {
+      return data.settingId == settingId &&
+             data.settingId is string && isValidId(data.settingId) &&
+             data.autoDriveBackupEnabled is bool &&
+             data.lastDriveBackupAtMs is int && data.lastDriveBackupAtMs >= 0 &&
+             data.lastDriveFileId is string && data.lastDriveFileId.size() <= 256 &&
+             data.lastDriveBackupStatus is string && data.lastDriveBackupStatus.size() <= 300 &&
+             (!('driveAccountEmail' in data) || (data.driveAccountEmail is string && data.driveAccountEmail.size() <= 200)) &&
+             (!('themePreset' in data) || (data.themePreset is string && data.themePreset.size() <= 64)) &&
+             (!('autoLogoutMode' in data) || (data.autoLogoutMode is string && data.autoLogoutMode.size() <= 64)) &&
+             data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAdminReport(data, reportId) {
+      return data.reportId == reportId &&
+             data.reportId is string && isValidId(data.reportId) &&
+             data.reportType in [
+               'DAILY_STORE',
+               'DAILY_VEHICLE',
+               'MONTHLY_SALES',
+               'PRODUCT_WISE_SALES',
+               'STAFF_WISE_SALES',
+               'FULL_EMPTY_STOCK',
+               'PURCHASE_REGISTER',
+               'CUSTOMER_PENDING'
+             ] &&
+             data.reportTitle is string && data.reportTitle.size() >= 1 && data.reportTitle.size() <= 160 &&
+             data.subtitle is string && data.subtitle.size() <= 300 &&
+             data.businessDate is string && data.businessDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.yearMonth is string && data.yearMonth.matches('^[0-9]{4}-[0-9]{2}$') &&
+             data.generatedBy is string && data.generatedBy.size() >= 1 && data.generatedBy.size() <= 100 &&
+             data.rowCount is int && data.rowCount >= 0 &&
+             data.summaryTotals is string && data.summaryTotals.size() <= 500 &&
+             (!('driveFileId' in data) || (data.driveFileId is string && data.driveFileId.size() <= 256)) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
     // --- COLLECTION RULES ---
 
-    // 1. User Profiles (Strict owner isolation - PII protection)
+    // 1. User Profiles (Strict owner isolation + Anti-privilege-escalation role enforcement)
     match /users/{userId} {
-      allow get, list: if isSignedIn() && request.auth.uid == userId;
+      allow get: if isSignedIn() && isValidId(userId) &&
+                    (request.auth.uid == userId || isBootstrappedAdmin());
+      allow list: if isBootstrappedAdmin();
 
       allow create: if isSignedIn() &&
                        isValidId(userId) &&
                        request.auth.uid == userId &&
                        incoming().userId == request.auth.uid &&
-                       incoming().keys().hasAll(['userId', 'displayName', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'activeWorkspaceId', 'linkedStaffUsername', 'createdAt', 'updatedAt']) &&
-                       isValidUserProfile(incoming());
+                       incoming().keys().hasAll(['userId', 'displayName', 'role', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'role', 'activeWorkspaceId', 'linkedStaffUsername', 'linkedStaffRole', 'autoDriveBackupEnabled', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming()) &&
+                       (
+                         incoming().role == 'STAFF' ||
+                         (incoming().role == 'ADMIN' && isBootstrappedAdmin())
+                       ) &&
+                       canSetLinkedStaffRole(incoming());
 
       allow update: if isSignedIn() &&
                        isValidId(userId) &&
-                       request.auth.uid == userId &&
                        isValidUserProfile(incoming()) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'activeWorkspaceId', 'linkedStaffUsername', 'updatedAt']);
+                       (
+                         (
+                           request.auth.uid == userId &&
+                           ((!('role' in existing()) && incoming().role == 'STAFF') || (('role' in existing()) && incoming().role == existing().role) || isBootstrappedAdmin()) &&
+                           canSetLinkedStaffRole(incoming()) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'role', 'activeWorkspaceId', 'linkedStaffUsername', 'linkedStaffRole', 'autoDriveBackupEnabled', 'updatedAt'])
+                         ) ||
+                         (
+                           isBootstrappedAdmin() &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt'])
+                         )
+                       );
 
-      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isBootstrappedAdmin());
     }
 
     // 2. Workspace Invite Codes (Direct lookup by secret code; never listable)
@@ -205,7 +311,7 @@ service cloud.firestore {
                        incoming().keys().hasAll(['workspaceId', 'ownerUid', 'active', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly(['workspaceId', 'ownerUid', 'active', 'createdAt', 'updatedAt']) &&
                        isValidWorkspaceInvite(incoming()) &&
-                       (isBootstrappedAdmin() || !workspaceExists(incoming().workspaceId) || workspaceData(incoming().workspaceId).ownerUid == request.auth.uid);
+                       (isBootstrappedAdmin() || !workspaceExists(incoming().workspaceId) || isWorkspaceAdmin(incoming().workspaceId));
 
       allow update: if isSignedIn() &&
                        isValidId(inviteCode) &&
@@ -213,7 +319,7 @@ service cloud.firestore {
                        incoming().ownerUid == existing().ownerUid &&
                        incoming().workspaceId == existing().workspaceId &&
                        incoming().createdAt == existing().createdAt &&
-                       (isBootstrappedAdmin() || existing().ownerUid == request.auth.uid) &&
+                       (isBootstrappedAdmin() || existing().ownerUid == request.auth.uid || isWorkspaceAdmin(existing().workspaceId)) &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['active', 'updatedAt']);
 
       allow delete: if isSignedIn() && isValidId(inviteCode) && (isBootstrappedAdmin() || existing().ownerUid == request.auth.uid);
@@ -241,8 +347,8 @@ service cloud.firestore {
                        incoming().ownerUid == existing().ownerUid &&
                        incoming().createdAt == existing().createdAt &&
                        (
-                         // Owner or Bootstrapped Admin action
-                         ((existing().ownerUid == request.auth.uid || isBootstrappedAdmin()) &&
+                         // Owner, Bootstrapped Admin, or promoted Workspace Admin
+                         (isWorkspaceAdmin(workspaceId) &&
                            incoming().diff(existing()).affectedKeys().hasOnly(['companyName', 'memberUids', 'activeInviteCode', 'updatedAt'])) ||
                          // Staff self-join via valid active invite code
                          (
@@ -259,23 +365,22 @@ service cloud.firestore {
 
       allow delete: if isSignedIn() && isValidId(workspaceId) && (existing().ownerUid == request.auth.uid || isBootstrappedAdmin());
 
-      // --- 3A. Staff & Admin Accounts ---
+      // --- 3A. Staff & Admin Accounts (Read by members; mutated ONLY by Admin) ---
       match /staff_accounts/{accountId} {
         allow get: if isSignedIn() && isValidId(accountId) &&
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
 
-        allow create: if isSignedIn() &&
+        allow create: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(accountId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
                          incoming().keys().hasAll(['localId', 'username', 'displayName', 'role', 'pin', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          incoming().keys().hasOnly(['localId', 'username', 'displayName', 'role', 'pin', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         isValidStaffAccount(incoming()) &&
-                         isWorkspaceMember(workspaceId);
+                         isValidStaffAccount(incoming());
 
-        allow update: if isSignedIn() &&
+        allow update: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(accountId) &&
                          isValidStaffAccount(incoming()) &&
@@ -283,7 +388,7 @@ service cloud.firestore {
                          incoming().username == existing().username &&
                          incoming().role == existing().role &&
                          incoming().createdAt == existing().createdAt &&
-                         isWorkspaceMember(workspaceId) &&
+                         (existing().role != 'ADMIN' || isWorkspaceOwner(workspaceId)) &&
                          (
                            (incoming().updatedByUid == request.auth.uid &&
                             incoming().diff(existing()).affectedKeys().hasOnly(['pin', 'displayName', 'active', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
@@ -295,29 +400,27 @@ service cloud.firestore {
         allow delete: if isWorkspaceOwner(workspaceId) && isValidId(accountId);
       }
 
-      // --- 3B. Vehicles ---
+      // --- 3B. Vehicles (Read by members; mutated ONLY by Admin) ---
       match /vehicles/{vehicleId} {
         allow get: if isSignedIn() && isValidId(vehicleId) &&
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
 
-        allow create: if isSignedIn() &&
+        allow create: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(vehicleId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
                          incoming().keys().hasAll(['localId', 'name', 'staffUserId', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          incoming().keys().hasOnly(['localId', 'name', 'staffUserId', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         isValidVehicle(incoming()) &&
-                         isWorkspaceMember(workspaceId);
+                         isValidVehicle(incoming());
 
-        allow update: if isSignedIn() &&
+        allow update: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(vehicleId) &&
                          isValidVehicle(incoming()) &&
                          incoming().localId == existing().localId &&
                          incoming().createdAt == existing().createdAt &&
-                         isWorkspaceMember(workspaceId) &&
                          (
                            (incoming().updatedByUid == request.auth.uid &&
                             incoming().diff(existing()).affectedKeys().hasOnly(['name', 'staffUserId', 'active', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
@@ -329,29 +432,27 @@ service cloud.firestore {
         allow delete: if isWorkspaceOwner(workspaceId) && isValidId(vehicleId);
       }
 
-      // --- 3C. Products ---
+      // --- 3C. Products (Read by members; mutated ONLY by Admin) ---
       match /products/{productId} {
         allow get: if isSignedIn() && isValidId(productId) &&
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
 
-        allow create: if isSignedIn() &&
+        allow create: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(productId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
                          incoming().keys().hasAll(['localId', 'category', 'name', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          incoming().keys().hasOnly(['localId', 'category', 'name', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         isValidProduct(incoming()) &&
-                         isWorkspaceMember(workspaceId);
+                         isValidProduct(incoming());
 
-        allow update: if isSignedIn() &&
+        allow update: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(productId) &&
                          isValidProduct(incoming()) &&
                          incoming().localId == existing().localId &&
                          incoming().createdAt == existing().createdAt &&
-                         isWorkspaceMember(workspaceId) &&
                          (
                            (incoming().updatedByUid == request.auth.uid &&
                             incoming().diff(existing()).affectedKeys().hasOnly(['category', 'name', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
@@ -363,23 +464,22 @@ service cloud.firestore {
         allow delete: if isWorkspaceOwner(workspaceId) && isValidId(productId);
       }
 
-      // --- 3D. Opening Stocks ---
+      // --- 3D. Opening Stocks (Read by members; mutated ONLY by Admin) ---
       match /openings/{openingId} {
         allow get: if isSignedIn() && isValidId(openingId) &&
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
 
-        allow create: if isSignedIn() &&
+        allow create: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(openingId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
                          incoming().keys().hasAll(['scope', 'vehicleId', 'productId', 'openingFull', 'openingEmpty', 'updatedBy', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          incoming().keys().hasOnly(['scope', 'vehicleId', 'productId', 'openingFull', 'openingEmpty', 'updatedBy', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         isValidOpening(incoming()) &&
-                         isWorkspaceMember(workspaceId);
+                         isValidOpening(incoming());
 
-        allow update: if isSignedIn() &&
+        allow update: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(openingId) &&
                          isValidOpening(incoming()) &&
@@ -387,7 +487,6 @@ service cloud.firestore {
                          incoming().vehicleId == existing().vehicleId &&
                          incoming().productId == existing().productId &&
                          incoming().createdAt == existing().createdAt &&
-                         isWorkspaceMember(workspaceId) &&
                          (
                            (incoming().updatedByUid == request.auth.uid &&
                             incoming().diff(existing()).affectedKeys().hasOnly(['openingFull', 'openingEmpty', 'updatedBy', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
@@ -399,7 +498,7 @@ service cloud.firestore {
         allow delete: if isWorkspaceOwner(workspaceId) && isValidId(openingId);
       }
 
-      // --- 3E. Stock Transactions (Online Entry from 7 Staff + Admin) ---
+      // --- 3E. Stock Transactions (Staff create vehicle/customer entries only; Admin edit/delete/store) ---
       match /transactions/{txId} {
         allow get: if isSignedIn() && isValidId(txId) &&
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
@@ -414,9 +513,10 @@ service cloud.firestore {
                          incoming().keys().hasAll(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'staffId', 'staffName', 'quantity', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
                          incoming().keys().hasOnly(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'vehicleId', 'vehicleName', 'staffId', 'staffName', 'quantity', 'purchaseCompanyName', 'customerName', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
                          isValidTransaction(incoming()) &&
-                         isWorkspaceMember(workspaceId);
+                         isWorkspaceMember(workspaceId) &&
+                         (isWorkspaceAdmin(workspaceId) || isStaffAllowedTransactionType(incoming().type));
 
-        allow update: if isSignedIn() &&
+        allow update: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(txId) &&
                          isValidTransaction(incoming()) &&
@@ -427,7 +527,6 @@ service cloud.firestore {
                          incoming().staffName == existing().staffName &&
                          incoming().createdByUid == existing().createdByUid &&
                          incoming().createdAt == existing().createdAt &&
-                         isWorkspaceMember(workspaceId) &&
                          (
                            (incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
                             incoming().memberUids == workspaceData(workspaceId).memberUids) ||
@@ -435,11 +534,57 @@ service cloud.firestore {
                             incoming().memberUids.hasAll(existing().memberUids))
                          );
 
-        allow delete: if isSignedIn() &&
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(txId);
+      }
+
+      // --- 3F. Admin-Only Sensitive Settings & Google Drive Auto-Backup State ---
+      match /admin_settings/{settingId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(settingId);
+        allow list: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId);
+
+        allow create: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
-                         isValidId(txId) &&
-                         isWorkspaceMember(workspaceId) &&
-                         (existing().createdByUid == request.auth.uid || isWorkspaceOwner(workspaceId));
+                         isValidId(settingId) &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         isValidAdminSettings(incoming(), settingId);
+
+        allow update: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(settingId) &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().settingId == existing().settingId &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'updatedByUid', 'updatedAt']) &&
+                         isValidAdminSettings(incoming(), settingId);
+
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(settingId);
+      }
+
+      // --- 3G. Admin-Only Sensitive Business & Purchase Reports ---
+      match /admin_reports/{reportId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(reportId);
+        allow list: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId);
+
+        allow create: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(reportId) &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['reportId', 'reportType', 'reportTitle', 'subtitle', 'businessDate', 'yearMonth', 'generatedBy', 'rowCount', 'summaryTotals', 'createdByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['reportId', 'reportType', 'reportTitle', 'subtitle', 'businessDate', 'yearMonth', 'generatedBy', 'rowCount', 'summaryTotals', 'driveFileId', 'createdByUid', 'createdAt', 'updatedAt']) &&
+                         isValidAdminReport(incoming(), reportId);
+
+        allow update: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(reportId) &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().reportId == existing().reportId &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['reportTitle', 'subtitle', 'rowCount', 'summaryTotals', 'driveFileId', 'updatedAt']) &&
+                         isValidAdminReport(incoming(), reportId);
+
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(reportId);
       }
     }
   }

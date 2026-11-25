@@ -22,13 +22,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -73,6 +76,7 @@ import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.OpeningStockEditDialog
 import com.example.ui.components.PendingCustomerCard
+import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.theme.BrandGreenContainer
@@ -229,6 +233,7 @@ fun VehicleDetailScreen(
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
+    var showCalculator by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<VehicleStockRow?>(null) }
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
@@ -293,6 +298,29 @@ fun VehicleDetailScreen(
                     },
                     label = { Text("Customer Sale") },
                     leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null, tint = BrandRedSecondary) }
+                )
+                AssistChip(
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                    },
+                    label = { Text("New Cust Sale") },
+                    leadingIcon = { Icon(Icons.Default.PersonAddAlt1, contentDescription = null, tint = BrandGreenPrimary) }
+                )
+                AssistChip(
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
+                    },
+                    label = { Text("Complaint Replace") },
+                    leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = BrandRedSecondary) }
+                )
+                AssistChip(
+                    onClick = { showCalculator = true },
+                    label = { Text("Calculate") },
+                    leadingIcon = { Icon(Icons.Default.Calculate, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                 )
                 AssistChip(
                     onClick = {
@@ -490,6 +518,8 @@ fun VehicleDetailScreen(
     if (activeTxType != null && vehicle != null) {
         val type = activeTxType!!
         val showCust = type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+            type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE ||
+            type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ||
             type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ||
             type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD
         val requireCust = type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD
@@ -512,7 +542,9 @@ fun VehicleDetailScreen(
                 when (type) {
                     TransactionType.VEHICLE_FULL_RECEIVED ->
                         "Store Full Available: ${sRow?.storeFullBalance ?: 0}  |  Vehicle Full: ${vRow?.fullBalance ?: 0}"
-                    TransactionType.VEHICLE_CUSTOMER_SALE ->
+                    TransactionType.VEHICLE_CUSTOMER_SALE,
+                    TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                    TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ->
                         "Vehicle Full Available: ${vRow?.fullBalance ?: 0}  |  Empty: ${vRow?.emptyBalance ?: 0}"
                     TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
                         "Vehicle Empty Available: ${vRow?.emptyBalance ?: 0}  |  Store Empty: ${sRow?.storeEmptyBalance ?: 0}"
@@ -536,6 +568,15 @@ fun VehicleDetailScreen(
                         val vEmp = vRow.emptyBalance + empNow
                         "Veh Full: ${vRow.fullBalance} -> $vFull  |  Veh Empty: ${vRow.emptyBalance} -> $vEmp"
                     }
+                    TransactionType.VEHICLE_NEW_CUSTOMER_SALE -> {
+                        val vFull = vRow.fullBalance - qty
+                        "New Sale: -$qty Full -> Bal $vFull  |  Pending Empty: 0"
+                    }
+                    TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE -> {
+                        val vFull = vRow.fullBalance - qty
+                        val vEmp = vRow.emptyBalance + qty
+                        "Complaint Swap: Full ${vRow.fullBalance} -> $vFull  |  Empty ${vRow.emptyBalance} -> $vEmp"
+                    }
                     TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER -> {
                         val vEmp = vRow.emptyBalance + qty
                         "Veh Empty: ${vRow.emptyBalance} -> $vEmp  |  Cust Pending: -$qty"
@@ -554,6 +595,18 @@ fun VehicleDetailScreen(
             onConfirm = { prodId, _, qty, notes, _, custName, empNow ->
                 onRecordTransaction(type, prodId, vehicle.id, qty, notes, custName, empNow)
             }
+        )
+    }
+
+    if (showCalculator && vehicle != null) {
+        StockCalculatorDialog(
+            products = products,
+            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
+            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
+            vehicleName = vehicle.name,
+            vehicleFullProvider = { prodId -> rows.firstOrNull { it.product.id == prodId }?.fullBalance ?: 0 },
+            vehicleEmptyProvider = { prodId -> rows.firstOrNull { it.product.id == prodId }?.emptyBalance ?: 0 },
+            onDismiss = { showCalculator = false }
         )
     }
 
@@ -669,8 +722,9 @@ fun VehicleProductRowCard(
                             fontWeight = FontWeight.Bold,
                             color = BrandGreenOnContainer
                         )
+                        val replFull = if (row.complaintReplaced > 0) " • Repl: -${row.complaintReplaced}" else ""
                         Text(
-                            text = "Old: ${row.oldFull}  •  Recd: ${row.fullReceived}\nTot: ${row.totalFull}  •  Sale: ${row.customerSales}\nBal: ${row.fullBalance}",
+                            text = "Old: ${row.oldFull}  •  Recd: ${row.fullReceived}\nTot: ${row.totalFull}  •  Sale: ${row.customerSales}$replFull\nBal: ${row.fullBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
                             color = BrandGreenOnContainer
@@ -689,8 +743,9 @@ fun VehicleProductRowCard(
                             fontWeight = FontWeight.Bold,
                             color = BrandRedOnContainer
                         )
+                        val replEmp = if (row.complaintReplaced > 0) " • Repl: +${row.complaintReplaced}" else ""
                         Text(
-                            text = "Old: ${row.oldEmpty}  •  Cust: ${row.customerEmptyReceived}\nRet Store: ${row.emptyReturnedToStore}\nBal: ${row.emptyBalance}",
+                            text = "Old: ${row.oldEmpty}  •  Cust: ${row.customerEmptyReceived}$replEmp\nRet Store: ${row.emptyReturnedToStore}\nBal: ${row.emptyBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
                             color = BrandRedOnContainer

@@ -10,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+import com.example.data.model.ThemePreset
+
 private val LightColorScheme = lightColorScheme(
     primary = BrandGreenPrimary,
     onPrimary = Color.White,
@@ -28,6 +30,60 @@ private val LightColorScheme = lightColorScheme(
     surface = LightSurface,
     onSurface = TextPrimaryLight,
     surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = TextSecondaryLight,
+    outline = LightOutline,
+    outlineVariant = LightOutlineVariant,
+    error = BrandRedBright,
+    onError = Color.White,
+    errorContainer = BrandRedContainer,
+    onErrorContainer = BrandRedOnContainer
+)
+
+private val OceanicTealColorScheme = lightColorScheme(
+    primary = TealPrimary,
+    onPrimary = Color.White,
+    primaryContainer = TealContainer,
+    onPrimaryContainer = TealOnContainer,
+    secondary = TealSecondary,
+    onSecondary = Color.White,
+    secondaryContainer = TealSecondaryContainer,
+    onSecondaryContainer = TealSecondaryOnContainer,
+    tertiary = SlateTertiary,
+    onTertiary = Color.White,
+    tertiaryContainer = SlateContainer,
+    onTertiaryContainer = SlateOnContainer,
+    background = TealBackground,
+    onBackground = TextPrimaryLight,
+    surface = LightSurface,
+    onSurface = TextPrimaryLight,
+    surfaceVariant = TealSurfaceVariant,
+    onSurfaceVariant = TextSecondaryLight,
+    outline = LightOutline,
+    outlineVariant = LightOutlineVariant,
+    error = BrandRedBright,
+    onError = Color.White,
+    errorContainer = BrandRedContainer,
+    onErrorContainer = BrandRedOnContainer
+)
+
+private val SunsetAmberColorScheme = lightColorScheme(
+    primary = FlamePrimary,
+    onPrimary = Color.White,
+    primaryContainer = FlameContainer,
+    onPrimaryContainer = FlameOnContainer,
+    secondary = FlameSecondary,
+    onSecondary = Color.White,
+    secondaryContainer = FlameSecondaryContainer,
+    onSecondaryContainer = FlameSecondaryOnContainer,
+    tertiary = BrandRedSecondary,
+    onTertiary = Color.White,
+    tertiaryContainer = BrandRedContainer,
+    onTertiaryContainer = BrandRedOnContainer,
+    background = FlameBackground,
+    onBackground = TextPrimaryLight,
+    surface = LightSurface,
+    onSurface = TextPrimaryLight,
+    surfaceVariant = FlameSurfaceVariant,
     onSurfaceVariant = TextSecondaryLight,
     outline = LightOutline,
     outlineVariant = LightOutlineVariant,
@@ -69,10 +125,16 @@ val AppShapes = Shapes(
 
 @Composable
 fun ConcordGasTheme(
+    themePreset: ThemePreset = ThemePreset.EMERALD_CORPORATE,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = when (themePreset) {
+        ThemePreset.MIDNIGHT_DARK -> DarkColorScheme
+        ThemePreset.OCEANIC_TEAL -> if (darkTheme) DarkColorScheme else OceanicTealColorScheme
+        ThemePreset.SUNSET_AMBER -> if (darkTheme) DarkColorScheme else SunsetAmberColorScheme
+        ThemePreset.EMERALD_CORPORATE -> if (darkTheme) DarkColorScheme else LightColorScheme
+    }
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,

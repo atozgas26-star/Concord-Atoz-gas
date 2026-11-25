@@ -25,6 +25,7 @@ enum class TransactionType(
 ) {
     STORE_PURCHASE_FULL("Full Purchase (Supplier)", true, false),
     STORE_PURCHASE_EMPTY("Empty Purchase (Supplier)", true, false),
+    STORE_PURCHASE_COMPLAINT_REPLACE("Supplier Complaint Replace", true, false),
     STORE_FULL_INWARD("Full Cylinder Inward", true, false),
     STORE_EMPTY_INWARD("Empty Cylinder Inward", true, false),
     STORE_FULL_DISPATCH_DIRECT("Direct Full Dispatch", true, false),
@@ -36,6 +37,8 @@ enum class TransactionType(
 
     VEHICLE_FULL_RECEIVED("Full Received from Store", true, true),
     VEHICLE_CUSTOMER_SALE("Customer Sale", false, true),
+    VEHICLE_NEW_CUSTOMER_SALE("New Customer Full Sale", false, true),
+    VEHICLE_CUSTOMER_COMPLAINT_REPLACE("Customer Complaint Replace", false, true),
     VEHICLE_EMPTY_FROM_CUSTOMER("Customer Empty Received", false, true),
     VEHICLE_EMPTY_RETURN_TO_STORE("Empty Returned to Store", true, true),
     VEHICLE_ADJUST_FULL_IN("Vehicle Full Adjustment (+)", false, true),
@@ -53,6 +56,20 @@ enum class ReportType(val title: String, val subtitle: String) {
     PRODUCT_WISE_SALES("Product-Wise Sales", "Sales breakdown by gas category & cylinder"),
     STAFF_WISE_SALES("Staff-Wise Sales", "Performance & balances by staff/vehicle"),
     FULL_EMPTY_STOCK("Full & Empty Stock", "Combined Store + Vehicles inventory balance"),
-    PURCHASE_REGISTER("Purchase Register", "Supplier company-wise cylinder purchases"),
+    PURCHASE_REGISTER("Purchase Register", "Daily & monthly supplier purchases & complaint replacements"),
     CUSTOMER_PENDING("Customer Pending Empty", "Customer-wise full sold, empty collected & pending balance")
+}
+
+enum class ThemePreset(val title: String, val subtitle: String) {
+    EMERALD_CORPORATE("Emerald Gas", "Classic green & red"),
+    OCEANIC_TEAL("Oceanic Teal", "Deep industrial teal"),
+    SUNSET_AMBER("Flame Amber", "Warm copper & navy"),
+    MIDNIGHT_DARK("Midnight Pro", "High-contrast dark mode")
+}
+
+enum class AutoLogoutMode(val label: String, val idleTimeoutMs: Long) {
+    OFF("Stay Logged In", 0L),
+    ON_MINIMIZE("Lock on App Minimize", 0L),
+    IDLE_5_MIN("Auto Logout (5 Min Idle)", 300_000L),
+    IDLE_15_MIN("Auto Logout (15 Min Idle)", 900_000L)
 }

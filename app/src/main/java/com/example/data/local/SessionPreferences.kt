@@ -3,9 +3,14 @@ package com.example.data.local
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.data.model.AutoLogoutMode
+import com.example.data.model.ThemePreset
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -14,6 +19,40 @@ private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataS
 class SessionPreferences(private val context: Context) {
 
     private val keyLoggedInUserId = longPreferencesKey("logged_in_local_user_id")
+    private val keyAutoLoginEnabled = booleanPreferencesKey("auto_login_enabled")
+    private val keyAutoLogoutMode = stringPreferencesKey("auto_logout_mode")
+    private val keyThemePreset = stringPreferencesKey("theme_preset")
+    private val keySoundEnabled = booleanPreferencesKey("sound_enabled")
+    private val keyAutoDriveBackupEnabled = booleanPreferencesKey("auto_drive_backup_enabled")
+    private val keyLastDriveBackupAtMs = longPreferencesKey("last_drive_backup_at_ms")
+    private val keyLastDriveFileId = stringPreferencesKey("last_drive_file_id")
+
+    val autoLoginEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
+        .map { prefs -> prefs[keyAutoLoginEnabled] ?: true }
+
+    val autoLogoutModeFlow: Flow<AutoLogoutMode> = context.sessionDataStore.data
+        .map { prefs ->
+            val raw = prefs[keyAutoLogoutMode]
+            AutoLogoutMode.entries.firstOrNull { it.name == raw } ?: AutoLogoutMode.OFF
+        }
+
+    val themePresetFlow: Flow<ThemePreset> = context.sessionDataStore.data
+        .map { prefs ->
+            val raw = prefs[keyThemePreset]
+            ThemePreset.entries.firstOrNull { it.name == raw } ?: ThemePreset.EMERALD_CORPORATE
+        }
+
+    val soundEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
+        .map { prefs -> prefs[keySoundEnabled] ?: true }
+
+    val autoDriveBackupEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
+        .map { prefs -> prefs[keyAutoDriveBackupEnabled] ?: false }
+
+    val lastDriveBackupAtMsFlow: Flow<Long> = context.sessionDataStore.data
+        .map { prefs -> prefs[keyLastDriveBackupAtMs] ?: 0L }
+
+    val lastDriveFileIdFlow: Flow<String> = context.sessionDataStore.data
+        .map { prefs -> prefs[keyLastDriveFileId] ?: "" }
 
     suspend fun getLoggedInUserId(): Long? {
         return context.sessionDataStore.data
@@ -30,6 +69,43 @@ class SessionPreferences(private val context: Context) {
     suspend fun clearLoggedInUserId() {
         context.sessionDataStore.edit { prefs ->
             prefs.remove(keyLoggedInUserId)
+        }
+    }
+
+    suspend fun setAutoLoginEnabled(enabled: Boolean) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyAutoLoginEnabled] = enabled
+        }
+    }
+
+    suspend fun setAutoLogoutMode(mode: AutoLogoutMode) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyAutoLogoutMode] = mode.name
+        }
+    }
+
+    suspend fun setThemePreset(preset: ThemePreset) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyThemePreset] = preset.name
+        }
+    }
+
+    suspend fun setSoundEnabled(enabled: Boolean) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keySoundEnabled] = enabled
+        }
+    }
+
+    suspend fun setAutoDriveBackupEnabled(enabled: Boolean) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyAutoDriveBackupEnabled] = enabled
+        }
+    }
+
+    suspend fun saveDriveBackupReceipt(timestampMs: Long, fileId: String) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyLastDriveBackupAtMs] = timestampMs
+            prefs[keyLastDriveFileId] = fileId
         }
     }
 }

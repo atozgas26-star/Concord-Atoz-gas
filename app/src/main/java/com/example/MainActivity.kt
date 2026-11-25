@@ -2,8 +2,11 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -35,6 +38,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -50,15 +54,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.audio.SoundEffectsManager
 import com.example.auth.GoogleAuthScreen
 import com.example.auth.authStateFlow
 import com.example.auth.signOutGoogle
+import com.example.data.model.AutoLogoutMode
 import com.example.data.model.StockCalculator
+import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.InsufficientStockWarningDialog
+import com.example.ui.components.StartupSplashOverlay
 import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.AdminSettingsScreen
 import com.example.ui.screens.CompanyInventoryScreen
@@ -91,28 +102,50 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val app = application as ConcordGasApp
         setContent {
-            ConcordGasTheme {
-                val auth = remember { Firebase.auth }
-                val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
-                val user = currentUser
+            val themePreset by app.container.sessionPreferences.themePresetFlow
+                .collectAsStateWithLifecycle(initialValue = ThemePreset.EMERALD_CORPORATE)
+            val soundEnabled by app.container.sessionPreferences.soundEnabledFlow
+                .collectAsStateWithLifecycle(initialValue = true)
+            var showSplash by rememberSaveable { mutableStateOf(true) }
 
-                if (user == null) {
-                    GoogleAuthScreen(onAuthSuccess = { /* authStateFlow emits updated user */ })
-                } else {
-                    val uid = user.uid
-                    key(uid) {
-                        val viewModel: AppViewModel = viewModel(
-                            key = uid,
-                            factory = AppViewModel.Factory(
-                                repository = app.container.repository,
-                                backupManager = app.container.backupManager,
-                                cloudSync = app.container.cloudSyncRepository,
-                                sessionPreferences = app.container.sessionPreferences
+            ConcordGasTheme(themePreset = themePreset) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    val auth = remember { Firebase.auth }
+                    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+                    val user = currentUser
+
+                    if (user == null) {
+                        GoogleAuthScreen(onAuthSuccess = { /* authStateFlow emits updated user */ })
+                    } else {
+                        val uid = user.uid
+                        key(uid) {
+                            val viewModel: AppViewModel = viewModel(
+                                key = uid,
+                                factory = AppViewModel.Factory(
+                                    repository = app.container.repository,
+                                    backupManager = app.container.backupManager,
+                                    cloudSync = app.container.cloudSyncRepository,
+                                    sessionPreferences = app.container.sessionPreferences,
+                                    driveBackupManager = app.container.driveBackupManager,
+                                    appContext = app.applicationContext
+                                )
                             )
-                        )
-                        ConcordGasRootApp(
-                            viewModel = viewModel,
-                            googleEmail = user.email.orEmpty()
+                            ConcordGasRootApp(
+                                viewModel = viewModel,
+                                googleEmail = user.email.orEmpty(),
+                                onPreviewStartupSplash = { showSplash = true }
+                            )
+                        }
+                    }
+
+                    if (showSplash) {
+                        LaunchedEffect(Unit) {
+                            SoundEffectsManager.playStartupChime(soundEnabled)
+                        }
+                        StartupSplashOverlay(
+                            themePreset = themePreset,
+                            soundEnabled = soundEnabled,
+                            onSplashFinished = { showSplash = false }
                         )
                     }
                 }
@@ -124,7 +157,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ConcordGasRootApp(
     viewModel: AppViewModel,
-    googleEmail: String = ""
+    googleEmail: String = "",
+    onPreviewStartupSplash: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -133,8 +167,14 @@ fun ConcordGasRootApp(
     val isInitialized by viewModel.isInitialized.collectAsStateWithLifecycle()
     val authSession by viewModel.authSession.collectAsStateWithLifecycle()
     val workspaceState by viewModel.workspaceConnectionState.collectAsStateWithLifecycle()
+    val cloudLoginMetadata by viewModel.cloudLoginMetadata.collectAsStateWithLifecycle()
     val cloudBusy by viewModel.cloudActionBusy.collectAsStateWithLifecycle()
+    val isAuthenticating by viewModel.isAuthenticating.collectAsStateWithLifecycle()
     val loginError by viewModel.loginError.collectAsStateWithLifecycle()
+    val themePreset by viewModel.themePreset.collectAsStateWithLifecycle()
+    val soundEnabled by viewModel.soundEnabled.collectAsStateWithLifecycle()
+    val autoLoginEnabled by viewModel.autoLoginEnabled.collectAsStateWithLifecycle()
+    val autoLogoutMode by viewModel.autoLogoutMode.collectAsStateWithLifecycle()
     val users by viewModel.users.collectAsStateWithLifecycle()
     val vehicles by viewModel.vehicles.collectAsStateWithLifecycle()
     val activeProducts by viewModel.activeProducts.collectAsStateWithLifecycle()
@@ -154,6 +194,10 @@ fun ConcordGasRootApp(
     val staffVehiclePendingRows by viewModel.staffVehiclePendingRows.collectAsStateWithLifecycle()
     val warningAlert by viewModel.warningAlert.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
+    val driveBackupState by viewModel.driveBackupState.collectAsStateWithLifecycle()
+    val driveConsentRequest by viewModel.driveConsentRequest.collectAsStateWithLifecycle()
+    val pendingDriveRestoreJson by viewModel.pendingDriveRestoreJson.collectAsStateWithLifecycle()
+    val permissionsStatus by viewModel.permissionsStatus.collectAsStateWithLifecycle()
 
     // Subscribe to report flows so report tables stay live
     viewModel.monthlySalesReport.collectAsStateWithLifecycle()
@@ -163,10 +207,74 @@ fun ConcordGasRootApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val driveConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { res ->
+        viewModel.handleDriveConsentResult(res.resultCode, res.data)
+    }
+
+    LaunchedEffect(driveConsentRequest) {
+        driveConsentRequest?.let { pending ->
+            try {
+                driveConsentLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+            } catch (_: Exception) {
+                viewModel.dismissDriveConsentRequest()
+            }
+        }
+    }
+
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let { msg ->
+            SoundEffectsManager.playSuccessChime(soundEnabled)
             snackbarHostState.showSnackbar(msg)
             viewModel.clearSnackbar()
+        }
+    }
+
+    LaunchedEffect(warningAlert) {
+        if (warningAlert != null) {
+            SoundEffectsManager.playWarningTone(soundEnabled)
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var backgroundedAtMs by remember { mutableStateOf<Long?>(null) }
+    DisposableEffect(lifecycleOwner, autoLogoutMode, authSession != null) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    if (authSession != null) {
+                        backgroundedAtMs = System.currentTimeMillis()
+                        if (autoLogoutMode == AutoLogoutMode.ON_MINIMIZE) {
+                            SoundEffectsManager.playWarningTone(soundEnabled)
+                            viewModel.lockSessionOnAutoLogout("Session locked automatically on minimize.")
+                        }
+                    }
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    viewModel.refreshPermissionsStatus()
+                    val pausedAt = backgroundedAtMs
+                    backgroundedAtMs = null
+                    if (authSession != null && pausedAt != null) {
+                        val elapsed = System.currentTimeMillis() - pausedAt
+                        val shouldLock = when (autoLogoutMode) {
+                            AutoLogoutMode.OFF -> false
+                            AutoLogoutMode.ON_MINIMIZE -> true
+                            AutoLogoutMode.IDLE_5_MIN,
+                            AutoLogoutMode.IDLE_15_MIN -> elapsed >= autoLogoutMode.idleTimeoutMs
+                        }
+                        if (shouldLock) {
+                            SoundEffectsManager.playWarningTone(soundEnabled)
+                            viewModel.lockSessionOnAutoLogout("Session locked by ${autoLogoutMode.label}.")
+                        }
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -198,6 +306,23 @@ fun ConcordGasRootApp(
                     googleEmail = googleEmail,
                     workspaceState = workspaceState,
                     cloudBusy = cloudBusy,
+                    isAuthenticating = isAuthenticating,
+                    linkedStaffUsername = cloudLoginMetadata.linkedStaffUsername,
+                    linkedStaffRole = cloudLoginMetadata.linkedStaffRole,
+                    themePreset = themePreset,
+                    soundEnabled = soundEnabled,
+                    autoLoginEnabled = autoLoginEnabled,
+                    onThemeCycle = {
+                        SoundEffectsManager.playTapTick(soundEnabled)
+                        val next = ThemePreset.entries[(themePreset.ordinal + 1) % ThemePreset.entries.size]
+                        viewModel.setThemePreset(next)
+                    },
+                    onToggleSound = {
+                        val next = !soundEnabled
+                        viewModel.setSoundEnabled(next)
+                        if (next) SoundEffectsManager.playSuccessChime(true)
+                    },
+                    onToggleAutoLogin = viewModel::setAutoLoginEnabled,
                     onJoinWorkspace = viewModel::joinWorkspace,
                     onCreateWorkspace = viewModel::createStandaloneWorkspace,
                     onRetryCloud = viewModel::retryCloudConnect,
@@ -228,6 +353,10 @@ fun ConcordGasRootApp(
                     pendingCustomers = staffVehiclePendingRows,
                     recentCustomerNames = recentCustomerNames,
                     isOnlineSynced = workspaceState is WorkspaceConnectionState.Connected,
+                    autoLoginEnabled = autoLoginEnabled,
+                    autoLogoutMode = autoLogoutMode,
+                    onAutoLoginChanged = viewModel::setAutoLoginEnabled,
+                    onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
                     onDateSelected = viewModel::setSelectedDate,
                     onRecordTransaction = { type, pId, vId, qty, notes, custName, empNow ->
                         viewModel.recordTransaction(
@@ -368,6 +497,7 @@ fun ConcordGasRootApp(
                                     adminName = session.user.displayName,
                                     selectedDate = selectedDate,
                                     summary = dashboardSummary,
+                                    storeRows = storeRows,
                                     products = allProducts,
                                     pendingCustomerCount = allCustomerPendingRows.count { it.pendingEmptyBalance > 0 },
                                     totalPendingEmptyCount = allCustomerPendingRows.sumOf { it.pendingEmptyBalance.coerceAtLeast(0) },
@@ -435,10 +565,12 @@ fun ConcordGasRootApp(
                                     selectedYearMonth = selectedYearMonth,
                                     vehicles = vehicles,
                                     selectedVehicleId = selectedVehicleId,
+                                    recentPurchaseCompanies = recentPurchaseCompanies,
                                     buildReportTable = viewModel::buildReportTable,
                                     onDateSelected = viewModel::setSelectedDate,
                                     onYearMonthSelected = viewModel::setSelectedYearMonth,
                                     onSelectVehicle = { id -> if (id != null) viewModel.selectVehicle(id) },
+                                    onSaveReportCloudAndDrive = viewModel::saveReportToCloudAndDrive,
                                     onMessage = viewModel::showMessage
                                 )
 
@@ -448,8 +580,33 @@ fun ConcordGasRootApp(
                                     products = allProducts,
                                     googleEmail = googleEmail,
                                     workspaceState = workspaceState,
+                                    driveBackupState = driveBackupState,
+                                    permissionsStatus = permissionsStatus,
+                                    pendingDriveRestoreJson = pendingDriveRestoreJson,
+                                    themePreset = themePreset,
+                                    soundEnabled = soundEnabled,
+                                    autoLoginEnabled = autoLoginEnabled,
+                                    autoLogoutMode = autoLogoutMode,
+                                    onThemePresetChanged = { preset ->
+                                        SoundEffectsManager.playTapTick(soundEnabled)
+                                        viewModel.setThemePreset(preset)
+                                    },
+                                    onSoundEnabledChanged = { enabled ->
+                                        viewModel.setSoundEnabled(enabled)
+                                        if (enabled) SoundEffectsManager.playSuccessChime(true)
+                                    },
+                                    onAutoLoginChanged = viewModel::setAutoLoginEnabled,
+                                    onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
+                                    onPreviewStartupSplash = onPreviewStartupSplash,
                                     onSyncNow = viewModel::syncNow,
                                     onGoogleSignOut = handleGoogleSignOut,
+                                    onGrantAllPermissionsAndDrive = viewModel::requestGoogleDriveAuthorizationAndEnable,
+                                    onToggleAutoDriveBackup = viewModel::setAutoDriveBackupEnabled,
+                                    onBackUpToDriveNow = { viewModel.backUpToGoogleDriveNow() },
+                                    onRestoreFromDriveNow = { viewModel.restoreFromGoogleDriveNow() },
+                                    onConfirmDriveRestore = viewModel::confirmPendingDriveRestore,
+                                    onDismissDriveRestore = viewModel::dismissPendingDriveRestore,
+                                    onRefreshPermissions = { viewModel.refreshPermissionsStatus() },
                                     onAddStaffAndVehicle = viewModel::addStaffAndVehicle,
                                     onUpdateStaffName = viewModel::updateStaffName,
                                     onUpdatePin = viewModel::updateUserPin,

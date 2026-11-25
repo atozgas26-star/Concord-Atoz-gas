@@ -17,6 +17,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +48,13 @@ sealed interface WorkspaceConnectionState {
     data class Error(val message: String) : WorkspaceConnectionState
 }
 
+data class CloudLoginMetadata(
+    val cloudUserRole: UserRole = UserRole.STAFF,
+    val linkedStaffUsername: String = "",
+    val linkedStaffRole: UserRole? = null,
+    val verifiedInCloud: Boolean = false
+)
+
 class CloudSyncRepository(
     private val db: FirebaseFirestore,
     private val localDb: ConcordDatabase,
@@ -64,6 +72,15 @@ class CloudSyncRepository(
 
     private val _connectionState = MutableStateFlow<WorkspaceConnectionState>(WorkspaceConnectionState.Checking)
     val connectionState: StateFlow<WorkspaceConnectionState> = _connectionState.asStateFlow()
+
+    private val _loginMetadata = MutableStateFlow(CloudLoginMetadata())
+    val loginMetadata: StateFlow<CloudLoginMetadata> = _loginMetadata.asStateFlow()
+
+    private val _adminSettings = MutableStateFlow<CloudAdminSettings?>(null)
+    val adminSettings: StateFlow<CloudAdminSettings?> = _adminSettings.asStateFlow()
+
+    private val _adminReports = MutableStateFlow<List<CloudAdminReportSnapshot>>(emptyList())
+    val adminReports: StateFlow<List<CloudAdminReportSnapshot>> = _adminReports.asStateFlow()
 
     @Volatile
     private var activeWorkspaceId: String? = null
@@ -93,6 +110,16 @@ class CloudSyncRepository(
             // 1. Check user's bound workspace or any workspace containing this UID
             val userDoc = db.collection("users").document(uid).get().await()
             val savedWsId = userDoc.getString("activeWorkspaceId")?.takeIf { it.isNotBlank() }
+            val cloudRole = UserRole.entries.firstOrNull { it.name == userDoc.getString("role") }
+                ?: if (isAdminEmail) UserRole.ADMIN else UserRole.STAFF
+            val linkedUsername = userDoc.getString("linkedStaffUsername").orEmpty()
+            val linkedRole = UserRole.entries.firstOrNull { it.name == userDoc.getString("linkedStaffRole") }
+            _loginMetadata.value = CloudLoginMetadata(
+                cloudUserRole = cloudRole,
+                linkedStaffUsername = linkedUsername,
+                linkedStaffRole = linkedRole,
+                verifiedInCloud = true
+            )
 
             if (savedWsId != null) {
                 val wsSnap = db.collection("workspaces").document(savedWsId).get().await()
@@ -259,25 +286,36 @@ class CloudSyncRepository(
     private suspend fun ensureUserProfile(uid: String, displayName: String, email: String) {
         val ref = db.collection("users").document(uid)
         val existing = ref.get().await()
+        val user = auth.currentUser
+        val isAdminEmail = isBootstrappedAdminEmail(email, user?.isEmailVerified == true)
+        val defaultRole = if (isAdminEmail) UserRole.ADMIN.name else UserRole.STAFF.name
         if (!existing.exists()) {
             val payload = mapOf(
                 "userId" to uid,
                 "displayName" to displayName.take(100),
                 "email" to email.take(200),
+                "role" to defaultRole,
                 "activeWorkspaceId" to "",
                 "linkedStaffUsername" to "",
+                "linkedStaffRole" to "",
+                "autoDriveBackupEnabled" to false,
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             ref.set(payload).await()
         } else {
-            ref.update(
-                mapOf(
-                    "displayName" to displayName.take(100),
-                    "email" to email.take(200),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
+            val updates = mutableMapOf<String, Any>(
+                "displayName" to displayName.take(100),
+                "email" to email.take(200),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            val existingRole = existing.getString("role")
+            if (isAdminEmail && existingRole != UserRole.ADMIN.name) {
+                updates["role"] = UserRole.ADMIN.name
+            } else if (existingRole.isNullOrBlank()) {
+                updates["role"] = UserRole.STAFF.name
+            }
+            ref.update(updates).await()
         }
     }
 
@@ -367,7 +405,9 @@ class CloudSyncRepository(
                         if (ws != null) {
                             val previousMembers = activeMemberUids
                             activeMemberUids = ws.memberUids
-                            val isOwnerOrAdmin = ws.ownerUid == uid || isAdminEmail
+                            val isOwnerOrAdmin = ws.ownerUid == uid ||
+                                isAdminEmail ||
+                                _loginMetadata.value.cloudUserRole == UserRole.ADMIN
                             _connectionState.value = WorkspaceConnectionState.Connected(
                                 workspaceId = workspaceId,
                                 companyName = ws.companyName,
@@ -382,6 +422,42 @@ class CloudSyncRepository(
                             syncPendingLocalTransactions()
                         }
                     }
+            }
+
+            // Admin-only listeners: Sensitive Settings & Reports (never opened on Staff-only accounts)
+            val isPrivilegedAdmin = isAdminEmail || _loginMetadata.value.cloudUserRole == UserRole.ADMIN
+            if (isPrivilegedAdmin) {
+                launch {
+                    val settingsRef = wsRef.collection("admin_settings").document("drive_backup")
+                    settingsRef.snapshots()
+                        .map { snap ->
+                            snap.toObject(
+                                CloudAdminSettings::class.java,
+                                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                            )
+                        }
+                        .catch { error -> logListenerErrorIfAuthenticated(error, uid, settingsRef.path) }
+                        .collectLatest { settings ->
+                            _adminSettings.value = settings
+                        }
+                }
+                launch {
+                    val reportsCol = wsRef.collection("admin_reports")
+                    reportsCol.snapshots()
+                        .map { snap ->
+                            snap.toObjects(
+                                CloudAdminReportSnapshot::class.java,
+                                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                            )
+                        }
+                        .catch { error -> logListenerErrorIfAuthenticated(error, uid, reportsCol.path) }
+                        .collectLatest { reports ->
+                            _adminReports.value = reports
+                        }
+                }
+            } else {
+                _adminSettings.value = null
+                _adminReports.value = emptyList()
             }
 
             // Listener 2: Staff & Admin accounts
@@ -884,11 +960,323 @@ class CloudSyncRepository(
         }
     }
 
+    /**
+     * Validates an Admin or Staff account PIN & role against Firestore (`staff_accounts`),
+     * checks global PIN uniqueness across workspace accounts, syncs refreshed account details
+     * to local Room, and updates `/users/{uid}` metadata (`linkedStaffUsername`, `linkedStaffRole`).
+     * Falls back cleanly to local cache when the device is offline or workspace sync is unconfigured.
+     */
+    suspend fun verifyRolePinAndSyncProfile(
+        localUser: UserAccountEntity,
+        expectedRole: UserRole,
+        pin: String
+    ): Result<UserAccountEntity> {
+        val uid = auth.currentUser?.uid
+            ?: return Result.failure(IllegalStateException("Google Sign-In required before unlocking an account."))
+
+        if (pin.length != 4 || !pin.all { it.isDigit() }) {
+            return Result.failure(IllegalArgumentException("PIN must be exactly 4 digits."))
+        }
+        if (localUser.role != expectedRole) {
+            return Result.failure(
+                IllegalArgumentException("${localUser.displayName} is ${localUser.role.name}, not ${expectedRole.name}.")
+            )
+        }
+        if (!localUser.isActive) {
+            return Result.failure(IllegalStateException("Account '${localUser.displayName}' is currently inactive."))
+        }
+
+        val currentConn = _connectionState.value
+        if (expectedRole == UserRole.ADMIN &&
+            currentConn is WorkspaceConnectionState.Connected &&
+            !currentConn.isOwnerOrAdmin
+        ) {
+            return Result.failure(
+                SecurityException("Admin access restricted: your Google user role is STAFF. Sign in under Staff or use Admin Google account.")
+            )
+        }
+
+        val wsId = activeWorkspaceId
+        var verifiedUser = localUser
+
+        if (wsId != null) {
+            val staffCol = db.collection("workspaces").document(wsId).collection("staff_accounts")
+            val cloudAccounts: List<CloudStaffAccount>? = try {
+                val serverSnap = staffCol
+                    .whereArrayContains("memberUids", uid)
+                    .get(Source.SERVER)
+                    .await()
+                serverSnap.toObjects(CloudStaffAccount::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val fsErr = generateSequence<Throwable>(e) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (fsErr?.code == FirebaseFirestoreException.Code.UNAVAILABLE ||
+                    fsErr?.code == FirebaseFirestoreException.Code.DEADLINE_EXCEEDED
+                ) {
+                    // Offline: attempt cached Firestore read before falling back to Room
+                    try {
+                        val cacheSnap = staffCol
+                            .whereArrayContains("memberUids", uid)
+                            .get(Source.CACHE)
+                            .await()
+                        cacheSnap.toObjects(CloudStaffAccount::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                            .takeIf { it.isNotEmpty() }
+                    } catch (_: Exception) {
+                        null
+                    }
+                } else {
+                    handleFirestoreError(e, OperationType.LIST, "workspaces/$wsId/staff_accounts")
+                    null
+                }
+            }
+
+            if (!cloudAccounts.isNullOrEmpty()) {
+                val cloudMatch = cloudAccounts.firstOrNull { it.username == localUser.username }
+                if (cloudMatch != null) {
+                    if (!cloudMatch.active) {
+                        localDb.userDao().updateIsActive(localUser.id, false)
+                        return Result.failure(IllegalStateException("Account '${cloudMatch.displayName}' has been deactivated."))
+                    }
+                    if (cloudMatch.role != expectedRole.name) {
+                        return Result.failure(
+                            IllegalArgumentException("Role mismatch: Firestore lists '${cloudMatch.displayName}' as ${cloudMatch.role}.")
+                        )
+                    }
+                    // Keep Room synchronized with Firestore's authoritative PIN/displayName
+                    if (cloudMatch.pin != localUser.pin || cloudMatch.displayName != localUser.displayName) {
+                        verifiedUser = localUser.copy(
+                            displayName = cloudMatch.displayName,
+                            pin = cloudMatch.pin,
+                            isActive = cloudMatch.active
+                        )
+                        localDb.userDao().insert(verifiedUser)
+                    }
+                    if (cloudMatch.pin != pin) {
+                        return Result.failure(
+                            IllegalArgumentException("Invalid PIN for ${expectedRole.name} '${cloudMatch.displayName}'.")
+                        )
+                    }
+                    val duplicateOther = cloudAccounts.firstOrNull {
+                        it.active && it.username != cloudMatch.username && it.pin == pin
+                    }
+                    if (duplicateOther != null) {
+                        return Result.failure(
+                            IllegalStateException(
+                                "PIN '$pin' conflicts with ${duplicateOther.displayName}. Ask Admin to assign unique PINs."
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // Persist linked role & staff metadata on Firebase user's /users/{uid} doc
+        try {
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "linkedStaffUsername" to verifiedUser.username,
+                    "linkedStaffRole" to expectedRole.name,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            _loginMetadata.value = _loginMetadata.value.copy(
+                linkedStaffUsername = verifiedUser.username,
+                linkedStaffRole = expectedRole,
+                verifiedInCloud = wsId != null
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, "users/$uid")
+        }
+
+        return Result.success(verifiedUser)
+    }
+
+    suspend fun saveAdminDriveSettings(
+        autoDriveBackupEnabled: Boolean,
+        lastDriveBackupAtMs: Long,
+        lastDriveFileId: String,
+        lastDriveBackupStatus: String,
+        themePreset: String,
+        autoLogoutMode: String
+    ): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val conn = _connectionState.value
+        if (conn is WorkspaceConnectionState.Connected && !conn.isOwnerOrAdmin) {
+            return Result.failure(SecurityException("Restricted: Only Admin can update workspace Drive settings."))
+        }
+        val docPath = "workspaces/$wsId/admin_settings/drive_backup"
+        return try {
+            val uid = requireUserId()
+            val email = auth.currentUser?.email.orEmpty().take(200)
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("admin_settings").document("drive_backup")
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "autoDriveBackupEnabled" to autoDriveBackupEnabled,
+                        "lastDriveBackupAtMs" to lastDriveBackupAtMs.coerceAtLeast(0L),
+                        "lastDriveFileId" to lastDriveFileId.take(256),
+                        "lastDriveBackupStatus" to lastDriveBackupStatus.take(300),
+                        "driveAccountEmail" to email,
+                        "themePreset" to themePreset.take(64),
+                        "autoLogoutMode" to autoLogoutMode.take(64),
+                        "updatedByUid" to uid,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(
+                    mapOf(
+                        "settingId" to "drive_backup",
+                        "autoDriveBackupEnabled" to autoDriveBackupEnabled,
+                        "lastDriveBackupAtMs" to lastDriveBackupAtMs.coerceAtLeast(0L),
+                        "lastDriveFileId" to lastDriveFileId.take(256),
+                        "lastDriveBackupStatus" to lastDriveBackupStatus.take(300),
+                        "driveAccountEmail" to email,
+                        "themePreset" to themePreset.take(64),
+                        "autoLogoutMode" to autoLogoutMode.take(64),
+                        "updatedByUid" to uid,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "autoDriveBackupEnabled" to autoDriveBackupEnabled,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveAdminReportSnapshot(
+        reportId: String,
+        reportType: String,
+        reportTitle: String,
+        subtitle: String,
+        businessDate: String,
+        yearMonth: String,
+        generatedBy: String,
+        rowCount: Int,
+        summaryTotals: String,
+        driveFileId: String = ""
+    ): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.failure(IllegalStateException("Not connected to cloud workspace."))
+        val conn = _connectionState.value
+        if (conn is WorkspaceConnectionState.Connected && !conn.isOwnerOrAdmin) {
+            return Result.failure(SecurityException("Restricted: Only Admin can access or save company reports."))
+        }
+        val cleanId = reportId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(120)
+        val docPath = "workspaces/$wsId/admin_reports/$cleanId"
+        return try {
+            val uid = requireUserId()
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("admin_reports").document(cleanId)
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "reportTitle" to reportTitle.take(160).ifBlank { reportType },
+                        "subtitle" to subtitle.take(300),
+                        "rowCount" to rowCount.coerceAtLeast(0),
+                        "summaryTotals" to summaryTotals.take(500),
+                        "driveFileId" to driveFileId.take(256),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(
+                    mapOf(
+                        "reportId" to cleanId,
+                        "reportType" to reportType,
+                        "reportTitle" to reportTitle.take(160).ifBlank { reportType },
+                        "subtitle" to subtitle.take(300),
+                        "businessDate" to businessDate,
+                        "yearMonth" to yearMonth,
+                        "generatedBy" to generatedBy.take(100).ifBlank { "Admin" },
+                        "rowCount" to rowCount.coerceAtLeast(0),
+                        "summaryTotals" to summaryTotals.take(500),
+                        "driveFileId" to driveFileId.take(256),
+                        "createdByUid" to uid,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Checks Firestore `staff_accounts` for PIN collisions before creating or updating an account PIN.
+     */
+    suspend fun findCloudPinCollisionDisplayName(targetUsername: String?, pin: String): String? {
+        val wsId = activeWorkspaceId ?: return null
+        val uid = auth.currentUser?.uid ?: return null
+        return try {
+            val snap = db.collection("workspaces").document(wsId)
+                .collection("staff_accounts")
+                .whereArrayContains("memberUids", uid)
+                .get()
+                .await()
+            val accounts = snap.toObjects(CloudStaffAccount::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            accounts.firstOrNull {
+                it.pin == pin && (targetUsername == null || it.username != targetUsername)
+            }?.let { "${it.displayName} (${it.role})" }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun clearLinkedStaffMetadata() {
+        val uid = auth.currentUser?.uid ?: return
+        _loginMetadata.value = _loginMetadata.value.copy(
+            linkedStaffUsername = "",
+            linkedStaffRole = null
+        )
+        try {
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "linkedStaffUsername" to "",
+                    "linkedStaffRole" to "",
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, "users/$uid")
+        }
+    }
+
     fun stopSync() {
         activeSyncJob?.cancel()
         activeSyncJob = null
         activeWorkspaceId = null
         activeMemberUids = emptyList()
+        _loginMetadata.value = CloudLoginMetadata()
+        _adminSettings.value = null
+        _adminReports.value = emptyList()
         _connectionState.value = WorkspaceConnectionState.Checking
     }
 

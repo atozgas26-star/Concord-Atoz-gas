@@ -1,10 +1,15 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,34 +21,50 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddToDrive
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.LockClock
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -66,9 +87,13 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.AutoLogoutMode
 import com.example.data.model.ProductCategory
+import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
+import com.example.export.DriveBackupState
+import com.example.permissions.AppPermissionsStatus
 import com.example.ui.components.AddStaffVehicleDialog
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.theme.BrandGreenContainer
@@ -81,6 +106,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AdminSettingsScreen(
     users: List<UserAccountEntity>,
@@ -88,8 +114,27 @@ fun AdminSettingsScreen(
     products: List<ProductEntity>,
     googleEmail: String = "",
     workspaceState: WorkspaceConnectionState = WorkspaceConnectionState.Checking,
+    driveBackupState: DriveBackupState = DriveBackupState(),
+    permissionsStatus: AppPermissionsStatus = AppPermissionsStatus(),
+    pendingDriveRestoreJson: String? = null,
+    themePreset: ThemePreset = ThemePreset.EMERALD_CORPORATE,
+    soundEnabled: Boolean = true,
+    autoLoginEnabled: Boolean = true,
+    autoLogoutMode: AutoLogoutMode = AutoLogoutMode.OFF,
+    onThemePresetChanged: (ThemePreset) -> Unit = {},
+    onSoundEnabledChanged: (Boolean) -> Unit = {},
+    onAutoLoginChanged: (Boolean) -> Unit = {},
+    onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
+    onPreviewStartupSplash: () -> Unit = {},
     onSyncNow: () -> Unit = {},
     onGoogleSignOut: () -> Unit = {},
+    onGrantAllPermissionsAndDrive: () -> Unit = {},
+    onToggleAutoDriveBackup: (Boolean) -> Unit = {},
+    onBackUpToDriveNow: () -> Unit = {},
+    onRestoreFromDriveNow: () -> Unit = {},
+    onConfirmDriveRestore: () -> Unit = {},
+    onDismissDriveRestore: () -> Unit = {},
+    onRefreshPermissions: () -> Unit = {},
     onAddStaffAndVehicle: (staffName: String, vehicleName: String, pin: String) -> Unit = { _, _, _ -> },
     onUpdateStaffName: (userId: Long, newDisplayName: String, newVehicleName: String?) -> Unit = { _, _, _ -> },
     onUpdatePin: (userId: Long, newPin: String) -> Unit,
@@ -108,6 +153,17 @@ fun AdminSettingsScreen(
     var showAddStaffDialog by remember { mutableStateOf(false) }
     var showAddProductDialog by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        onRefreshPermissions()
+        onMessage(
+            if (granted) "Notification permission granted! Connecting Google Drive..."
+            else "Notifications optional. Connecting Google Drive backup..."
+        )
+        onGrantAllPermissionsAndDrive()
+    }
 
     val backupExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -222,6 +278,216 @@ fun AdminSettingsScreen(
                                         .testTag("settings_google_signout_button")
                                 ) {
                                     Text("Sign Out Google")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.AddToDrive, contentDescription = null, tint = BrandGreenPrimary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "App Permissions & Auto Google Drive",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Play-compliant permissions & automatic Drive cloud backup",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                AssistChip(
+                                    onClick = {
+                                        if (permissionsStatus.requiresNotificationPrompt && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (permissionsStatus.notificationsGranted) Icons.Default.CheckCircle else Icons.Default.Security,
+                                            contentDescription = null,
+                                            tint = if (permissionsStatus.notificationsGranted) BrandGreenPrimary else BrandRedSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            if (permissionsStatus.notificationsGranted) "Notifications: OK" else "Notifications: Grant"
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("perm_chip_notifications")
+                                )
+                                AssistChip(
+                                    onClick = onGrantAllPermissionsAndDrive,
+                                    leadingIcon = {
+                                        Icon(
+                                            if (driveBackupState.driveAuthorized) Icons.Default.CloudDone else Icons.Default.AddToDrive,
+                                            contentDescription = null,
+                                            tint = if (driveBackupState.driveAuthorized) BrandGreenPrimary else BrandRedSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(if (driveBackupState.driveAuthorized) "Google Drive: Connected" else "Google Drive: Authorize")
+                                    },
+                                    modifier = Modifier.testTag("perm_chip_drive")
+                                )
+                                AssistChip(
+                                    onClick = onRefreshPermissions,
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = if (permissionsStatus.networkConnected) BrandGreenPrimary else MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(if (permissionsStatus.networkConnected) "Internet: Online" else "Internet: Offline")
+                                    }
+                                )
+                                AssistChip(
+                                    onClick = {},
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = BrandGreenPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    label = { Text("Storage Picker: SAF Ready") }
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    if (permissionsStatus.requiresNotificationPrompt && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        onGrantAllPermissionsAndDrive()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("grant_all_permissions_drive_button")
+                            ) {
+                                Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (permissionsStatus.allCoreGranted)
+                                        "All App Permissions & Auto Drive Active"
+                                    else
+                                        "Enable All Permissions & Auto Google Drive"
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Auto Backup to Google Drive",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Automatically saves CONCORD_ATOZ_GAS_AUTO_BACKUP.json on changes",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = driveBackupState.autoBackupEnabled,
+                                    onCheckedChange = onToggleAutoDriveBackup,
+                                    modifier = Modifier.testTag("auto_drive_backup_switch")
+                                )
+                            }
+
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = driveBackupState.lastStatusMessage,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (driveBackupState.lastBackupAtMs > 0L) {
+                                        val timeLabel = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US)
+                                            .format(Date(driveBackupState.lastBackupAtMs))
+                                        Text(
+                                            text = "Last Drive Backup: $timeLabel",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = onBackUpToDriveNow,
+                                    enabled = !driveBackupState.isBackingUp && !driveBackupState.isRestoring,
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("drive_backup_now_button")
+                                ) {
+                                    if (driveBackupState.isBackingUp) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                    } else {
+                                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Backup Drive")
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = onRestoreFromDriveNow,
+                                    enabled = !driveBackupState.isBackingUp && !driveBackupState.isRestoring,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("drive_restore_now_button")
+                                ) {
+                                    if (driveBackupState.isRestoring) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Restore Drive")
+                                    }
                                 }
                             }
                         }
@@ -374,6 +640,114 @@ fun AdminSettingsScreen(
                 }
 
                 item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Appearance, Sound & Auto-Login",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Text("App Color Theme", style = MaterialTheme.typography.labelMedium)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ThemePreset.entries.forEach { preset ->
+                                    FilterChip(
+                                        selected = themePreset == preset,
+                                        onClick = { onThemePresetChanged(preset) },
+                                        label = { Text(preset.title) },
+                                        modifier = Modifier.testTag("theme_chip_${preset.name}")
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text("App Sounds & Startup Chime", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            "Play 3s launch chord & save feedback",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = soundEnabled,
+                                    onCheckedChange = onSoundEnabledChanged,
+                                    modifier = Modifier.testTag("settings_sound_switch")
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.LockClock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text("One-Time PIN Auto-Login", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            "Keep Admin/Staff signed in on reopen",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = autoLoginEnabled,
+                                    onCheckedChange = onAutoLoginChanged,
+                                    modifier = Modifier.testTag("settings_autologin_switch")
+                                )
+                            }
+
+                            Text("Auto-Logout Security Mode", style = MaterialTheme.typography.labelMedium)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                AutoLogoutMode.entries.forEach { mode ->
+                                    FilterChip(
+                                        selected = autoLogoutMode == mode,
+                                        onClick = { onAutoLogoutModeChanged(mode) },
+                                        label = { Text(mode.label) }
+                                    )
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = onPreviewStartupSplash,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Preview 3s Launch Screen & Sound")
+                            }
+                        }
+                    }
+                }
+
+                item {
                     Button(
                         onClick = onLogout,
                         colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary),
@@ -385,6 +759,24 @@ fun AdminSettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Logout of Admin Session")
+                    }
+                }
+
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "CONCORD & A TO Z GAS • Built by Ragavan",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp)
+                        )
                     }
                 }
             }
@@ -518,6 +910,23 @@ fun AdminSettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingRestoreJson = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (pendingDriveRestoreJson != null) {
+        AlertDialog(
+            onDismissRequest = onDismissDriveRestore,
+            title = { Text("Restore from Google Drive") },
+            text = { Text("Downloaded your Google Drive cloud backup. Restoring will replace current store, vehicle, user PIN, and transaction records. Continue?") },
+            confirmButton = {
+                Button(
+                    onClick = onConfirmDriveRestore,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary)
+                ) { Text("Restore Drive Backup") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissDriveRestore) { Text("Cancel") }
             }
         )
     }

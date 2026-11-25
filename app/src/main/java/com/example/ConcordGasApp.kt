@@ -5,6 +5,7 @@ import com.example.data.local.ConcordDatabase
 import com.example.data.remote.CloudSyncRepository
 import com.example.data.repository.InventoryRepository
 import com.example.export.BackupManager
+import com.example.export.GoogleDriveBackupManager
 import com.google.firebase.firestore.FirebaseFirestore
 
 class AppContainer(application: Application) {
@@ -22,6 +23,7 @@ class AppContainer(application: Application) {
         InventoryRepository(database, cloudSyncRepository)
     }
     val backupManager: BackupManager by lazy { BackupManager(database) }
+    val driveBackupManager: GoogleDriveBackupManager by lazy { GoogleDriveBackupManager(application) }
 }
 
 class ConcordGasApp : Application() {

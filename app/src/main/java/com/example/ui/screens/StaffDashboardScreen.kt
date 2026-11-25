@@ -20,24 +20,34 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Output
+import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.AutoLogoutMode
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.ProductCategory
 import com.example.data.model.StoreStockRow
@@ -65,6 +76,7 @@ import com.example.ui.components.CategoryFilterRow
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.PendingCustomerCard
+import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
@@ -89,6 +101,10 @@ fun StaffDashboardScreen(
     pendingCustomers: List<CustomerPendingRow> = emptyList(),
     recentCustomerNames: List<String> = emptyList(),
     isOnlineSynced: Boolean = true,
+    autoLoginEnabled: Boolean = true,
+    autoLogoutMode: AutoLogoutMode = AutoLogoutMode.OFF,
+    onAutoLoginChanged: (Boolean) -> Unit = {},
+    onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
     onDateSelected: (String) -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
     onLogout: () -> Unit
@@ -99,6 +115,8 @@ fun StaffDashboardScreen(
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
+    var showCalculator by remember { mutableStateOf(false) }
+    var showAutoSessionDialog by remember { mutableStateOf(false) }
 
     val filteredRows = remember(vehicleRows, selectedCategory, searchQuery) {
         vehicleRows.filter { row ->
@@ -161,6 +179,16 @@ fun StaffDashboardScreen(
                             }
                         }
                         Spacer(Modifier.width(4.dp))
+                    }
+                    IconButton(
+                        onClick = { showAutoSessionDialog = true },
+                        modifier = Modifier.testTag("staff_auto_session_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LockClock,
+                            contentDescription = "Auto Login & Logout Settings",
+                            tint = Color.White
+                        )
                     }
                     IconButton(
                         onClick = onLogout,
@@ -273,6 +301,46 @@ fun StaffDashboardScreen(
                         .weight(1f)
                         .testTag("staff_action_return_empty")
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StaffBigActionButton(
+                    label = "New Cust\nFull Sale",
+                    icon = Icons.Default.PersonAddAlt1,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("staff_action_new_customer_sale")
+                )
+                StaffBigActionButton(
+                    label = "Complaint\nReplace",
+                    icon = Icons.Default.SwapHoriz,
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("staff_action_complaint_replace")
+                )
+                OutlinedButton(
+                    onClick = { showCalculator = true },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .height(58.dp)
+                        .testTag("staff_action_calculate")
+                ) {
+                    Icon(Icons.Default.Calculate, contentDescription = "Calculate")
+                }
             }
         }
 
@@ -469,6 +537,8 @@ fun StaffDashboardScreen(
     if (activeTxType != null && assignedVehicle != null) {
         val type = activeTxType!!
         val showCust = type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+            type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE ||
+            type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ||
             type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ||
             type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD
         val requireCust = type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD
@@ -491,7 +561,9 @@ fun StaffDashboardScreen(
                 when (type) {
                     TransactionType.VEHICLE_FULL_RECEIVED ->
                         "Store Full Available: ${sRow?.storeFullBalance ?: 0}  |  Vehicle Full: ${vRow?.fullBalance ?: 0}"
-                    TransactionType.VEHICLE_CUSTOMER_SALE ->
+                    TransactionType.VEHICLE_CUSTOMER_SALE,
+                    TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                    TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ->
                         "Vehicle Full Available: ${vRow?.fullBalance ?: 0}  |  Empty: ${vRow?.emptyBalance ?: 0}"
                     TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
                         "Vehicle Empty Available: ${vRow?.emptyBalance ?: 0}"
@@ -508,6 +580,10 @@ fun StaffDashboardScreen(
                         "Vehicle Full: ${vRow.fullBalance} -> ${vRow.fullBalance + qty}"
                     TransactionType.VEHICLE_CUSTOMER_SALE ->
                         "Veh Full: ${vRow.fullBalance} -> ${vRow.fullBalance - qty}  |  Veh Empty: ${vRow.emptyBalance} -> ${vRow.emptyBalance + empNow}"
+                    TransactionType.VEHICLE_NEW_CUSTOMER_SALE ->
+                        "New Sale: -$qty Full -> Bal ${vRow.fullBalance - qty}  |  Pending Empty: 0"
+                    TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ->
+                        "Complaint Swap: Full ${vRow.fullBalance} -> ${vRow.fullBalance - qty}  |  Empty ${vRow.emptyBalance} -> ${vRow.emptyBalance + qty}"
                     TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ->
                         "Veh Empty: ${vRow.emptyBalance} -> ${vRow.emptyBalance + qty}  |  Pending -$qty"
                     TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
@@ -520,6 +596,65 @@ fun StaffDashboardScreen(
             onDismiss = { activeTxType = null },
             onConfirm = { prodId, _, qty, notes, _, custName, empNow ->
                 onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes, custName, empNow)
+            }
+        )
+    }
+
+    if (showCalculator) {
+        StockCalculatorDialog(
+            products = products,
+            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
+            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
+            vehicleName = assignedVehicle?.name,
+            vehicleFullProvider = { prodId -> vehicleRows.firstOrNull { it.product.id == prodId }?.fullBalance ?: 0 },
+            vehicleEmptyProvider = { prodId -> vehicleRows.firstOrNull { it.product.id == prodId }?.emptyBalance ?: 0 },
+            onDismiss = { showCalculator = false }
+        )
+    }
+
+    if (showAutoSessionDialog) {
+        AlertDialog(
+            onDismissRequest = { showAutoSessionDialog = false },
+            title = { Text("Staff Auto-Login & Auto-Logout") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-Login (One-Time PIN)", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Remember ${staffUser.displayName} when reopening app",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoLoginEnabled,
+                            onCheckedChange = onAutoLoginChanged
+                        )
+                    }
+                    Text("Auto-Logout Lock", style = MaterialTheme.typography.labelLarge)
+                    AutoLogoutMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = autoLogoutMode == mode,
+                            onClick = { onAutoLogoutModeChanged(mode) },
+                            label = { Text(mode.label) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showAutoSessionDialog = false }) { Text("Done") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAutoSessionDialog = false
+                    onLogout()
+                }) { Text("Lock Now") }
             }
         )
     }

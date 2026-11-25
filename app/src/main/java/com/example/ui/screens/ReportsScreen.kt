@@ -23,8 +23,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddToDrive
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
@@ -76,17 +78,21 @@ fun ReportsScreen(
     selectedYearMonth: String,
     vehicles: List<VehicleEntity>,
     selectedVehicleId: Long?,
-    buildReportTable: (ReportType, Long?) -> ReportTable,
+    recentPurchaseCompanies: List<String> = emptyList(),
+    buildReportTable: (ReportType, Long?, Boolean, String?) -> ReportTable,
     onDateSelected: (String) -> Unit,
     onYearMonthSelected: (String) -> Unit,
     onSelectVehicle: (Long?) -> Unit,
+    onSaveReportCloudAndDrive: (ReportType, ReportTable, Boolean) -> Unit = { _, _, _ -> },
     onMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
     var selectedReport by remember { mutableStateOf(ReportType.DAILY_STORE) }
     var vehicleFilterId by remember { mutableStateOf<Long?>(null) }
+    var purchaseDailyMode by remember { mutableStateOf(false) }
+    var purchaseCompanyFilter by remember { mutableStateOf<String?>(null) }
 
-    val table = buildReportTable(selectedReport, vehicleFilterId)
+    val table = buildReportTable(selectedReport, vehicleFilterId, purchaseDailyMode, purchaseCompanyFilter)
 
     // SAF launchers to save PDF / Excel directly to user's chosen location (Play-policy compliant)
     val savePdfLauncher = rememberLauncherForActivityResult(
@@ -181,16 +187,74 @@ fun ReportsScreen(
                 }
             }
 
-            // Period Selector (Date or Month)
+            // Period Selector (Date or Month — Purchase Register supports both Daily and Monthly)
+            if (selectedReport == ReportType.PURCHASE_REGISTER) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !purchaseDailyMode,
+                        onClick = { purchaseDailyMode = false },
+                        label = { Text("Monthly Report") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BrandGreenPrimary,
+                            selectedLabelColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("purchase_report_monthly_chip")
+                    )
+                    FilterChip(
+                        selected = purchaseDailyMode,
+                        onClick = { purchaseDailyMode = true },
+                        label = { Text("Daily Report") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BrandRedSecondary,
+                            selectedLabelColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("purchase_report_daily_chip")
+                    )
+                }
+                if (recentPurchaseCompanies.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = purchaseCompanyFilter == null,
+                            onClick = { purchaseCompanyFilter = null },
+                            label = { Text("All Suppliers") }
+                        )
+                        recentPurchaseCompanies.forEach { company ->
+                            FilterChip(
+                                selected = purchaseCompanyFilter.equals(company, ignoreCase = true),
+                                onClick = { purchaseCompanyFilter = company },
+                                label = { Text(company) }
+                            )
+                        }
+                    }
+                }
+            }
+
             when (selectedReport) {
                 ReportType.MONTHLY_SALES,
                 ReportType.PRODUCT_WISE_SALES,
-                ReportType.STAFF_WISE_SALES,
-                ReportType.PURCHASE_REGISTER -> {
+                ReportType.STAFF_WISE_SALES -> {
                     MonthSelectorBar(
                         yearMonth = selectedYearMonth,
                         onYearMonthChanged = onYearMonthSelected
                     )
+                }
+                ReportType.PURCHASE_REGISTER -> {
+                    if (purchaseDailyMode) {
+                        DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                    } else {
+                        MonthSelectorBar(
+                            yearMonth = selectedYearMonth,
+                            onYearMonthChanged = onYearMonthSelected
+                        )
+                    }
                 }
                 else -> {
                     DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
@@ -264,6 +328,31 @@ fun ReportsScreen(
                     modifier = Modifier.testTag("export_excel_share")
                 ) {
                     Icon(Icons.Default.Download, contentDescription = "Share Excel", modifier = Modifier.size(18.dp))
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { onSaveReportCloudAndDrive(selectedReport, table, false) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("report_save_cloud_button")
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save Cloud Snapshot")
+                }
+                OutlinedButton(
+                    onClick = { onSaveReportCloudAndDrive(selectedReport, table, true) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("report_save_drive_button")
+                ) {
+                    Icon(Icons.Default.AddToDrive, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Upload PDF to Drive")
                 }
             }
         }

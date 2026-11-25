@@ -22,8 +22,11 @@ data class CloudUserProfile(
     val userId: String = "",
     val displayName: String = "",
     val email: String = "",
+    val role: String = UserRole.STAFF.name,
     val activeWorkspaceId: String = "",
     val linkedStaffUsername: String = "",
+    val linkedStaffRole: String = "",
+    val autoDriveBackupEnabled: Boolean = false,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
@@ -296,3 +299,39 @@ data class CloudStockTransaction(
         ).filterValues { it != null } as Map<String, Any>
     }
 }
+
+@Keep
+@IgnoreExtraProperties
+data class CloudAdminSettings(
+    @DocumentId val id: String = "",
+    val settingId: String = "drive_backup",
+    val autoDriveBackupEnabled: Boolean = false,
+    val lastDriveBackupAtMs: Long = 0L,
+    val lastDriveFileId: String = "",
+    val lastDriveBackupStatus: String = "",
+    val driveAccountEmail: String = "",
+    val themePreset: String = "",
+    val autoLogoutMode: String = "",
+    val updatedByUid: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class CloudAdminReportSnapshot(
+    @DocumentId val id: String = "",
+    val reportId: String = "",
+    val reportType: String = "",
+    val reportTitle: String = "",
+    val subtitle: String = "",
+    val businessDate: String = "",
+    val yearMonth: String = "",
+    val generatedBy: String = "",
+    val rowCount: Int = 0,
+    val summaryTotals: String = "",
+    val driveFileId: String = "",
+    val createdByUid: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)

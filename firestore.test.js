@@ -47,14 +47,33 @@ function pastDate(msOffset = 5000) {
   return new Date(Date.now() - msOffset);
 }
 
-async function seedWorkspaceWithAdminAndInvite() {
-  const adminDb = testEnv
+function getAdminDb() {
+  return testEnv
     .authenticatedContext(ADMIN_UID, {
       email: "atozgas26@gmail.com",
       email_verified: true,
     })
     .firestore();
+}
+
+async function seedWorkspaceWithAdminAndInvite() {
+  const adminDb = getAdminDb();
   const ts = pastDate(10000);
+
+  await assertSucceeds(
+    adminDb.collection("users").doc(ADMIN_UID).set({
+      userId: ADMIN_UID,
+      displayName: "Ragavan",
+      email: "atozgas26@gmail.com",
+      role: "ADMIN",
+      activeWorkspaceId: WORKSPACE_ID,
+      linkedStaffUsername: "admin_ragavan",
+      linkedStaffRole: "ADMIN",
+      autoDriveBackupEnabled: true,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
 
   await assertSucceeds(
     adminDb.collection("workspace_invites").doc(INVITE_CODE).set({
@@ -94,39 +113,88 @@ test("Unauthenticated users cannot read or write any collection", async () => {
     unauthDb.collection("users").doc(ADMIN_UID).set({
       userId: ADMIN_UID,
       displayName: "Anon",
+      role: "STAFF",
       createdAt: ts,
       updatedAt: ts,
     })
   );
 });
 
-test("User profile enforces strict owner isolation and rejects ghost fields", async () => {
-  const aliceDb = testEnv.authenticatedContext(ADMIN_UID).firestore();
-  const bobDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
+test("User profile enforces role distinction, anti-privilege-escalation, owner isolation, and rejects ghost fields", async () => {
+  const aliceDb = getAdminDb();
+  const bobDb = testEnv.authenticatedContext(STAFF_NADEEM_UID, {
+    email: "nadeem@example.com",
+    email_verified: true,
+  }).firestore();
   const ts = pastDate(8000);
 
+  // Bootstrapped Admin creates ADMIN user profile
   await assertSucceeds(
     aliceDb.collection("users").doc(ADMIN_UID).set({
       userId: ADMIN_UID,
       displayName: "Ragavan",
       email: "atozgas26@gmail.com",
+      role: "ADMIN",
       activeWorkspaceId: WORKSPACE_ID,
       linkedStaffUsername: "admin_ragavan",
+      linkedStaffRole: "ADMIN",
+      autoDriveBackupEnabled: true,
       createdAt: ts,
       updatedAt: ts,
     })
   );
 
-  // Partial update succeeds
+  // Staff CANNOT self-create profile with role=ADMIN
+  await assertFails(
+    bobDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      email: "nadeem@example.com",
+      role: "ADMIN",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Staff CAN create profile with role=STAFF
   await assertSucceeds(
-    aliceDb.collection("users").doc(ADMIN_UID).update({
+    bobDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      email: "nadeem@example.com",
+      role: "STAFF",
       linkedStaffUsername: "nadeem",
+      linkedStaffRole: "STAFF",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Staff CANNOT escalate their own role or linkedStaffRole to ADMIN
+  await assertFails(
+    bobDb.collection("users").doc(STAFF_NADEEM_UID).update({
+      role: "ADMIN",
+      updatedAt: pastDate(1000),
+    })
+  );
+  await assertFails(
+    bobDb.collection("users").doc(STAFF_NADEEM_UID).update({
+      linkedStaffRole: "ADMIN",
       updatedAt: pastDate(1000),
     })
   );
 
-  // Cross-user read/write blocked
+  // Invalid linkedStaffRole fails
+  await assertFails(
+    aliceDb.collection("users").doc(ADMIN_UID).update({
+      linkedStaffRole: "SUPERADMIN",
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  // Cross-user read/write blocked for Staff
   await assertFails(bobDb.collection("users").doc(ADMIN_UID).get());
+  await assertFails(bobDb.collection("users").get());
   await assertFails(
     bobDb.collection("users").doc(ADMIN_UID).update({
       displayName: "Hijacked",
@@ -136,18 +204,17 @@ test("User profile enforces strict owner isolation and rejects ghost fields", as
 
   // Ghost field & future timestamp rejected
   await assertFails(
-    bobDb.collection("users").doc(STAFF_NADEEM_UID).set({
-      userId: STAFF_NADEEM_UID,
-      displayName: "Nadeem",
+    bobDb.collection("users").doc("staff_2").set({
+      userId: "staff_2",
+      displayName: "Sajan",
+      role: "STAFF",
       isAdmin: true,
       createdAt: ts,
       updatedAt: ts,
     })
   );
   await assertFails(
-    bobDb.collection("users").doc(STAFF_NADEEM_UID).set({
-      userId: STAFF_NADEEM_UID,
-      displayName: "Nadeem",
+    bobDb.collection("users").doc(STAFF_NADEEM_UID).update({
       createdAt: new Date(Date.now() + 60000),
       updatedAt: ts,
     })
@@ -159,13 +226,9 @@ test("Workspace invite cannot be listed; staff joins workspace using active invi
   const staffDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
   const outsiderDb = testEnv.authenticatedContext(OUTSIDER_UID).firestore();
 
-  // Listing invites must fail
   await assertFails(staffDb.collection("workspace_invites").get());
-
-  // Direct lookup by invite code succeeds
   await assertSucceeds(staffDb.collection("workspace_invites").doc(INVITE_CODE).get());
 
-  // Joining with wrong invite code fails
   await assertFails(
     staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
       memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
@@ -174,7 +237,6 @@ test("Workspace invite cannot be listed; staff joins workspace using active invi
     })
   );
 
-  // Joining with valid active invite code succeeds
   await assertSucceeds(
     staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
       memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
@@ -183,7 +245,6 @@ test("Workspace invite cannot be listed; staff joins workspace using active invi
     })
   );
 
-  // Outsider cannot read or list workspace
   await assertFails(outsiderDb.collection("workspaces").doc(WORKSPACE_ID).get());
   await assertFails(outsiderDb.collection("workspaces").get());
   await assertSucceeds(
@@ -203,12 +264,21 @@ test("Email spoofing test: unverified admin email does not bypass membership", a
   await assertFails(spoofedDb.collection("workspaces").doc(WORKSPACE_ID).get());
 });
 
-test("Master data & Staff online transaction sync mirrors Kotlin payloads and blocks invalid/outsider writes", async () => {
+test("Master data & Staff online transaction sync enforces Admin-only deletions/edits and Staff scope", async () => {
   const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
   const staffDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
   const outsiderDb = testEnv.authenticatedContext(OUTSIDER_UID).firestore();
 
-  // Staff joins workspace
+  await assertSucceeds(
+    staffDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      role: "STAFF",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
   await assertSucceeds(
     staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
       memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
@@ -219,7 +289,7 @@ test("Master data & Staff online transaction sync mirrors Kotlin payloads and bl
 
   const members = [ADMIN_UID, STAFF_NADEEM_UID];
 
-  // Admin creates product (no @DocumentId `id` field, `active` instead of `isActive`)
+  // Admin creates product; Staff cannot create products
   await assertSucceeds(
     adminDb
       .collection("workspaces")
@@ -238,23 +308,20 @@ test("Master data & Staff online transaction sync mirrors Kotlin payloads and bl
         updatedAt: ts,
       })
   );
-
-  // Reject product with forbidden `id` field
   await assertFails(
-    adminDb
+    staffDb
       .collection("workspaces")
       .doc(WORKSPACE_ID)
       .collection("products")
-      .doc("prod_2")
+      .doc("prod_staff_hack")
       .set({
-        id: "prod_2",
-        localId: 2,
+        localId: 99,
         category: "INDUSTRIAL_GAS",
-        name: "Acetylene",
-        sortOrder: 102,
+        name: "HackGas",
+        sortOrder: 999,
         active: true,
         memberUids: members,
-        updatedByUid: ADMIN_UID,
+        updatedByUid: STAFF_NADEEM_UID,
         createdAt: ts,
         updatedAt: ts,
       })
@@ -287,7 +354,53 @@ test("Master data & Staff online transaction sync mirrors Kotlin payloads and bl
       })
   );
 
-  // Filtered query matching Kotlin repository succeeds; unfiltered fails
+  // Staff CANNOT forge a STORE_PURCHASE_FULL transaction
+  await assertFails(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc("tx_staff_store_hack")
+      .set({
+        clientTxId: "tx_staff_store_hack",
+        businessDate: "2026-11-24",
+        clientTimestampMs: Date.now() - 1000,
+        type: "STORE_PURCHASE_FULL",
+        productId: 1,
+        staffId: 2,
+        staffName: "Nadeem",
+        quantity: 50,
+        purchaseCompanyName: "Fake Supplier",
+        notes: "",
+        createdByUid: STAFF_NADEEM_UID,
+        memberUids: members,
+        createdAt: pastDate(1000),
+        updatedAt: pastDate(1000),
+      })
+  );
+
+  // Staff CANNOT edit or delete recorded transactions
+  await assertFails(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc(txId)
+      .update({
+        quantity: 99,
+        updatedAt: pastDate(500),
+      })
+  );
+  await assertFails(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc(txId)
+      .delete()
+  );
+
+  // Filtered query succeeds; unfiltered fails
   await assertSucceeds(
     adminDb
       .collection("workspaces")
@@ -300,175 +413,182 @@ test("Master data & Staff online transaction sync mirrors Kotlin payloads and bl
     adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").get()
   );
 
-  // Negative/zero quantity transaction fails
+  // Outsider cannot read or delete
   await assertFails(
-    staffDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc("tx_bad_qty")
-      .set({
-        clientTxId: "tx_bad_qty",
-        businessDate: "2026-11-24",
-        clientTimestampMs: Date.now() - 1000,
-        type: "VEHICLE_CUSTOMER_SALE",
-        productId: 1,
-        vehicleId: 1,
-        vehicleName: "NADEEM",
-        staffId: 2,
-        staffName: "Nadeem",
-        quantity: 0,
-        notes: "",
-        createdByUid: STAFF_NADEEM_UID,
-        memberUids: members,
-        createdAt: pastDate(1000),
-        updatedAt: pastDate(1000),
-      })
-  );
-
-  // Outsider cannot read or write transactions
-  await assertFails(
-    outsiderDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc(txId)
-      .get()
-  );
-  await assertFails(
-    outsiderDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc(txId)
-      .delete()
+    outsiderDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc(txId).get()
   );
 
   // Admin can delete a transaction
   await assertSucceeds(
-    adminDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc(txId)
-      .delete()
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc(txId).delete()
   );
 });
 
-test("Purchase transactions with purchaseCompanyName and staff/vehicle name edits follow Kotlin rules", async () => {
+test("Restricted Admin Settings and Admin Reports block Staff reads and writes", async () => {
   const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
-  const members = [ADMIN_UID];
+  const staffDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
 
-  // Store purchase with purchaseCompanyName succeeds
-  const purId = "tx_1700000001_purchase";
+  await assertSucceeds(
+    staffDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      role: "STAFF",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
+      memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
+      lastJoinInviteCode: INVITE_CODE,
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  // Admin writes sensitive settings (Google Drive auto-backup config)
   await assertSucceeds(
     adminDb
       .collection("workspaces")
       .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc(purId)
+      .collection("admin_settings")
+      .doc("drive_backup")
       .set({
-        clientTxId: purId,
-        businessDate: "2026-11-24",
-        clientTimestampMs: Date.now() - 1000,
-        type: "STORE_PURCHASE_FULL",
-        productId: 1,
-        staffId: 1,
-        staffName: "Ragavan",
-        quantity: 25,
-        purchaseCompanyName: "Emirates Gas LLC",
-        notes: "INV-9981",
-        createdByUid: ADMIN_UID,
-        memberUids: members,
-        createdAt: pastDate(1000),
-        updatedAt: pastDate(1000),
-      })
-  );
-
-  // Oversized purchaseCompanyName (> 120 chars) fails
-  await assertFails(
-    adminDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc("tx_bad_company")
-      .set({
-        clientTxId: "tx_bad_company",
-        businessDate: "2026-11-24",
-        clientTimestampMs: Date.now() - 1000,
-        type: "STORE_PURCHASE_FULL",
-        productId: 1,
-        staffId: 1,
-        staffName: "Ragavan",
-        quantity: 10,
-        purchaseCompanyName: "X".repeat(121),
-        notes: "",
-        createdByUid: ADMIN_UID,
-        memberUids: members,
-        createdAt: pastDate(1000),
-        updatedAt: pastDate(1000),
-      })
-  );
-
-  // Staff account displayName edit succeeds; empty displayName fails
-  await assertSucceeds(
-    adminDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("staff_accounts")
-      .doc("user_nadeem")
-      .set({
-        localId: 2,
-        username: "nadeem",
-        displayName: "Nadeem",
-        role: "STAFF",
-        pin: "1001",
-        active: true,
-        memberUids: members,
+        settingId: "drive_backup",
+        autoDriveBackupEnabled: true,
+        lastDriveBackupAtMs: Date.now() - 2000,
+        lastDriveFileId: "1abcDriveFileId",
+        lastDriveBackupStatus: "Backed up to Google Drive",
+        driveAccountEmail: "atozgas26@gmail.com",
         updatedByUid: ADMIN_UID,
         createdAt: ts,
         updatedAt: ts,
       })
   );
+
+  // Admin reads settings
   await assertSucceeds(
-    adminDb
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_settings").doc("drive_backup").get()
+  );
+
+  // Staff CANNOT read, list, create, update, or delete admin_settings
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_settings").doc("drive_backup").get()
+  );
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_settings").get()
+  );
+  await assertFails(
+    staffDb
       .collection("workspaces")
       .doc(WORKSPACE_ID)
-      .collection("staff_accounts")
-      .doc("user_nadeem")
+      .collection("admin_settings")
+      .doc("drive_backup")
       .update({
-        displayName: "Nadeem Khan",
-        pin: "1001",
-        active: true,
-        memberUids: members,
-        updatedByUid: ADMIN_UID,
+        autoDriveBackupEnabled: false,
+        updatedByUid: STAFF_NADEEM_UID,
         updatedAt: pastDate(500),
       })
   );
-  await assertFails(
-    adminDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("staff_accounts")
-      .doc("user_nadeem")
-      .update({
-        displayName: "",
-        updatedByUid: ADMIN_UID,
-        updatedAt: pastDate(400),
-      })
-  );
 
-  // Vehicle name edit succeeds; oversized name fails
+  // Admin creates and reads sensitive admin_reports snapshot
   await assertSucceeds(
     adminDb
       .collection("workspaces")
       .doc(WORKSPACE_ID)
-      .collection("vehicles")
-      .doc("veh_1")
+      .collection("admin_reports")
+      .doc("PURCHASE_REGISTER_2026_11")
+      .set({
+        reportId: "PURCHASE_REGISTER_2026_11",
+        reportType: "PURCHASE_REGISTER",
+        reportTitle: "Purchase & Complaint Report (Monthly)",
+        subtitle: "Full: 120 | Empty: 30",
+        businessDate: "2026-11-25",
+        yearMonth: "2026-11",
+        generatedBy: "Ragavan",
+        rowCount: 15,
+        summaryTotals: "TOTAL | 15 Entries | 150",
+        driveFileId: "driveReportId123",
+        createdByUid: ADMIN_UID,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_reports").get()
+  );
+
+  // Staff CANNOT read, list, create, update, or delete admin_reports
+  await assertFails(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("admin_reports")
+      .doc("PURCHASE_REGISTER_2026_11")
+      .get()
+  );
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_reports").get()
+  );
+  await assertFails(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("admin_reports")
+      .doc("STAFF_REPORT_HACK")
+      .set({
+        reportId: "STAFF_REPORT_HACK",
+        reportType: "MONTHLY_SALES",
+        reportTitle: "Hacked",
+        subtitle: "",
+        businessDate: "2026-11-25",
+        yearMonth: "2026-11",
+        generatedBy: "Nadeem",
+        rowCount: 1,
+        summaryTotals: "0",
+        createdByUid: STAFF_NADEEM_UID,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+  );
+});
+
+test("Staff cannot modify staff_accounts PINs, opening stocks, or vehicles", async () => {
+  const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
+  const staffDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
+
+  await assertSucceeds(
+    staffDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      role: "STAFF",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
+      memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
+      lastJoinInviteCode: INVITE_CODE,
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  const members = [ADMIN_UID, STAFF_NADEEM_UID];
+
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_accounts")
+      .doc("user_admin_ragavan")
       .set({
         localId: 1,
-        name: "NADEEM",
-        staffUserId: 2,
+        username: "admin_ragavan",
+        displayName: "Ragavan",
+        role: "ADMIN",
+        pin: "1725",
         active: true,
         memberUids: members,
         updatedByUid: ADMIN_UID,
@@ -476,119 +596,50 @@ test("Purchase transactions with purchaseCompanyName and staff/vehicle name edit
         updatedAt: ts,
       })
   );
-  await assertSucceeds(
-    adminDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("vehicles")
-      .doc("veh_1")
-      .update({
-        name: "NADEEM KHAN",
-        staffUserId: 2,
-        active: true,
-        memberUids: members,
-        updatedByUid: ADMIN_UID,
-        updatedAt: pastDate(300),
-      })
-  );
+
   await assertFails(
-    adminDb
+    staffDb
       .collection("workspaces")
       .doc(WORKSPACE_ID)
-      .collection("vehicles")
-      .doc("veh_1")
+      .collection("staff_accounts")
+      .doc("user_admin_ragavan")
       .update({
-        name: "V".repeat(65),
-        updatedByUid: ADMIN_UID,
-        updatedAt: pastDate(200),
+        pin: "9999",
+        updatedByUid: STAFF_NADEEM_UID,
+        updatedAt: pastDate(500),
       })
   );
-});
 
-test("Customer empty pending tracking and editing existing transactions follow rules", async () => {
-  const { adminDb } = await seedWorkspaceWithAdminAndInvite();
-  const members = [ADMIN_UID];
-
-  const txId = "tx_1700000009_cust_sale";
-  await assertSucceeds(
-    adminDb
+  await assertFails(
+    staffDb
       .collection("workspaces")
       .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc(txId)
+      .collection("openings")
+      .doc("open_STORE_0_1")
       .set({
-        clientTxId: txId,
-        businessDate: "2026-11-25",
-        clientTimestampMs: Date.now() - 1000,
-        type: "VEHICLE_CUSTOMER_SALE",
+        scope: "STORE",
+        vehicleId: 0,
         productId: 1,
-        vehicleId: 1,
-        vehicleName: "NADEEM",
-        staffId: 2,
-        staffName: "Nadeem",
-        quantity: 10,
-        customerName: "Al Noor Workshop",
-        notes: "4 empty pending",
-        createdByUid: ADMIN_UID,
+        openingFull: 500,
+        openingEmpty: 20,
+        updatedBy: "Nadeem",
         memberUids: members,
-        createdAt: pastDate(1000),
-        updatedAt: pastDate(1000),
+        updatedByUid: STAFF_NADEEM_UID,
+        createdAt: ts,
+        updatedAt: ts,
       })
   );
 
-  // Editing quantity, customerName, notes succeeds
   await assertSucceeds(
     adminDb
       .collection("workspaces")
       .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc(txId)
+      .collection("staff_accounts")
+      .doc("user_admin_ragavan")
       .update({
-        quantity: 12,
-        customerName: "Al Noor Auto Repair",
-        notes: "Updated quantity",
+        pin: "2468",
+        updatedByUid: ADMIN_UID,
         updatedAt: pastDate(400),
       })
   );
-
-  // Changing immutable type or clientTxId fails
-  await assertFails(
-    adminDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc(txId)
-      .update({
-        type: "STORE_PURCHASE_FULL",
-        updatedAt: pastDate(200),
-      })
-  );
-
-  // Manual CUSTOMER_EMPTY_PENDING_ADD succeeds
-  await assertSucceeds(
-    adminDb
-      .collection("workspaces")
-      .doc(WORKSPACE_ID)
-      .collection("transactions")
-      .doc("tx_1700000010_pending")
-      .set({
-        clientTxId: "tx_1700000010_pending",
-        businessDate: "2026-11-25",
-        clientTimestampMs: Date.now() - 1000,
-        type: "CUSTOMER_EMPTY_PENDING_ADD",
-        productId: 1,
-        vehicleId: 1,
-        vehicleName: "NADEEM",
-        staffId: 2,
-        staffName: "Nadeem",
-        quantity: 3,
-        customerName: "Al Noor Auto Repair",
-        notes: "Opening pending",
-        createdByUid: ADMIN_UID,
-        memberUids: members,
-        createdAt: pastDate(1000),
-        updatedAt: pastDate(1000),
-      })
-  );
 });
-

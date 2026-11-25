@@ -103,13 +103,17 @@ fun BrandHeaderBanner(
     subtitle: String,
     trailingContent: @Composable () -> Unit = {}
 ) {
+    val startColor = MaterialTheme.colorScheme.primary
+    val endColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    val accentLine = MaterialTheme.colorScheme.secondary
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.horizontalGradient(
-                        listOf(BrandGreenDark, BrandGreenPrimary)
+                        listOf(startColor, endColor)
                     )
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp)
@@ -123,14 +127,14 @@ fun BrandHeaderBanner(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.85f),
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -139,12 +143,11 @@ fun BrandHeaderBanner(
                 trailingContent()
             }
         }
-        // Signature corporate Red accent line
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(3.dp)
-                .background(BrandRedSecondary)
+                .background(accentLine)
         )
     }
 }
@@ -913,8 +916,11 @@ fun EditTransactionDialog(
     var localError by remember { mutableStateOf<String?>(null) }
 
     val isPurchaseType = transaction.type == TransactionType.STORE_PURCHASE_FULL ||
-        transaction.type == TransactionType.STORE_PURCHASE_EMPTY
+        transaction.type == TransactionType.STORE_PURCHASE_EMPTY ||
+        transaction.type == TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE
     val isCustomerType = transaction.type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+        transaction.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE ||
+        transaction.type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ||
         transaction.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ||
         transaction.type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD ||
         transaction.type == TransactionType.STORE_FULL_DISPATCH_DIRECT ||
@@ -1441,4 +1447,287 @@ fun utcMillisToIso(millis: Long): String {
         timeZone = TimeZone.getTimeZone("UTC")
     }
     return fmt.format(Date(millis))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StockCalculatorDialog(
+    products: List<ProductEntity>,
+    storeFullProvider: (Long) -> Int = { 0 },
+    storeEmptyProvider: (Long) -> Int = { 0 },
+    vehicleName: String? = null,
+    vehicleFullProvider: ((Long) -> Int)? = null,
+    vehicleEmptyProvider: ((Long) -> Int)? = null,
+    onDismiss: () -> Unit
+) {
+    val calcModes = listOf(
+        "Cust Sale + Empty",
+        "New Cust Full Sale",
+        "Cust Complaint Repl",
+        "Supplier Purchase",
+        "Supplier Complaint",
+        "Dispatch to Vehicle"
+    )
+    var selectedModeIdx by remember { mutableStateOf(0) }
+    var selectedCategory by remember { mutableStateOf(ProductCategory.INDUSTRIAL_GAS) }
+    val filteredProducts = remember(products, selectedCategory) {
+        products.filter { it.category == selectedCategory }
+    }
+    var selectedProduct by remember(filteredProducts) {
+        mutableStateOf(filteredProducts.firstOrNull())
+    }
+    var productExpanded by remember { mutableStateOf(false) }
+
+    var qtyText by remember { mutableStateOf("5") }
+    var emptyNowText by remember { mutableStateOf("3") }
+    var prevPendingText by remember { mutableStateOf("0") }
+
+    val qty = qtyText.toIntOrNull() ?: 0
+    val empNow = emptyNowText.toIntOrNull() ?: 0
+    val prevPending = prevPendingText.toIntOrNull() ?: 0
+
+    val prodId = selectedProduct?.id ?: 0L
+    val sFull = storeFullProvider(prodId)
+    val sEmpty = storeEmptyProvider(prodId)
+    val vFull = vehicleFullProvider?.invoke(prodId) ?: 0
+    val vEmpty = vehicleEmptyProvider?.invoke(prodId) ?: 0
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Calculate,
+                            contentDescription = "Stock Calculator",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Cylinder Calculator",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close calculator")
+                    }
+                }
+
+                // Calculation Scenario Chips
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    calcModes.forEachIndexed { idx, label ->
+                        FilterChip(
+                            selected = selectedModeIdx == idx,
+                            onClick = { selectedModeIdx = idx },
+                            label = { Text(label, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                // Product Category + Picker
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ProductCategory.entries.forEach { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat,
+                            onClick = {
+                                selectedCategory = cat
+                                selectedProduct = products.firstOrNull { it.category == cat }
+                            },
+                            label = { Text(cat.shortCode, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                if (filteredProducts.isNotEmpty()) {
+                    ExposedDropdownMenuBox(
+                        expanded = productExpanded,
+                        onExpandedChange = { productExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedProduct?.name ?: "Select Product",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Cylinder") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(productExpanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = productExpanded,
+                            onDismissRequest = { productExpanded = false }
+                        ) {
+                            filteredProducts.forEach { prod ->
+                                DropdownMenuItem(
+                                    text = { Text("${prod.category.shortCode} • ${prod.name}") },
+                                    onClick = {
+                                        selectedProduct = prod
+                                        productExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = qtyText,
+                        onValueChange = { if (it.all { ch -> ch.isDigit() } && it.length <= 5) qtyText = it },
+                        label = { Text("Full / Qty") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("calc_qty_input")
+                    )
+                    if (selectedModeIdx == 0) {
+                        OutlinedTextField(
+                            value = emptyNowText,
+                            onValueChange = { if (it.all { ch -> ch.isDigit() } && it.length <= 5) emptyNowText = it },
+                            label = { Text("Empty Recd") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("calc_empty_input")
+                        )
+                    }
+                }
+
+                if (selectedModeIdx == 0) {
+                    OutlinedTextField(
+                        value = prevPendingText,
+                        onValueChange = { if (it.all { ch -> ch.isDigit() } && it.length <= 5) prevPendingText = it },
+                        label = { Text("Previous Customer Pending Empty") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Result Card
+                val summaryLines: List<String> = when (selectedModeIdx) {
+                    0 -> {
+                        val newVFull = vFull - qty
+                        val newVEmp = vEmpty + empNow
+                        val newPending = prevPending + qty - empNow
+                        listOfNotNull(
+                            vehicleName?.let { "$it Full: $vFull -> $newVFull" },
+                            vehicleName?.let { "$it Empty: $vEmpty -> $newVEmp" },
+                            "Cust Pending: $prevPending + $qty - $empNow = $newPending",
+                            if (vehicleFullProvider != null && newVFull < 0) "Warning: Insufficient Full Stock" else null
+                        )
+                    }
+                    1 -> {
+                        val newVFull = vFull - qty
+                        listOfNotNull(
+                            "New Customer Connection Sale: $qty Full",
+                            vehicleName?.let { "$it Full: $vFull -> $newVFull" },
+                            "Customer Pending Debt Added: 0 (Brand New Cylinder Sale)",
+                            if (vehicleFullProvider != null && newVFull < 0) "Warning: Insufficient Full Stock" else null
+                        )
+                    }
+                    2 -> {
+                        val newVFull = vFull - qty
+                        val newVEmp = vEmpty + qty
+                        listOfNotNull(
+                            "1-for-1 Customer Complaint Swap: $qty Cylinder(s)",
+                            vehicleName?.let { "$it Full: $vFull -> $newVFull" },
+                            vehicleName?.let { "$it Empty: $vEmpty -> $newVEmp" },
+                            "Pending Empty Debt Change: 0",
+                            if (vehicleFullProvider != null && newVFull < 0) "Warning: Insufficient Full Stock" else null
+                        )
+                    }
+                    3 -> {
+                        listOf(
+                            "Store Purchase Add: +$qty Full",
+                            "Store Full: $sFull -> ${sFull + qty}",
+                            "Store Empty: $sEmpty (unchanged)"
+                        )
+                    }
+                    4 -> {
+                        val newSEmp = sEmpty - qty
+                        listOfNotNull(
+                            "Supplier Complaint Swap: $qty Defective Empty -> Fresh Full",
+                            "Store Full: $sFull -> ${sFull + qty}",
+                            "Store Empty: $sEmpty -> $newSEmp",
+                            if (newSEmp < 0) "Warning: Insufficient Empty Stock in Store" else null
+                        )
+                    }
+                    else -> {
+                        val newSFull = sFull - qty
+                        val newVFull = vFull + qty
+                        listOfNotNull(
+                            "Store Dispatch to ${vehicleName ?: "Vehicle"}: $qty Full",
+                            "Store Full: $sFull -> $newSFull",
+                            vehicleName?.let { "$it Full: $vFull -> $newVFull" },
+                            if (newSFull < 0) "Warning: Insufficient Store Full Stock" else null
+                        )
+                    }
+                }
+
+                Surface(
+                    color = BrandGreenContainer.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BrandGreenPrimary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "CALCULATED RESULT",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandGreenOnContainer
+                        )
+                        summaryLines.forEach { line ->
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = JetBrainsMono,
+                                color = if (line.startsWith("Warning")) BrandRedBright else BrandGreenOnContainer,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Done")
+                }
+            }
+        }
+    }
 }

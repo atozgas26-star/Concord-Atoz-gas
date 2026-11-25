@@ -3,22 +3,40 @@ package com.example
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.audio.SoundEffectsManager
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.SessionPreferences
+import com.example.data.model.AutoLogoutMode
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ReportType
 import com.example.data.model.StockCalculator
+import com.example.data.model.ThemePreset
+import android.os.Looper
 import com.example.data.model.TransactionType
 import com.example.data.model.UserRole
 import com.example.data.repository.InventoryRepository
 import com.example.export.BackupManager
+import com.example.export.GoogleDriveBackupManager
 import com.example.export.ReportExporter
 import com.example.export.ReportTable
+import com.example.permissions.AppPermissionsManager
+import com.example.ui.viewmodel.AppViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import org.robolectric.Shadows
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -416,5 +434,320 @@ class ExampleRobolectricTest {
         assertEquals(karimUser.id, prefs.getLoggedInUserId())
         prefs.clearLoggedInUserId()
         assertNull(prefs.getLoggedInUserId())
+    }
+
+    @Test
+    fun `supplier complaint replace, customer complaint replace, and new customer sale calculate accurately`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val nadeemVehicle = repository.vehiclesFlow.first().first { it.staffUserId == nadeem.id }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        val day = "2026-11-25"
+        val yearMonth = "2026-11"
+
+        // Start Store Opening: Full=10, Empty=5
+        assertTrue(
+            repository.setOpeningStockForDate(
+                StockCalculator.SCOPE_STORE, 0L, oxygen.id, day, 10, 5, admin
+            ) is OperationResult.Success
+        )
+
+        // Supplier Complaint Replace 3: Store Full +3 (13), Store Empty -3 (2)
+        val supComplaint = repository.recordTransaction(
+            businessDate = day,
+            type = TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE,
+            productId = oxygen.id,
+            vehicleId = null,
+            actor = admin,
+            quantity = 3,
+            notes = "Valve defect replaced",
+            purchaseCompanyName = "ADNOC Gas"
+        )
+        assertTrue(supComplaint is OperationResult.Success)
+
+        // Over-replacing supplier complaint (4 when only 2 empty left) must fail
+        val overSupComplaint = repository.recordTransaction(
+            businessDate = day,
+            type = TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE,
+            productId = oxygen.id,
+            vehicleId = null,
+            actor = admin,
+            quantity = 4,
+            notes = "",
+            purchaseCompanyName = "ADNOC Gas"
+        )
+        assertTrue(overSupComplaint is OperationResult.InsufficientStock)
+
+        val storeRow = repository.observeStoreStock(day).first().first { it.product.id == oxygen.id }
+        assertEquals(13, storeRow.storeFullBalance)
+        assertEquals(2, storeRow.storeEmptyBalance)
+        assertEquals(3, storeRow.fullReturns)
+        assertEquals(3, storeRow.emptyDispatch)
+
+        // Dispatch 8 Full to Nadeem
+        assertTrue(
+            repository.recordTransaction(day, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, nadeemVehicle.id, admin, 8, "")
+                is OperationResult.Success
+        )
+
+        // Staff Customer Complaint Replace 2: Vehicle Full -2 (6), Vehicle Empty +2 (2)
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = day,
+                type = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
+                productId = oxygen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 2,
+                notes = "Leak swap",
+                customerName = "Metro Kitchen"
+            ) is OperationResult.Success
+        )
+
+        // Staff New Customer Full Sale 3: Vehicle Full -3 (3), Empty stays 2
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = day,
+                type = TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                productId = oxygen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 3,
+                notes = "New cylinder connection",
+                customerName = "Oasis Grill"
+            ) is OperationResult.Success
+        )
+
+        val vehRow = repository.observeVehicleStock(nadeemVehicle.id, day).first().first { it.product.id == oxygen.id }
+        assertEquals(3, vehRow.fullBalance)
+        assertEquals(2, vehRow.emptyBalance)
+        assertEquals(3, vehRow.customerSales)
+        assertEquals(2, vehRow.complaintReplaced)
+
+        // Monthly/Product/Staff reports include New Customer Sale (3) and exclude Customer Complaint Replace (2)
+        val monthly = repository.observeMonthlySalesReport(yearMonth).first().first { it.date == day }
+        assertEquals(3, monthly.totalSold)
+        val productSale = repository.observeProductWiseSales(yearMonth).first().first { it.product.id == oxygen.id }
+        assertEquals(3, productSale.totalSold)
+        val staffSale = repository.observeStaffWiseSales(yearMonth, day).first().first { it.vehicle.id == nadeemVehicle.id }
+        assertEquals(3, staffSale.totalSold)
+
+        // Neither New Customer Full Sale nor Complaint Replacement creates pending empty balances
+        val pending = repository.observeCustomerPendingBalances(nadeemVehicle.id).first()
+        assertTrue(pending.isEmpty())
+    }
+
+    @Test
+    fun `auto login, auto logout, theme preset, sound preference and audio playback are safe`() = runTest {
+        val prefs = SessionPreferences(context)
+        assertTrue(prefs.autoLoginEnabledFlow.first())
+        assertEquals(AutoLogoutMode.OFF, prefs.autoLogoutModeFlow.first())
+        assertEquals(ThemePreset.EMERALD_CORPORATE, prefs.themePresetFlow.first())
+        assertTrue(prefs.soundEnabledFlow.first())
+
+        prefs.setAutoLoginEnabled(false)
+        prefs.setAutoLogoutMode(AutoLogoutMode.IDLE_5_MIN)
+        prefs.setThemePreset(ThemePreset.OCEANIC_TEAL)
+        prefs.setSoundEnabled(false)
+
+        assertFalse(prefs.autoLoginEnabledFlow.first())
+        assertEquals(AutoLogoutMode.IDLE_5_MIN, prefs.autoLogoutModeFlow.first())
+        assertEquals(ThemePreset.OCEANIC_TEAL, prefs.themePresetFlow.first())
+        assertFalse(prefs.soundEnabledFlow.first())
+
+        // SoundEffectsManager safely no-ops or catches audio errors in Robolectric
+        SoundEffectsManager.playStartupChime(false)
+        SoundEffectsManager.playStartupChime(true)
+        SoundEffectsManager.playSuccessChime(true)
+        SoundEffectsManager.playWarningTone(true)
+    }
+
+    @Test
+    fun `admin and staff role separation and unique PIN enforcement work properly`() = runTest {
+        repository.initializeDatabase()
+        val users = repository.usersFlow.first()
+        val admin = users.first { it.role == UserRole.ADMIN }
+        val nadeem = users.first { it.username == "nadeem" }
+
+        // Admin succeeds on ADMIN role, fails on STAFF role
+        assertNotNull(repository.authenticate(admin.id, "1725", UserRole.ADMIN))
+        assertNull(repository.authenticate(admin.id, "1725", UserRole.STAFF))
+
+        // Staff succeeds on STAFF role, fails on ADMIN role
+        assertNotNull(repository.authenticate(nadeem.id, "1001", UserRole.STAFF))
+        assertNull(repository.authenticate(nadeem.id, "1001", UserRole.ADMIN))
+
+        // Updating staff PIN to collide with Admin PIN (1725) must fail
+        val dupPinUpdate = repository.updateUserPin(nadeem.id, "1725")
+        assertTrue(dupPinUpdate is OperationResult.ValidationError)
+
+        // Adding a new staff with an already-used PIN (1001) must fail
+        val dupStaffPin = repository.addStaffAndVehicle("Bilal", "TRUCK 11", "1001")
+        assertTrue(dupStaffPin is OperationResult.ValidationError)
+
+        // Updating to a unique PIN succeeds and authenticates cleanly
+        val validPinUpdate = repository.updateUserPin(nadeem.id, "2099")
+        assertTrue(validPinUpdate is OperationResult.Success)
+        assertNull(repository.authenticate(nadeem.id, "1001", UserRole.STAFF))
+        assertNotNull(repository.authenticate(nadeem.id, "2099", UserRole.STAFF))
+    }
+
+    @Test
+    fun `permissions evaluator and auto drive backup preferences work cleanly`() = runTest {
+        val prefs = SessionPreferences(context)
+        assertFalse(prefs.autoDriveBackupEnabledFlow.first())
+        assertEquals(0L, prefs.lastDriveBackupAtMsFlow.first())
+        assertEquals("", prefs.lastDriveFileIdFlow.first())
+
+        prefs.setAutoDriveBackupEnabled(true)
+        prefs.saveDriveBackupReceipt(1735123456000L, "drive_file_abc123")
+
+        assertTrue(prefs.autoDriveBackupEnabledFlow.first())
+        assertEquals(1735123456000L, prefs.lastDriveBackupAtMsFlow.first())
+        assertEquals("drive_file_abc123", prefs.lastDriveFileIdFlow.first())
+
+        val unauthStatus = AppPermissionsManager.evaluateStatus(context, driveAuthorized = false)
+        assertTrue(unauthStatus.storageFrameworkReady)
+        assertFalse(unauthStatus.driveAuthorized)
+        assertFalse(unauthStatus.allCoreGranted)
+
+        val authStatus = AppPermissionsManager.evaluateStatus(context, driveAuthorized = true)
+        assertTrue(authStatus.driveAuthorized)
+    }
+
+    @Test
+    fun `google drive backup manager uploads and restores backup json via drive v3 endpoints`() = runTest {
+        var uploadedBody = ""
+        val interceptor = Interceptor { chain ->
+            val req = chain.request()
+            val url = req.url.toString()
+            when {
+                url.contains("/files?") && req.method == "GET" && url.contains("spaces=drive") -> {
+                    Response.Builder()
+                        .request(req)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body("""{"files":[{"id":"drv_123","name":"CONCORD_ATOZ_GAS_AUTO_BACKUP.json"}]}""".toResponseBody("application/json".toMediaType()))
+                        .build()
+                }
+                url.contains("/files?") && req.method == "GET" && url.contains("spaces=appDataFolder") -> {
+                    Response.Builder()
+                        .request(req)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body("""{"files":[]}""".toResponseBody("application/json".toMediaType()))
+                        .build()
+                }
+                url.contains("/upload/drive/v3/files") -> {
+                    val buf = Buffer()
+                    req.body?.writeTo(buf)
+                    val captured = buf.readUtf8()
+                    if (captured.contains("schemaVersion")) {
+                        uploadedBody = captured
+                    }
+                    Response.Builder()
+                        .request(req)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body("""{"id":"drv_123","name":"CONCORD_ATOZ_GAS_AUTO_BACKUP.json"}""".toResponseBody("application/json".toMediaType()))
+                        .build()
+                }
+                url.contains("/drive/v3/files/drv_123?alt=media") -> {
+                    Response.Builder()
+                        .request(req)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body("""{"schemaVersion":2,"users":[]}""".toResponseBody("application/json".toMediaType()))
+                        .build()
+                }
+                else -> {
+                    Response.Builder()
+                        .request(req)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(404)
+                        .message("Not Found")
+                        .body("{}".toResponseBody("application/json".toMediaType()))
+                        .build()
+                }
+            }
+        }
+
+        val client = OkHttpClient.Builder().addInterceptor(interceptor).build()
+        val driveMgr = GoogleDriveBackupManager(context, client)
+        val uploadResult = driveMgr.uploadJsonBackup(
+            jsonContent = """{"schemaVersion":2,"users":[{"name":"Ragavan"}]}""",
+            accessTokenOverride = "test-oauth-token"
+        )
+        assertTrue(uploadResult.isSuccess)
+        assertEquals("drv_123", uploadResult.getOrNull()?.fileId)
+        assertTrue(uploadedBody.contains("Ragavan"))
+
+        val downloadResult = driveMgr.downloadLatestBackupJson(accessTokenOverride = "test-oauth-token")
+        assertTrue(downloadResult.isSuccess)
+        assertTrue(downloadResult.getOrNull().orEmpty().contains("schemaVersion"))
+    }
+
+    @Test
+    fun `viewmodel strictly blocks staff role from admin settings, reports, drive backup, and store operations`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = GoogleDriveBackupManager(context),
+            appContext = context
+        )
+        val deadline1 = System.currentTimeMillis() + 5000L
+        while (!vm.isInitialized.value && System.currentTimeMillis() < deadline1) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        assertTrue(vm.isInitialized.value)
+
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        vm.login(userId = nadeem.id, pin = "1001", expectedRole = UserRole.STAFF)
+
+        val deadline2 = System.currentTimeMillis() + 5000L
+        while (vm.authSession.value == null && System.currentTimeMillis() < deadline2) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+
+        assertEquals(UserRole.STAFF, vm.authSession.value?.user?.role)
+
+        // 1. Staff blocked from Drive authorization
+        vm.requestGoogleDriveAuthorizationAndEnable()
+        assertEquals("Admin Only", vm.warningAlert.value?.title)
+        vm.dismissWarningAlert()
+
+        // 2. Staff blocked from archiving Admin reports
+        val table = ReportTable("Daily Store", "Test", "Nadeem", listOf("Product"), emptyList(), null)
+        vm.saveReportToCloudAndDrive(ReportType.DAILY_STORE, table, uploadPdfToDrive = false)
+        assertEquals("Admin Only", vm.warningAlert.value?.title)
+        vm.dismissWarningAlert()
+
+        // 3. Staff blocked from adding staff/vehicles
+        vm.addStaffAndVehicle("Hacker", "TRUCK X", "9999")
+        assertEquals("Admin Only", vm.warningAlert.value?.title)
+        vm.dismissWarningAlert()
+
+        // 4. Staff blocked from modifying Store opening stock
+        vm.updateOpeningStock(StockCalculator.SCOPE_STORE, 0L, oxygen.id, 50, 10)
+        assertEquals("Admin Only", vm.warningAlert.value?.title)
+        vm.dismissWarningAlert()
+
+        // 5. Staff blocked from Store purchase transaction
+        vm.recordTransaction(TransactionType.STORE_PURCHASE_FULL, oxygen.id, null, 10)
+        assertEquals("Permission Denied", vm.warningAlert.value?.title)
+        assertTrue(repository.transactionsFlow.first().isEmpty())
     }
 }

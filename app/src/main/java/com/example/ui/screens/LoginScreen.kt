@@ -35,6 +35,9 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -69,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.local.UserAccountEntity
+import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.theme.BrandGreenContainer
@@ -88,18 +92,48 @@ fun LoginScreen(
     googleEmail: String = "",
     workspaceState: WorkspaceConnectionState = WorkspaceConnectionState.Checking,
     cloudBusy: Boolean = false,
+    isAuthenticating: Boolean = false,
+    linkedStaffUsername: String = "",
+    linkedStaffRole: UserRole? = null,
+    themePreset: ThemePreset = ThemePreset.EMERALD_CORPORATE,
+    soundEnabled: Boolean = true,
+    autoLoginEnabled: Boolean = true,
+    onThemeCycle: () -> Unit = {},
+    onToggleSound: () -> Unit = {},
+    onToggleAutoLogin: (Boolean) -> Unit = {},
     onJoinWorkspace: (String) -> Unit = {},
     onCreateWorkspace: () -> Unit = {},
     onRetryCloud: () -> Unit = {},
     onGoogleSignOut: () -> Unit = {},
-    onLogin: (userId: Long, pin: String) -> Unit,
+    onLogin: (userId: Long, pin: String, role: UserRole) -> Unit,
     onClearError: () -> Unit
 ) {
-    var selectedRole by remember { mutableStateOf(UserRole.STAFF) }
+    val isStaffRestrictedCloud = workspaceState is WorkspaceConnectionState.Connected &&
+        !workspaceState.isOwnerOrAdmin &&
+        linkedStaffRole != UserRole.ADMIN
+    var userTouchedRole by remember { mutableStateOf(false) }
+    var selectedRole by remember {
+        mutableStateOf(
+            if (isStaffRestrictedCloud) UserRole.STAFF else (linkedStaffRole ?: UserRole.STAFF)
+        )
+    }
     val adminUser = remember(users) { users.firstOrNull { it.role == UserRole.ADMIN } }
     val staffUsers = remember(users) { users.filter { it.role == UserRole.STAFF } }
     var selectedStaffId by remember(staffUsers) { mutableStateOf(staffUsers.firstOrNull()?.id) }
     var pinInput by remember { mutableStateOf("") }
+
+    LaunchedEffect(isStaffRestrictedCloud, linkedStaffRole, linkedStaffUsername, users) {
+        if (isStaffRestrictedCloud) {
+            selectedRole = UserRole.STAFF
+        } else if (!userTouchedRole) {
+            linkedStaffRole?.let { selectedRole = it }
+            if (linkedStaffUsername.isNotBlank()) {
+                staffUsers.firstOrNull { it.username == linkedStaffUsername }?.let { match ->
+                    selectedStaffId = match.id
+                }
+            }
+        }
+    }
 
     val targetUser = if (selectedRole == UserRole.ADMIN) {
         adminUser
@@ -235,17 +269,26 @@ fun LoginScreen(
                         subtitle = "${staffUsers.size} Vehicle Accounts",
                         icon = Icons.Default.LocalShipping,
                         selected = selectedRole == UserRole.STAFF,
-                        onClick = { selectedRole = UserRole.STAFF },
+                        onClick = {
+                            userTouchedRole = true
+                            selectedRole = UserRole.STAFF
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("role_staff_tab")
                     )
                     RoleToggleButton(
                         title = "Admin Login",
-                        subtitle = "Ragavan (Full Access)",
+                        subtitle = if (isStaffRestrictedCloud) "Admin Only (Restricted)" else "Ragavan (Full Access)",
                         icon = Icons.Default.AdminPanelSettings,
                         selected = selectedRole == UserRole.ADMIN,
-                        onClick = { selectedRole = UserRole.ADMIN },
+                        enabled = !isStaffRestrictedCloud,
+                        onClick = {
+                            if (!isStaffRestrictedCloud) {
+                                userTouchedRole = true
+                                selectedRole = UserRole.ADMIN
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("role_admin_tab")
@@ -351,10 +394,20 @@ fun LoginScreen(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "Enter 4-Digit PIN for ${targetUser?.displayName ?: ""}",
+                                text = "Enter Unique 4-Digit ${selectedRole.name} PIN (${targetUser?.displayName ?: ""})",
                                 style = MaterialTheme.typography.titleSmall
                             )
                         }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (workspaceState is WorkspaceConnectionState.Connected) {
+                                "Firebase Auth active • Validating role & PIN via Firestore"
+                            } else {
+                                "Firebase Auth active • Local PIN cache ready"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
                         Spacer(Modifier.height(14.dp))
 
@@ -421,6 +474,7 @@ fun LoginScreen(
                                     rowKeys.forEach { key ->
                                         KeypadButton(
                                             label = key,
+                                            enabled = !isAuthenticating,
                                             onClick = {
                                                 onClearError()
                                                 when (key) {
@@ -432,7 +486,7 @@ fun LoginScreen(
                                                         val updated = pinInput + key
                                                         pinInput = updated
                                                         if (updated.length == 4 && targetUser != null) {
-                                                            onLogin(targetUser.id, updated)
+                                                            onLogin(targetUser.id, updated, selectedRole)
                                                         }
                                                     }
                                                 }
@@ -451,19 +505,32 @@ fun LoginScreen(
                         Button(
                             onClick = {
                                 val user = targetUser ?: return@Button
-                                onLogin(user.id, pinInput)
+                                onLogin(user.id, pinInput, selectedRole)
                             },
-                            enabled = pinInput.length == 4 && targetUser != null,
+                            enabled = !isAuthenticating && pinInput.length == 4 && targetUser != null,
                             colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
                                 .testTag("login_submit_button")
                         ) {
-                            Text(
-                                text = "Sign In",
-                                style = MaterialTheme.typography.titleMedium
-                            )
+                            if (isAuthenticating) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = "Verifying with Firestore...",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            } else {
+                                Text(
+                                    text = "Verify & Sign In (${selectedRole.name})",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
                         }
 
                         if (selectedRole == UserRole.ADMIN && adminUser?.pin == "1725") {
@@ -476,6 +543,47 @@ fun LoginScreen(
                         }
                     }
                 }
+
+                // Quick Controls: Auto-Login, Theme & Sound + Credit
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = autoLoginEnabled,
+                        onClick = { onToggleAutoLogin(!autoLoginEnabled) },
+                        label = { Text(if (autoLoginEnabled) "Auto-Login: ON" else "Auto-Login: OFF", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = false,
+                        onClick = onThemeCycle,
+                        leadingIcon = { Icon(Icons.Default.Palette, contentDescription = "Switch Theme", modifier = Modifier.size(16.dp)) },
+                        label = { Text(themePreset.title, fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = soundEnabled,
+                        onClick = onToggleSound,
+                        leadingIcon = {
+                            Icon(
+                                if (soundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                                contentDescription = "Toggle Sound",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text(if (soundEnabled) "Sound" else "Mute", fontSize = 11.sp) }
+                    )
+                }
+
+                Text(
+                    text = "CONCORD & A TO Z GAS • Built by Ragavan",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                )
             }
         }
     }
@@ -487,15 +595,20 @@ private fun RoleToggleButton(
     subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     selected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        color = if (selected) BrandGreenPrimary else MaterialTheme.colorScheme.surface,
+        color = when {
+            !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+            selected -> BrandGreenPrimary
+            else -> MaterialTheme.colorScheme.surface
+        },
         border = BorderStroke(
             width = if (selected) 0.dp else 1.dp,
             color = MaterialTheme.colorScheme.outlineVariant
@@ -509,7 +622,11 @@ private fun RoleToggleButton(
             Icon(
                 imageVector = icon,
                 contentDescription = title,
-                tint = if (selected) Color.White else BrandGreenPrimary,
+                tint = when {
+                    !enabled -> MaterialTheme.colorScheme.outline
+                    selected -> Color.White
+                    else -> BrandGreenPrimary
+                },
                 modifier = Modifier.size(22.dp)
             )
             Spacer(Modifier.width(8.dp))
@@ -517,12 +634,20 @@ private fun RoleToggleButton(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+                    color = when {
+                        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                        selected -> Color.White
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
                 )
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (selected) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = when {
+                        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        selected -> Color.White.copy(alpha = 0.85f)
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
         }
@@ -607,14 +732,18 @@ private fun CloudSyncStatusBanner(
             when (workspaceState) {
                 is WorkspaceConnectionState.Connected -> {
                     Surface(
-                        color = BrandGreenContainer,
+                        color = if (workspaceState.isOwnerOrAdmin) BrandGreenContainer else MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "Staff Invite Code: ${workspaceState.inviteCode}  •  Share with staff phones for live sync",
+                            text = if (workspaceState.isOwnerOrAdmin) {
+                                "Staff Invite Code: ${workspaceState.inviteCode}  •  Share with staff phones for live sync"
+                            } else {
+                                "Staff Role Active  •  Admin Settings & Financial Reports are restricted"
+                            },
                             style = MaterialTheme.typography.labelSmall,
-                            color = BrandGreenOnContainer,
+                            color = if (workspaceState.isOwnerOrAdmin) BrandGreenOnContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
@@ -691,11 +820,13 @@ private fun CloudSyncStatusBanner(
 @Composable
 private fun KeypadButton(
     label: String,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     OutlinedButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.height(52.dp),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)

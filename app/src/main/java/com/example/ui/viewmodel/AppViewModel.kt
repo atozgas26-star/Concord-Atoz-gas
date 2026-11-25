@@ -1,5 +1,9 @@
 package com.example.ui.viewmodel
 
+import android.app.Activity
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -8,6 +12,7 @@ import com.example.data.local.SessionPreferences
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.AuthSession
+import com.example.data.model.AutoLogoutMode
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.DashboardSummary
@@ -19,37 +24,62 @@ import com.example.data.model.ReportType
 import com.example.data.model.StaffSalesRow
 import com.example.data.model.StockCalculator
 import com.example.data.model.StoreStockRow
+import com.example.data.model.ThemePreset
 import com.example.data.model.TransactionDisplayItem
 import com.example.data.model.TransactionType
 import com.example.data.model.UserRole
 import com.example.data.model.VehicleStockRow
+import com.example.data.remote.CloudLoginMetadata
 import com.example.data.remote.CloudSyncRepository
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.data.repository.InventoryRepository
 import com.example.export.BackupManager
+import com.example.export.DriveAuthResult
+import com.example.export.DriveBackupState
+import com.example.export.GoogleDriveBackupManager
+import com.example.export.ReportExporter
 import com.example.export.ReportTable
+import com.example.permissions.AppPermissionsManager
+import com.example.permissions.AppPermissionsStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class WarningAlert(
     val title: String,
     val message: String
 )
 
+private enum class PendingDriveConsentAction {
+    NONE,
+    ENABLE_AUTO_AND_BACKUP,
+    BACKUP_NOW,
+    RESTORE_NOW
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(
     private val repository: InventoryRepository,
     private val backupManager: BackupManager,
     private val cloudSync: CloudSyncRepository? = null,
-    private val sessionPreferences: SessionPreferences? = null
+    private val sessionPreferences: SessionPreferences? = null,
+    private val driveBackupManager: GoogleDriveBackupManager? = null,
+    private val appContext: Context? = null
 ) : ViewModel() {
 
     private val _isInitialized = MutableStateFlow(false)
@@ -79,8 +109,45 @@ class AppViewModel(
     val workspaceConnectionState: StateFlow<WorkspaceConnectionState> =
         cloudSync?.connectionState ?: MutableStateFlow(WorkspaceConnectionState.Checking).asStateFlow()
 
+    val cloudLoginMetadata: StateFlow<CloudLoginMetadata> =
+        cloudSync?.loginMetadata ?: MutableStateFlow(CloudLoginMetadata()).asStateFlow()
+
     private val _cloudActionBusy = MutableStateFlow(false)
     val cloudActionBusy: StateFlow<Boolean> = _cloudActionBusy.asStateFlow()
+
+    private val _isAuthenticating = MutableStateFlow(false)
+    val isAuthenticating: StateFlow<Boolean> = _isAuthenticating.asStateFlow()
+
+    val themePreset: StateFlow<ThemePreset> =
+        (sessionPreferences?.themePresetFlow ?: flowOf(ThemePreset.EMERALD_CORPORATE))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, ThemePreset.EMERALD_CORPORATE)
+
+    val soundEnabled: StateFlow<Boolean> =
+        (sessionPreferences?.soundEnabledFlow ?: flowOf(true))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val autoLoginEnabled: StateFlow<Boolean> =
+        (sessionPreferences?.autoLoginEnabledFlow ?: flowOf(true))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val autoLogoutMode: StateFlow<AutoLogoutMode> =
+        (sessionPreferences?.autoLogoutModeFlow ?: flowOf(AutoLogoutMode.OFF))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, AutoLogoutMode.OFF)
+
+    private val _driveBackupState = MutableStateFlow(DriveBackupState())
+    val driveBackupState: StateFlow<DriveBackupState> = _driveBackupState.asStateFlow()
+
+    private val _driveConsentRequest = MutableStateFlow<PendingIntent?>(null)
+    val driveConsentRequest: StateFlow<PendingIntent?> = _driveConsentRequest.asStateFlow()
+
+    private val _pendingDriveRestoreJson = MutableStateFlow<String?>(null)
+    val pendingDriveRestoreJson: StateFlow<String?> = _pendingDriveRestoreJson.asStateFlow()
+
+    private val _permissionsStatus = MutableStateFlow(AppPermissionsStatus())
+    val permissionsStatus: StateFlow<AppPermissionsStatus> = _permissionsStatus.asStateFlow()
+
+    private var pendingDriveConsentAction = PendingDriveConsentAction.NONE
+    private var autoDriveBackupJob: Job? = null
 
     val users: StateFlow<List<UserAccountEntity>> = repository.usersFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -172,7 +239,13 @@ class AppViewModel(
     init {
         viewModelScope.launch {
             repository.initializeDatabase()
-            val savedUserId = sessionPreferences?.getLoggedInUserId()
+            val shouldAutoLogin = sessionPreferences?.autoLoginEnabledFlow?.first() ?: true
+            val logoutMode = sessionPreferences?.autoLogoutModeFlow?.first() ?: AutoLogoutMode.OFF
+            val savedUserId = if (shouldAutoLogin && logoutMode != AutoLogoutMode.ON_MINIMIZE) {
+                sessionPreferences?.getLoggedInUserId()
+            } else {
+                null
+            }
             if (savedUserId != null) {
                 val restored = repository.getSessionForUserId(savedUserId)
                 if (restored != null) {
@@ -181,11 +254,449 @@ class AppViewModel(
                         _selectedVehicleId.value = restored.assignedVehicle.id
                     }
                 } else {
-                    sessionPreferences.clearLoggedInUserId()
+                    sessionPreferences?.clearLoggedInUserId()
                 }
             }
             _isInitialized.value = true
             cloudSync?.connectForSignedInUser()
+            loadDriveAndPermissionState()
+        }
+    }
+
+    private suspend fun loadDriveAndPermissionState() {
+        val enabled = sessionPreferences?.autoDriveBackupEnabledFlow?.first() ?: false
+        val lastAt = sessionPreferences?.lastDriveBackupAtMsFlow?.first() ?: 0L
+        val lastId = sessionPreferences?.lastDriveFileIdFlow?.first() ?: ""
+        val authorized = when (driveBackupManager?.authorizeDriveAccess(allowConsentPrompt = false)) {
+            is DriveAuthResult.Authorized -> true
+            else -> false
+        }
+        val statusMsg = when {
+            enabled && authorized && lastAt > 0L -> "Auto Drive Backup active"
+            authorized -> "Google Drive connected"
+            enabled -> "Tap Authorize Google Drive to resume auto backup"
+            else -> "Google Drive backup not yet connected"
+        }
+        _driveBackupState.value = _driveBackupState.value.copy(
+            autoBackupEnabled = enabled,
+            driveAuthorized = authorized,
+            lastBackupAtMs = lastAt,
+            lastFileId = lastId,
+            lastStatusMessage = statusMsg
+        )
+        refreshPermissionsStatus(authorized)
+    }
+
+    fun refreshPermissionsStatus(driveAuthorizedOverride: Boolean? = null) {
+        val ctx = appContext ?: return
+        val driveOk = driveAuthorizedOverride ?: _driveBackupState.value.driveAuthorized
+        _permissionsStatus.value = AppPermissionsManager.evaluateStatus(ctx, driveAuthorized = driveOk)
+    }
+
+    fun requestGoogleDriveAuthorizationAndEnable() {
+        val session = _authSession.value
+        if (session == null || session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can configure Google Drive backup storage.")
+            return
+        }
+        setAutoDriveBackupEnabled(true)
+    }
+
+    fun setAutoDriveBackupEnabled(enabled: Boolean) {
+        val session = _authSession.value
+        if (session == null || session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can manage Google Drive auto-backup.")
+            return
+        }
+        viewModelScope.launch {
+            if (!enabled) {
+                sessionPreferences?.setAutoDriveBackupEnabled(false)
+                _driveBackupState.value = _driveBackupState.value.copy(
+                    autoBackupEnabled = false,
+                    lastStatusMessage = "Auto Google Drive backup paused"
+                )
+                syncAdminDriveSettingsToCloud()
+                return@launch
+            }
+
+            val mgr = driveBackupManager
+            if (mgr == null) {
+                _snackbarMessage.value = "Google Drive backup manager unavailable."
+                return@launch
+            }
+
+            when (val authRes = mgr.authorizeDriveAccess(allowConsentPrompt = true)) {
+                is DriveAuthResult.Authorized -> {
+                    sessionPreferences?.setAutoDriveBackupEnabled(true)
+                    _driveBackupState.value = _driveBackupState.value.copy(
+                        autoBackupEnabled = true,
+                        driveAuthorized = true,
+                        lastStatusMessage = "Auto Drive backup enabled"
+                    )
+                    refreshPermissionsStatus(true)
+                    backUpToGoogleDriveNow(accessTokenOverride = authRes.accessToken)
+                }
+                is DriveAuthResult.NeedsConsent -> {
+                    pendingDriveConsentAction = PendingDriveConsentAction.ENABLE_AUTO_AND_BACKUP
+                    _driveConsentRequest.value = authRes.pendingIntent
+                }
+                is DriveAuthResult.Error -> {
+                    _driveBackupState.value = _driveBackupState.value.copy(
+                        lastStatusMessage = authRes.message
+                    )
+                    _warningAlert.value = WarningAlert("Google Drive Setup", authRes.message)
+                }
+            }
+        }
+    }
+
+    fun backUpToGoogleDriveNow(accessTokenOverride: String? = null) {
+        val session = _authSession.value
+        if (session == null || session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can back up company data to Google Drive.")
+            return
+        }
+        val mgr = driveBackupManager ?: return
+        if (_driveBackupState.value.isBackingUp) return
+
+        viewModelScope.launch {
+            _driveBackupState.value = _driveBackupState.value.copy(
+                isBackingUp = true,
+                lastStatusMessage = "Uploading backup to Google Drive..."
+            )
+            try {
+                val token = accessTokenOverride ?: when (val authRes = mgr.authorizeDriveAccess(allowConsentPrompt = true)) {
+                    is DriveAuthResult.Authorized -> authRes.accessToken
+                    is DriveAuthResult.NeedsConsent -> {
+                        pendingDriveConsentAction = PendingDriveConsentAction.BACKUP_NOW
+                        _driveConsentRequest.value = authRes.pendingIntent
+                        _driveBackupState.value = _driveBackupState.value.copy(
+                            isBackingUp = false,
+                            lastStatusMessage = "Waiting for Google Drive consent..."
+                        )
+                        return@launch
+                    }
+                    is DriveAuthResult.Error -> {
+                        _driveBackupState.value = _driveBackupState.value.copy(
+                            isBackingUp = false,
+                            driveAuthorized = false,
+                            lastStatusMessage = authRes.message
+                        )
+                        refreshPermissionsStatus(false)
+                        _warningAlert.value = WarningAlert("Google Drive Auth", authRes.message)
+                        return@launch
+                    }
+                }
+
+                val json = backupManager.exportBackupJson()
+                val uploadRes = mgr.uploadJsonBackup(jsonContent = json, accessTokenOverride = token)
+                uploadRes.onSuccess { receipt ->
+                    sessionPreferences?.saveDriveBackupReceipt(receipt.uploadedAtMs, receipt.fileId)
+                    _driveBackupState.value = _driveBackupState.value.copy(
+                        isBackingUp = false,
+                        driveAuthorized = true,
+                        lastBackupAtMs = receipt.uploadedAtMs,
+                        lastFileId = receipt.fileId,
+                        lastStatusMessage = "Backed up to Google Drive (${receipt.fileName})"
+                    )
+                    refreshPermissionsStatus(true)
+                    syncAdminDriveSettingsToCloud()
+                    appContext?.let { ctx ->
+                        AppPermissionsManager.postDriveBackupNotification(
+                            context = ctx,
+                            title = "Concord & A to Z Gas Backup",
+                            message = "Google Drive cloud backup saved automatically."
+                        )
+                    }
+                    _snackbarMessage.value = "Backed up to Google Drive."
+                }.onFailure { err ->
+                    _driveBackupState.value = _driveBackupState.value.copy(
+                        isBackingUp = false,
+                        lastStatusMessage = err.localizedMessage ?: "Google Drive upload failed"
+                    )
+                    _warningAlert.value = WarningAlert(
+                        "Google Drive Backup Failed",
+                        err.localizedMessage ?: "Unable to upload backup to Google Drive."
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } finally {
+                if (_driveBackupState.value.isBackingUp) {
+                    _driveBackupState.value = _driveBackupState.value.copy(isBackingUp = false)
+                }
+            }
+        }
+    }
+
+    fun restoreFromGoogleDriveNow(accessTokenOverride: String? = null) {
+        val session = _authSession.value
+        if (session == null || session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can restore from Google Drive.")
+            return
+        }
+        val mgr = driveBackupManager ?: return
+        if (_driveBackupState.value.isRestoring) return
+
+        viewModelScope.launch {
+            _driveBackupState.value = _driveBackupState.value.copy(
+                isRestoring = true,
+                lastStatusMessage = "Downloading backup from Google Drive..."
+            )
+            try {
+                val token = accessTokenOverride ?: when (val authRes = mgr.authorizeDriveAccess(allowConsentPrompt = true)) {
+                    is DriveAuthResult.Authorized -> authRes.accessToken
+                    is DriveAuthResult.NeedsConsent -> {
+                        pendingDriveConsentAction = PendingDriveConsentAction.RESTORE_NOW
+                        _driveConsentRequest.value = authRes.pendingIntent
+                        _driveBackupState.value = _driveBackupState.value.copy(isRestoring = false)
+                        return@launch
+                    }
+                    is DriveAuthResult.Error -> {
+                        _driveBackupState.value = _driveBackupState.value.copy(
+                            isRestoring = false,
+                            lastStatusMessage = authRes.message
+                        )
+                        _warningAlert.value = WarningAlert("Google Drive Auth", authRes.message)
+                        return@launch
+                    }
+                }
+
+                mgr.downloadLatestBackupJson(accessTokenOverride = token)
+                    .onSuccess { json ->
+                        _driveBackupState.value = _driveBackupState.value.copy(
+                            isRestoring = false,
+                            driveAuthorized = true,
+                            lastStatusMessage = "Drive backup downloaded — confirm restore"
+                        )
+                        refreshPermissionsStatus(true)
+                        _pendingDriveRestoreJson.value = json
+                    }
+                    .onFailure { err ->
+                        _driveBackupState.value = _driveBackupState.value.copy(
+                            isRestoring = false,
+                            lastStatusMessage = err.localizedMessage ?: "Drive restore failed"
+                        )
+                        _warningAlert.value = WarningAlert(
+                            "Google Drive Restore",
+                            err.localizedMessage ?: "Could not fetch backup from Google Drive."
+                        )
+                    }
+            } catch (e: CancellationException) {
+                throw e
+            } finally {
+                if (_driveBackupState.value.isRestoring) {
+                    _driveBackupState.value = _driveBackupState.value.copy(isRestoring = false)
+                }
+            }
+        }
+    }
+
+    fun confirmPendingDriveRestore() {
+        val json = _pendingDriveRestoreJson.value ?: return
+        _pendingDriveRestoreJson.value = null
+        restoreBackupJson(json)
+    }
+
+    fun dismissPendingDriveRestore() {
+        _pendingDriveRestoreJson.value = null
+    }
+
+    fun handleDriveConsentResult(resultCode: Int, data: Intent?) {
+        _driveConsentRequest.value = null
+        val action = pendingDriveConsentAction
+        pendingDriveConsentAction = PendingDriveConsentAction.NONE
+
+        val mgr = driveBackupManager ?: return
+        if (resultCode != Activity.RESULT_OK) {
+            _driveBackupState.value = _driveBackupState.value.copy(
+                lastStatusMessage = "Google Drive authorization cancelled"
+            )
+            _snackbarMessage.value = "Google Drive permission was not granted."
+            return
+        }
+
+        val token = mgr.extractTokenFromConsentResult(data)
+        if (token.isNullOrBlank()) {
+            _driveBackupState.value = _driveBackupState.value.copy(
+                lastStatusMessage = "Google Drive authorization returned no token"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _driveBackupState.value = _driveBackupState.value.copy(
+                driveAuthorized = true,
+                lastStatusMessage = "Google Drive authorized"
+            )
+            refreshPermissionsStatus(true)
+            when (action) {
+                PendingDriveConsentAction.ENABLE_AUTO_AND_BACKUP -> {
+                    sessionPreferences?.setAutoDriveBackupEnabled(true)
+                    _driveBackupState.value = _driveBackupState.value.copy(autoBackupEnabled = true)
+                    backUpToGoogleDriveNow(accessTokenOverride = token)
+                }
+                PendingDriveConsentAction.BACKUP_NOW -> backUpToGoogleDriveNow(accessTokenOverride = token)
+                PendingDriveConsentAction.RESTORE_NOW -> restoreFromGoogleDriveNow(accessTokenOverride = token)
+                PendingDriveConsentAction.NONE -> syncAdminDriveSettingsToCloud()
+            }
+        }
+    }
+
+    fun dismissDriveConsentRequest() {
+        _driveConsentRequest.value = null
+        pendingDriveConsentAction = PendingDriveConsentAction.NONE
+    }
+
+    private fun scheduleAutoDriveBackup() {
+        if (driveBackupManager == null || !_driveBackupState.value.autoBackupEnabled) return
+        val session = _authSession.value
+        val conn = workspaceConnectionState.value
+        val canAdminBackup = session?.user?.role == UserRole.ADMIN ||
+            (conn is WorkspaceConnectionState.Connected && conn.isOwnerOrAdmin)
+        if (!canAdminBackup) return
+
+        autoDriveBackupJob?.cancel()
+        autoDriveBackupJob = viewModelScope.launch {
+            delay(2500L)
+            val authRes = driveBackupManager.authorizeDriveAccess(allowConsentPrompt = false)
+            if (authRes is DriveAuthResult.Authorized) {
+                val json = backupManager.exportBackupJson()
+                driveBackupManager.uploadJsonBackup(json, accessTokenOverride = authRes.accessToken)
+                    .onSuccess { receipt ->
+                        sessionPreferences?.saveDriveBackupReceipt(receipt.uploadedAtMs, receipt.fileId)
+                        _driveBackupState.value = _driveBackupState.value.copy(
+                            driveAuthorized = true,
+                            lastBackupAtMs = receipt.uploadedAtMs,
+                            lastFileId = receipt.fileId,
+                            lastStatusMessage = "Auto-saved to Google Drive"
+                        )
+                        syncAdminDriveSettingsToCloud()
+                    }
+                    .onFailure { err ->
+                        _driveBackupState.value = _driveBackupState.value.copy(
+                            lastStatusMessage = "Auto-backup deferred: ${err.localizedMessage ?: "Offline"}"
+                        )
+                    }
+            } else {
+                _driveBackupState.value = _driveBackupState.value.copy(
+                    driveAuthorized = false,
+                    lastStatusMessage = "Auto-backup paused: re-authorize Google Drive"
+                )
+                refreshPermissionsStatus(false)
+            }
+        }
+    }
+
+    private suspend fun syncAdminDriveSettingsToCloud() {
+        val conn = workspaceConnectionState.value
+        if (conn !is WorkspaceConnectionState.Connected || !conn.isOwnerOrAdmin) return
+        val st = _driveBackupState.value
+        cloudSync?.saveAdminDriveSettings(
+            autoDriveBackupEnabled = st.autoBackupEnabled,
+            lastDriveBackupAtMs = st.lastBackupAtMs,
+            lastDriveFileId = st.lastFileId,
+            lastDriveBackupStatus = st.lastStatusMessage,
+            themePreset = themePreset.value.name,
+            autoLogoutMode = autoLogoutMode.value.name
+        )
+    }
+
+    fun saveReportToCloudAndDrive(reportType: ReportType, table: ReportTable, uploadPdfToDrive: Boolean) {
+        val session = _authSession.value
+        if (session == null || session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Restricted: Only Admin can archive company reports.")
+            return
+        }
+        viewModelScope.launch {
+            var driveFileId = ""
+            if (uploadPdfToDrive && driveBackupManager != null) {
+                when (val authRes = driveBackupManager.authorizeDriveAccess(allowConsentPrompt = true)) {
+                    is DriveAuthResult.Authorized -> {
+                        val out = ByteArrayOutputStream()
+                        ReportExporter.writePdf(table, out)
+                        val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                        val fileName = "Concord_${reportType.name.lowercase()}_$stamp.pdf"
+                        val uploadRes = driveBackupManager.uploadReportDocument(
+                            fileName = fileName,
+                            mimeType = "application/pdf",
+                            bytes = out.toByteArray(),
+                            accessTokenOverride = authRes.accessToken
+                        )
+                        uploadRes.onSuccess { receipt ->
+                            driveFileId = receipt.fileId
+                        }.onFailure { err ->
+                            _snackbarMessage.value = "Drive report upload failed: ${err.localizedMessage}"
+                        }
+                    }
+                    is DriveAuthResult.NeedsConsent -> {
+                        pendingDriveConsentAction = PendingDriveConsentAction.NONE
+                        _driveConsentRequest.value = authRes.pendingIntent
+                    }
+                    is DriveAuthResult.Error -> {
+                        _snackbarMessage.value = authRes.message
+                    }
+                }
+            }
+
+            val totalsStr = table.footerTotals?.joinToString(" | ").orEmpty()
+            val reportId = "${reportType.name}_${_selectedDate.value.replace("-", "_")}"
+            val cloudRes = cloudSync?.saveAdminReportSnapshot(
+                reportId = reportId,
+                reportType = reportType.name,
+                reportTitle = table.reportTitle,
+                subtitle = table.subtitle,
+                businessDate = _selectedDate.value,
+                yearMonth = _selectedYearMonth.value,
+                generatedBy = session.user.displayName,
+                rowCount = table.rows.size,
+                summaryTotals = totalsStr,
+                driveFileId = driveFileId
+            )
+
+            _snackbarMessage.value = when {
+                driveFileId.isNotBlank() && cloudRes?.isSuccess == true ->
+                    "Report saved to Google Drive & Admin Cloud!"
+                driveFileId.isNotBlank() ->
+                    "Report uploaded to Google Drive!"
+                cloudRes?.isSuccess == true ->
+                    "Report snapshot synced to Admin Cloud."
+                else -> cloudRes?.exceptionOrNull()?.localizedMessage ?: "Report save attempted."
+            }
+        }
+    }
+
+    fun setThemePreset(preset: ThemePreset) {
+        viewModelScope.launch { sessionPreferences?.setThemePreset(preset) }
+    }
+
+    fun setSoundEnabled(enabled: Boolean) {
+        viewModelScope.launch { sessionPreferences?.setSoundEnabled(enabled) }
+    }
+
+    fun setAutoLoginEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            sessionPreferences?.setAutoLoginEnabled(enabled)
+            if (!enabled) {
+                sessionPreferences?.clearLoggedInUserId()
+            } else {
+                _authSession.value?.user?.id?.let { sessionPreferences?.saveLoggedInUserId(it) }
+            }
+        }
+    }
+
+    fun setAutoLogoutMode(mode: AutoLogoutMode) {
+        viewModelScope.launch { sessionPreferences?.setAutoLogoutMode(mode) }
+    }
+
+    fun lockSessionOnAutoLogout(reason: String = "Session locked by Auto-Logout.") {
+        if (_authSession.value != null) {
+            _authSession.value = null
+            _loginError.value = reason
+            viewModelScope.launch {
+                sessionPreferences?.clearLoggedInUserId()
+                cloudSync?.clearLinkedStaffMetadata()
+            }
         }
     }
 
@@ -256,19 +767,54 @@ class AppViewModel(
         cloudSync?.stopSync()
     }
 
-    fun login(userId: Long, pin: String) {
+    fun login(userId: Long, pin: String, expectedRole: UserRole? = null) {
+        if (_isAuthenticating.value) return
         viewModelScope.launch {
-            val session = repository.authenticate(userId, pin)
-            if (session != null) {
-                sessionPreferences?.saveLoggedInUserId(session.user.id)
-                _authSession.value = session
-                _loginError.value = null
-                _selectedDate.value = InventoryRepository.todayIsoDate()
-                if (session.assignedVehicle != null) {
-                    _selectedVehicleId.value = session.assignedVehicle.id
+            _isAuthenticating.value = true
+            try {
+                val localUser = repository.getUserById(userId)
+                if (localUser == null || !localUser.isActive) {
+                    _loginError.value = "Selected account was not found or is inactive."
+                    return@launch
                 }
-            } else {
-                _loginError.value = "Invalid PIN for selected account."
+
+                val targetRole = expectedRole ?: localUser.role
+                if (localUser.role != targetRole) {
+                    _loginError.value = "Account '${localUser.displayName}' belongs to ${localUser.role.name}. Select the ${localUser.role.name} tab."
+                    return@launch
+                }
+
+                if (cloudSync != null) {
+                    val cloudCheck = cloudSync.verifyRolePinAndSyncProfile(
+                        localUser = localUser,
+                        expectedRole = targetRole,
+                        pin = pin
+                    )
+                    if (cloudCheck.isFailure) {
+                        _loginError.value = cloudCheck.exceptionOrNull()?.localizedMessage
+                            ?: "Firebase PIN verification failed."
+                        return@launch
+                    }
+                }
+
+                val session = repository.authenticate(userId, pin, targetRole)
+                if (session != null) {
+                    if (autoLoginEnabled.value) {
+                        sessionPreferences?.saveLoggedInUserId(session.user.id)
+                    } else {
+                        sessionPreferences?.clearLoggedInUserId()
+                    }
+                    _authSession.value = session
+                    _loginError.value = null
+                    _selectedDate.value = InventoryRepository.todayIsoDate()
+                    if (session.assignedVehicle != null) {
+                        _selectedVehicleId.value = session.assignedVehicle.id
+                    }
+                } else {
+                    _loginError.value = "Invalid or duplicate PIN for ${targetRole.name} '${localUser.displayName}'."
+                }
+            } finally {
+                _isAuthenticating.value = false
             }
         }
     }
@@ -282,6 +828,7 @@ class AppViewModel(
         _loginError.value = null
         viewModelScope.launch {
             sessionPreferences?.clearLoggedInUserId()
+            cloudSync?.clearLinkedStaffMetadata()
         }
     }
 
@@ -324,6 +871,8 @@ class AppViewModel(
             val allowedStaffTypes = setOf(
                 TransactionType.VEHICLE_FULL_RECEIVED,
                 TransactionType.VEHICLE_CUSTOMER_SALE,
+                TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
                 TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
                 TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
                 TransactionType.CUSTOMER_EMPTY_PENDING_ADD
@@ -512,7 +1061,10 @@ class AppViewModel(
 
     private fun handleOperationResult(result: OperationResult) {
         when (result) {
-            is OperationResult.Success -> _snackbarMessage.value = result.message
+            is OperationResult.Success -> {
+                _snackbarMessage.value = result.message
+                scheduleAutoDriveBackup()
+            }
             is OperationResult.InsufficientStock -> _warningAlert.value = WarningAlert(result.title, result.message)
             is OperationResult.ValidationError -> _warningAlert.value = WarningAlert("Validation Warning", result.message)
         }
@@ -520,7 +1072,9 @@ class AppViewModel(
 
     fun buildReportTable(
         reportType: ReportType,
-        vehicleFilterId: Long? = null
+        vehicleFilterId: Long? = null,
+        purchaseDailyMode: Boolean = false,
+        purchaseCompanyFilter: String? = null
     ): ReportTable {
         val date = _selectedDate.value
         val ym = _selectedYearMonth.value
@@ -766,10 +1320,20 @@ class AppViewModel(
             }
 
             ReportType.PURCHASE_REGISTER -> {
+                val cleanCompanyFilter = purchaseCompanyFilter?.trim().orEmpty()
                 val purchaseItems = allTransactionDisplayItems.value.filter { item ->
                     val t = item.transaction
-                    t.businessDate.startsWith(ym) &&
-                        (t.type == TransactionType.STORE_PURCHASE_FULL || t.type == TransactionType.STORE_PURCHASE_EMPTY)
+                    val periodMatch = if (purchaseDailyMode) {
+                        t.businessDate == date
+                    } else {
+                        t.businessDate.startsWith(ym)
+                    }
+                    val typeMatch = t.type == TransactionType.STORE_PURCHASE_FULL ||
+                        t.type == TransactionType.STORE_PURCHASE_EMPTY ||
+                        t.type == TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE
+                    val companyMatch = cleanCompanyFilter.isEmpty() ||
+                        t.purchaseCompanyName.trim().equals(cleanCompanyFilter, ignoreCase = true)
+                    periodMatch && typeMatch && companyMatch
                 }.sortedByDescending { it.transaction.businessDate }
 
                 val totalFullPur = purchaseItems
@@ -778,18 +1342,30 @@ class AppViewModel(
                 val totalEmptyPur = purchaseItems
                     .filter { it.transaction.type == TransactionType.STORE_PURCHASE_EMPTY }
                     .sumOf { it.transaction.quantity }
+                val totalCompRepl = purchaseItems
+                    .filter { it.transaction.type == TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE }
+                    .sumOf { it.transaction.quantity }
+
+                val periodLabel = if (purchaseDailyMode) "Daily ($date)" else "Monthly ($ym)"
+                val companySuffix = if (cleanCompanyFilter.isNotEmpty()) " • $cleanCompanyFilter" else ""
 
                 ReportTable(
-                    reportTitle = "Purchase Register (Company-Wise)",
-                    subtitle = "Month: $ym • Full: $totalFullPur | Empty: $totalEmptyPur",
+                    reportTitle = "Purchase & Complaint Report ($periodLabel)",
+                    subtitle = "$periodLabel$companySuffix • Full: $totalFullPur | Empty: $totalEmptyPur | Comp.Repl: $totalCompRepl",
                     generatedBy = actorName,
-                    headers = listOf("Company Name", "Date", "Purchase Type", "Product", "Qty", "Entered By", "Notes"),
+                    headers = listOf("Company Name", "Date", "Entry Type", "Product", "Qty", "Entered By", "Notes"),
                     rows = purchaseItems.map { item ->
                         val t = item.transaction
+                        val typeLabel = when (t.type) {
+                            TransactionType.STORE_PURCHASE_FULL -> "Full Pur"
+                            TransactionType.STORE_PURCHASE_EMPTY -> "Empty Pur"
+                            TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE -> "Comp.Repl"
+                            else -> t.type.label
+                        }
                         listOf(
                             t.purchaseCompanyName.ifBlank { "Unspecified Supplier" },
                             t.businessDate,
-                            if (t.type == TransactionType.STORE_PURCHASE_FULL) "Full Pur" else "Empty Pur",
+                            typeLabel,
                             "${item.productCategory.shortCode} - ${item.productName}",
                             t.quantity.toString(),
                             t.staffName,
@@ -799,9 +1375,9 @@ class AppViewModel(
                     footerTotals = listOf(
                         "TOTAL",
                         "${purchaseItems.size} Entries",
-                        "Full:$totalFullPur",
-                        "Empty:$totalEmptyPur",
-                        (totalFullPur + totalEmptyPur).toString(),
+                        "F:$totalFullPur E:$totalEmptyPur",
+                        "Repl:$totalCompRepl",
+                        (totalFullPur + totalEmptyPur + totalCompRepl).toString(),
                         "",
                         ""
                     )
@@ -850,11 +1426,20 @@ class AppViewModel(
         private val repository: InventoryRepository,
         private val backupManager: BackupManager,
         private val cloudSync: CloudSyncRepository? = null,
-        private val sessionPreferences: SessionPreferences? = null
+        private val sessionPreferences: SessionPreferences? = null,
+        private val driveBackupManager: GoogleDriveBackupManager? = null,
+        private val appContext: Context? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return AppViewModel(repository, backupManager, cloudSync, sessionPreferences) as T
+            return AppViewModel(
+                repository = repository,
+                backupManager = backupManager,
+                cloudSync = cloudSync,
+                sessionPreferences = sessionPreferences,
+                driveBackupManager = driveBackupManager,
+                appContext = appContext
+            ) as T
         }
     }
 }

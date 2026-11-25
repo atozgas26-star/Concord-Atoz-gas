@@ -47,3 +47,24 @@ val DarkSurfaceVariant = Color(0xFF1A2B23)
 val DarkOutline = Color(0xFF334155)
 val TextPrimaryDark = Color(0xFFF1F5F9)
 val TextSecondaryDark = Color(0xFF94A3B8)
+
+// Oceanic Teal Theme Tokens
+val TealPrimary = Color(0xFF0F766E)
+val TealContainer = Color(0xFFCCFBF1)
+val TealOnContainer = Color(0xFF042F2E)
+val TealSecondary = Color(0xFF0369A1)
+val TealSecondaryContainer = Color(0xFFE0F2FE)
+val TealSecondaryOnContainer = Color(0xFF0C4A6E)
+val TealBackground = Color(0xFFF0FDFA)
+val TealSurfaceVariant = Color(0xFFE0F2F1)
+
+// Sunset Flame Amber Theme Tokens
+val FlamePrimary = Color(0xFFB45309)
+val FlameContainer = Color(0xFFFEF3C7)
+val FlameOnContainer = Color(0xFF451A03)
+val FlameSecondary = Color(0xFF1E3A8A)
+val FlameSecondaryContainer = Color(0xFFDBEAFE)
+val FlameSecondaryOnContainer = Color(0xFF1E3A8A)
+val FlameBackground = Color(0xFFFFFBEB)
+val FlameSurfaceVariant = Color(0xFFFEF3C7)
+

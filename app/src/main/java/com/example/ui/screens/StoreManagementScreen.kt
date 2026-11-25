@@ -20,11 +20,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.AddBusiness
 import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Outbox
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -68,6 +70,7 @@ import com.example.ui.components.CategoryFilterRow
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.OpeningStockEditDialog
+import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.theme.BrandGreenContainer
@@ -85,6 +88,7 @@ import java.util.Locale
 private enum class StoreModalAction {
     PURCHASE_FULL,
     PURCHASE_EMPTY,
+    PURCHASE_COMPLAINT_REPLACE,
     FULL_INWARD,
     EMPTY_INWARD,
     FULL_DISPATCH_VEHICLE,
@@ -118,6 +122,7 @@ fun StoreManagementScreen(
     var searchQuery by remember { mutableStateOf("") }
     var activeModal by remember { mutableStateOf<StoreModalAction?>(null) }
     var showAdjustmentPicker by remember { mutableStateOf(false) }
+    var showCalculator by remember { mutableStateOf(false) }
     var editingOpeningRow by remember { mutableStateOf<StoreStockRow?>(null) }
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
@@ -164,6 +169,12 @@ fun StoreManagementScreen(
                 }
                 StoreActionChip("Purchase Empty", Icons.Default.AddBusiness, BrandGreenPrimary) {
                     activeModal = StoreModalAction.PURCHASE_EMPTY
+                }
+                StoreActionChip("Complaint Replace", Icons.Default.SwapHoriz, BrandRedSecondary) {
+                    activeModal = StoreModalAction.PURCHASE_COMPLAINT_REPLACE
+                }
+                StoreActionChip("Calculate", Icons.Default.Calculate, MaterialTheme.colorScheme.primary) {
+                    showCalculator = true
                 }
                 StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, BrandRedSecondary) {
                     activeModal = StoreModalAction.FULL_DISPATCH_VEHICLE
@@ -376,6 +387,7 @@ fun StoreManagementScreen(
         val (title, txType, needsVehicle) = when (action) {
             StoreModalAction.PURCHASE_FULL -> Triple("Full Cylinder Purchase", TransactionType.STORE_PURCHASE_FULL, false)
             StoreModalAction.PURCHASE_EMPTY -> Triple("Empty Cylinder Purchase", TransactionType.STORE_PURCHASE_EMPTY, false)
+            StoreModalAction.PURCHASE_COMPLAINT_REPLACE -> Triple("Purchase Co. Complaint Replace", TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE, false)
             StoreModalAction.FULL_INWARD -> Triple("Full Cylinder Inward", TransactionType.STORE_FULL_INWARD, false)
             StoreModalAction.EMPTY_INWARD -> Triple("Empty Cylinder Inward", TransactionType.STORE_EMPTY_INWARD, false)
             StoreModalAction.FULL_DISPATCH_VEHICLE -> Triple("Dispatch Full to Vehicle", TransactionType.VEHICLE_FULL_RECEIVED, true)
@@ -389,7 +401,8 @@ fun StoreManagementScreen(
         }
 
         val isPurchaseAction = txType == TransactionType.STORE_PURCHASE_FULL ||
-            txType == TransactionType.STORE_PURCHASE_EMPTY
+            txType == TransactionType.STORE_PURCHASE_EMPTY ||
+            txType == TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE
         val showCustField = txType == TransactionType.STORE_FULL_DISPATCH_DIRECT
 
         TransactionEntryDialog(
@@ -492,6 +505,15 @@ fun StoreManagementScreen(
             dismissButton = {
                 TextButton(onClick = { deleteCandidateId = null }) { Text("Cancel") }
             }
+        )
+    }
+
+    if (showCalculator) {
+        StockCalculatorDialog(
+            products = products,
+            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
+            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
+            onDismiss = { showCalculator = false }
         )
     }
 }
