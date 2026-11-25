@@ -25,12 +25,12 @@ enum class RecoveryPurpose(
 ) {
     FORGOT_PASSWORD(
         title = "Forgot Admin Password",
-        emailSubject = "Concord & A to Z Gas - Admin Password Reset Verification Code",
+        emailSubject = "C&A Gas - Admin Password Reset Verification Code",
         actionLabel = "reset your Admin password"
     ),
     FORGOT_USERNAME(
         title = "Forgot Admin Username",
-        emailSubject = "Concord & A to Z Gas - Admin Username Recovery Verification Code",
+        emailSubject = "C&A Gas - Admin Username Recovery Verification Code",
         actionLabel = "recover your Admin username"
     )
 }
@@ -150,7 +150,7 @@ class GmailVerificationManager(
                 recipientEmail = safeRecipient,
                 subject = AdminCredentialCrypto.sanitizeEmailHeader(purpose.emailSubject),
                 bodyText = buildString {
-                    appendLine("CONCORD & A TO Z GAS - Admin Security Verification")
+                    appendLine("C&A GAS - Admin Security Verification")
                     appendLine()
                     appendLine("Use this 6-digit verification code to ${purpose.actionLabel}:")
                     appendLine()

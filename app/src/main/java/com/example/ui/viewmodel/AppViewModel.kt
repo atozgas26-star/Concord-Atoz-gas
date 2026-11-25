@@ -48,6 +48,8 @@ import com.example.export.DriveBackupState
 import com.example.export.GoogleDriveBackupManager
 import com.example.export.ReportExporter
 import com.example.export.ReportTable
+import com.example.notifications.StaffLoginNotificationItem
+import com.example.notifications.StaffLoginNotificationManager
 import com.example.permissions.AppPermissionsManager
 import com.example.permissions.AppPermissionsStatus
 import kotlinx.coroutines.CancellationException
@@ -184,16 +186,47 @@ class AppViewModel(
         (sessionPreferences?.adminCredentialsFlow ?: flowOf(AdminCredentialsState()))
             .stateIn(viewModelScope, SharingStarted.Eagerly, AdminCredentialsState())
 
+    val ownerViewConfigured: StateFlow<Boolean> =
+        (sessionPreferences?.ownerViewConfiguredFlow ?: flowOf(false))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     private val _adminRecoveryState = MutableStateFlow(AdminRecoveryUiState())
     val adminRecoveryState: StateFlow<AdminRecoveryUiState> = _adminRecoveryState.asStateFlow()
 
     private val _gmailConsentRequest = MutableStateFlow<PendingIntent?>(null)
     val gmailConsentRequest: StateFlow<PendingIntent?> = _gmailConsentRequest.asStateFlow()
 
+    private val _localStaffLoginEvents = MutableStateFlow<List<StaffLoginNotificationItem>>(emptyList())
+    private val _latestStaffLoginBanner = MutableStateFlow<StaffLoginNotificationItem?>(null)
+    val latestStaffLoginBanner: StateFlow<StaffLoginNotificationItem?> = _latestStaffLoginBanner.asStateFlow()
+
+    val staffLoginNotifications: StateFlow<List<StaffLoginNotificationItem>> = combine(
+        _localStaffLoginEvents,
+        cloudSync?.staffLoginEvents ?: flowOf(emptyList())
+    ) { localEvents, cloudEvents ->
+        val mappedCloud = cloudEvents.map { ev ->
+            StaffLoginNotificationItem(
+                eventId = ev.eventId.ifBlank { ev.id },
+                staffId = ev.staffId,
+                staffName = ev.staffName,
+                vehicleName = ev.vehicleName,
+                loginTimestampMs = ev.loginTimestampMs
+            )
+        }
+        (localEvents + mappedCloud)
+            .distinctBy { "${it.staffId}_${it.loginTimestampMs / 2000L}" }
+            .sortedByDescending { it.loginTimestampMs }
+            .take(30)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     private var activeRecoveryChallenge: ActiveRecoveryChallenge? = null
     private var pendingGmailConsentAction: PendingGmailConsentAction? = null
     private var failedAdminLoginAttempts: Int = 0
     private var adminLoginLockoutUntilMs: Long = 0L
+    private var failedOwnerLoginAttempts: Int = 0
+    private var ownerLoginLockoutUntilMs: Long = 0L
+    private var seenCloudLoginEventIds: MutableSet<String> = mutableSetOf()
+    private var initialCloudLoginSnapshotLoaded: Boolean = false
 
     private var lastAlertSignature: List<Pair<Long, Int>> = emptyList()
     private var latestCompanyStockRows: List<CompanyStockRow> = emptyList()
@@ -293,12 +326,19 @@ class AppViewModel(
             repository.initializeDatabase()
             val shouldAutoLogin = sessionPreferences?.autoLoginEnabledFlow?.first() ?: true
             val logoutMode = sessionPreferences?.autoLogoutModeFlow?.first() ?: AutoLogoutMode.OFF
+            val savedRole = if (shouldAutoLogin && logoutMode != AutoLogoutMode.ON_MINIMIZE) {
+                sessionPreferences?.getLoggedInRole()
+            } else {
+                null
+            }
             val savedUserId = if (shouldAutoLogin && logoutMode != AutoLogoutMode.ON_MINIMIZE) {
                 sessionPreferences?.getLoggedInUserId()
             } else {
                 null
             }
-            if (savedUserId != null) {
+            if (savedRole == UserRole.OWNER_VIEW && (sessionPreferences?.ownerViewConfiguredFlow?.first() == true)) {
+                _authSession.value = buildOwnerViewSession()
+            } else if (savedUserId != null) {
                 val restored = repository.getSessionForUserId(savedUserId)
                 if (restored != null) {
                     _authSession.value = restored
@@ -323,21 +363,60 @@ class AppViewModel(
             if (cloudSync != null) {
                 viewModelScope.launch {
                     cloudSync.adminSettings.collect { cloudSettings ->
-                        if (cloudSettings != null &&
-                            cloudSettings.adminLoginUsername.isNotBlank() &&
-                            cloudSettings.adminPasswordHash.isNotBlank()
-                        ) {
-                            val localCreds = sessionPreferences.adminCredentialsFlow.first()
-                            if (localCreds.username != cloudSettings.adminLoginUsername ||
-                                localCreds.passwordHash != cloudSettings.adminPasswordHash ||
-                                localCreds.recoveryEmail != cloudSettings.adminRecoveryEmail
+                        if (cloudSettings != null) {
+                            if (cloudSettings.adminLoginUsername.isNotBlank() &&
+                                cloudSettings.adminPasswordHash.isNotBlank()
                             ) {
-                                sessionPreferences.saveAdminCredentials(
-                                    username = cloudSettings.adminLoginUsername,
-                                    passwordHash = cloudSettings.adminPasswordHash,
-                                    recoveryEmail = cloudSettings.adminRecoveryEmail.ifBlank {
-                                        CloudSyncRepository.ADMIN_EMAIL
-                                    }
+                                val localCreds = sessionPreferences.adminCredentialsFlow.first()
+                                if (localCreds.username != cloudSettings.adminLoginUsername ||
+                                    localCreds.passwordHash != cloudSettings.adminPasswordHash ||
+                                    localCreds.recoveryEmail != cloudSettings.adminRecoveryEmail
+                                ) {
+                                    sessionPreferences.saveAdminCredentials(
+                                        username = cloudSettings.adminLoginUsername,
+                                        passwordHash = cloudSettings.adminPasswordHash,
+                                        recoveryEmail = cloudSettings.adminRecoveryEmail.ifBlank {
+                                            CloudSyncRepository.ADMIN_EMAIL
+                                        }
+                                    )
+                                }
+                            }
+                            if (cloudSettings.ownerViewPasswordHash.isNotBlank()) {
+                                val localOwnerHash = sessionPreferences.ownerViewPasswordHashFlow.first()
+                                if (localOwnerHash != cloudSettings.ownerViewPasswordHash) {
+                                    sessionPreferences.saveOwnerViewPasswordHash(cloudSettings.ownerViewPasswordHash)
+                                }
+                            }
+                        }
+                    }
+                }
+                viewModelScope.launch {
+                    cloudSync.staffLoginEvents.collect { events ->
+                        if (!initialCloudLoginSnapshotLoaded) {
+                            seenCloudLoginEventIds.addAll(events.map { it.eventId.ifBlank { it.id } })
+                            initialCloudLoginSnapshotLoaded = true
+                            return@collect
+                        }
+                        val fresh = events.filter { ev ->
+                            val id = ev.eventId.ifBlank { ev.id }
+                            id.isNotBlank() && seenCloudLoginEventIds.add(id)
+                        }
+                        if (fresh.isNotEmpty()) {
+                            val newest = fresh.maxBy { it.loginTimestampMs }
+                            val item = StaffLoginNotificationItem(
+                                eventId = newest.eventId.ifBlank { newest.id },
+                                staffId = newest.staffId,
+                                staffName = newest.staffName,
+                                vehicleName = newest.vehicleName,
+                                loginTimestampMs = newest.loginTimestampMs
+                            )
+                            _latestStaffLoginBanner.value = item
+                            appContext?.let { ctx ->
+                                StaffLoginNotificationManager.notifyStaffLogin(
+                                    context = ctx,
+                                    staffName = item.staffName,
+                                    vehicleName = item.vehicleName,
+                                    loginTimestampMs = item.loginTimestampMs
                                 )
                             }
                         }
@@ -576,7 +655,7 @@ class AppViewModel(
                     appContext?.let { ctx ->
                         AppPermissionsManager.postDriveBackupNotification(
                             context = ctx,
-                            title = "Concord & A to Z Gas Backup",
+                            title = "C&A Gas Backup",
                             message = "Google Drive cloud backup saved automatically."
                         )
                     }
@@ -871,7 +950,9 @@ class AppViewModel(
             if (!enabled) {
                 sessionPreferences?.clearLoggedInUserId()
             } else {
-                _authSession.value?.user?.id?.let { sessionPreferences?.saveLoggedInUserId(it) }
+                _authSession.value?.user?.let { u ->
+                    sessionPreferences?.saveLoggedInUserId(u.id, u.role)
+                }
             }
         }
     }
@@ -908,7 +989,7 @@ class AppViewModel(
             val res = cloudSync?.joinWorkspaceWithInviteCode(inviteCode)
             _cloudActionBusy.value = false
             if (res?.isSuccess == true) {
-                _snackbarMessage.value = "Joined Concord & A to Z Gas Online Sync!"
+                _snackbarMessage.value = "Joined C&A Gas Online Sync!"
             } else if (res?.isFailure == true) {
                 _warningAlert.value = WarningAlert(
                     "Could Not Join Workspace",
@@ -991,7 +1072,7 @@ class AppViewModel(
                 val session = repository.authenticate(userId, pin, targetRole)
                 if (session != null) {
                     if (autoLoginEnabled.value) {
-                        sessionPreferences?.saveLoggedInUserId(session.user.id)
+                        sessionPreferences?.saveLoggedInUserId(session.user.id, session.user.role)
                     } else {
                         sessionPreferences?.clearLoggedInUserId()
                     }
@@ -1001,12 +1082,183 @@ class AppViewModel(
                     if (session.assignedVehicle != null) {
                         _selectedVehicleId.value = session.assignedVehicle.id
                     }
+                    if (session.user.role == UserRole.STAFF) {
+                        val nowMs = System.currentTimeMillis()
+                        val vehicleName = session.assignedVehicle?.name.orEmpty()
+                        val localEvent = StaffLoginNotificationItem(
+                            eventId = "local_login_${session.user.id}_$nowMs",
+                            staffId = session.user.id,
+                            staffName = session.user.displayName,
+                            vehicleName = vehicleName,
+                            loginTimestampMs = nowMs
+                        )
+                        _localStaffLoginEvents.value = (listOf(localEvent) + _localStaffLoginEvents.value).take(30)
+                        _latestStaffLoginBanner.value = localEvent
+                        appContext?.let { ctx ->
+                            StaffLoginNotificationManager.notifyStaffLogin(
+                                context = ctx,
+                                staffName = session.user.displayName,
+                                vehicleName = vehicleName,
+                                loginTimestampMs = nowMs
+                            )
+                        }
+                        val vehicleLabel = vehicleName.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+                        _snackbarMessage.value = "Staff Login Alert: ${session.user.displayName}$vehicleLabel signed in"
+                        viewModelScope.launch {
+                            cloudSync?.recordStaffLoginEvent(
+                                staffId = session.user.id,
+                                staffName = session.user.displayName,
+                                vehicleName = vehicleName,
+                                loginTimestampMs = nowMs
+                            )
+                        }
+                    }
                 } else {
                     _loginError.value = "Invalid or duplicate PIN for ${targetRole.name} '${localUser.displayName}'."
                 }
             } finally {
                 _isAuthenticating.value = false
             }
+        }
+    }
+
+    fun dismissStaffLoginBanner() {
+        _latestStaffLoginBanner.value = null
+    }
+
+    private fun buildOwnerViewSession(): AuthSession = AuthSession(
+        user = UserAccountEntity(
+            id = OWNER_VIEW_SYNTHETIC_USER_ID,
+            username = "owner_view",
+            displayName = "Owner (View Only)",
+            role = UserRole.OWNER_VIEW,
+            pin = "0000",
+            isActive = true
+        ),
+        assignedVehicle = null
+    )
+
+    fun setupOwnerViewPassword(
+        password: String,
+        confirmPassword: String
+    ) {
+        if (_isAuthenticating.value) return
+        if (isStaffRestrictedDevice()) {
+            _loginError.value = "Only Admin can create the Owner View password."
+            return
+        }
+        if (!AdminCredentialCrypto.isValidPassword(password)) {
+            _loginError.value = "Owner View password must be 6 to 64 characters."
+            return
+        }
+        if (password != confirmPassword) {
+            _loginError.value = "Owner View password and confirmation do not match."
+            return
+        }
+
+        viewModelScope.launch {
+            _isAuthenticating.value = true
+            try {
+                val hash = AdminCredentialCrypto.hashPassword(password)
+                sessionPreferences?.saveOwnerViewPasswordHash(hash)
+                cloudSync?.saveOwnerViewPasswordHashToCloud(hash)
+
+                val ownerSession = buildOwnerViewSession()
+                if (autoLoginEnabled.value) {
+                    sessionPreferences?.saveLoggedInUserId(OWNER_VIEW_SYNTHETIC_USER_ID, UserRole.OWNER_VIEW)
+                } else {
+                    sessionPreferences?.clearLoggedInUserId()
+                }
+                _authSession.value = ownerSession
+                _loginError.value = null
+                _selectedDate.value = InventoryRepository.todayIsoDate()
+                _snackbarMessage.value = "Owner View password created. Read-only mode active."
+            } finally {
+                _isAuthenticating.value = false
+            }
+        }
+    }
+
+    fun loginOwnerViewWithPassword(password: String) {
+        if (_isAuthenticating.value) return
+        val now = System.currentTimeMillis()
+        if (ownerLoginLockoutUntilMs > now) {
+            val waitSec = ((ownerLoginLockoutUntilMs - now) / 1000L).coerceAtLeast(1L)
+            _loginError.value = "Too many failed attempts. Please wait ${waitSec}s before trying again."
+            return
+        }
+        if (password.isEmpty()) {
+            _loginError.value = "Enter the Owner View password."
+            return
+        }
+
+        viewModelScope.launch {
+            _isAuthenticating.value = true
+            try {
+                val savedHash = sessionPreferences?.ownerViewPasswordHashFlow?.first().orEmpty()
+                if (savedHash.isBlank()) {
+                    _loginError.value = "Owner View password has not been created yet."
+                    return@launch
+                }
+                if (!AdminCredentialCrypto.verifyPassword(password, savedHash)) {
+                    failedOwnerLoginAttempts++
+                    if (failedOwnerLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
+                        ownerLoginLockoutUntilMs = System.currentTimeMillis() + LOGIN_LOCKOUT_MS
+                        failedOwnerLoginAttempts = 0
+                        _loginError.value = "Too many failed Owner View attempts. Locked for 30 seconds."
+                    } else {
+                        val remaining = MAX_LOGIN_ATTEMPTS - failedOwnerLoginAttempts
+                        _loginError.value = "Incorrect Owner View password ($remaining attempt(s) left)."
+                    }
+                    return@launch
+                }
+
+                failedOwnerLoginAttempts = 0
+                ownerLoginLockoutUntilMs = 0L
+                val ownerSession = buildOwnerViewSession()
+                if (autoLoginEnabled.value) {
+                    sessionPreferences?.saveLoggedInUserId(OWNER_VIEW_SYNTHETIC_USER_ID, UserRole.OWNER_VIEW)
+                } else {
+                    sessionPreferences?.clearLoggedInUserId()
+                }
+                _authSession.value = ownerSession
+                _loginError.value = null
+                _selectedDate.value = InventoryRepository.todayIsoDate()
+            } finally {
+                _isAuthenticating.value = false
+            }
+        }
+    }
+
+    fun updateOwnerViewPasswordFromSettings(
+        currentAdminPassword: String,
+        newOwnerPassword: String,
+        confirmOwnerPassword: String
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can create or change the Owner View password.")
+            return
+        }
+        if (!AdminCredentialCrypto.isValidPassword(newOwnerPassword)) {
+            _warningAlert.value = WarningAlert("Invalid Password", "Owner View password must be 6 to 64 characters.")
+            return
+        }
+        if (newOwnerPassword != confirmOwnerPassword) {
+            _warningAlert.value = WarningAlert("Password Mismatch", "Owner View password and confirmation do not match.")
+            return
+        }
+
+        viewModelScope.launch {
+            val adminCreds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
+            if (adminCreds.isConfigured && !AdminCredentialCrypto.verifyPassword(currentAdminPassword, adminCreds.passwordHash)) {
+                _warningAlert.value = WarningAlert("Incorrect Password", "Current Admin password does not match.")
+                return@launch
+            }
+            val hash = AdminCredentialCrypto.hashPassword(newOwnerPassword)
+            sessionPreferences?.saveOwnerViewPasswordHash(hash)
+            cloudSync?.saveOwnerViewPasswordHashToCloud(hash)
+            _snackbarMessage.value = "Owner View (Read-Only) password saved."
         }
     }
 
@@ -1075,7 +1327,7 @@ class AppViewModel(
                 val session = repository.getSessionForUserId(adminUser.id)
                 if (session != null) {
                     if (autoLoginEnabled.value) {
-                        sessionPreferences?.saveLoggedInUserId(session.user.id)
+                        sessionPreferences?.saveLoggedInUserId(session.user.id, UserRole.ADMIN)
                     } else {
                         sessionPreferences?.clearLoggedInUserId()
                     }
@@ -1144,7 +1396,7 @@ class AppViewModel(
                 val session = repository.getSessionForUserId(adminUser.id)
                 if (session != null) {
                     if (autoLoginEnabled.value) {
-                        sessionPreferences?.saveLoggedInUserId(session.user.id)
+                        sessionPreferences?.saveLoggedInUserId(session.user.id, UserRole.ADMIN)
                     } else {
                         sessionPreferences?.clearLoggedInUserId()
                     }
@@ -1608,6 +1860,13 @@ class AppViewModel(
         emptyCollectedNow: Int = 0
     ) {
         val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert(
+                title = "Owner View (Read-Only)",
+                message = "Owner View is view-only. Entries and modifications are disabled."
+            )
+            return
+        }
         // Enforce strict staff permissions
         if (session.user.role == UserRole.STAFF) {
             val allowedStaffTypes = setOf(
@@ -2168,6 +2427,9 @@ class AppViewModel(
         private const val OTP_EXPIRY_MS = 10 * 60 * 1000L
         private const val OTP_RESEND_COOLDOWN_MS = 30 * 1000L
         private const val OTP_MAX_ATTEMPTS = 5
+        private const val MAX_LOGIN_ATTEMPTS = 5
+        private const val LOGIN_LOCKOUT_MS = 30_000L
+        private const val OWNER_VIEW_SYNTHETIC_USER_ID = -100L
     }
 
     class Factory(

@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.data.model.AutoLogoutMode
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.ThemePreset
+import com.example.data.model.UserRole
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -42,6 +43,8 @@ class SessionPreferences(private val context: Context) {
     private val keyAdminUsername = stringPreferencesKey("admin_login_username")
     private val keyAdminPasswordHash = stringPreferencesKey("admin_password_hash")
     private val keyAdminRecoveryEmail = stringPreferencesKey("admin_recovery_email")
+    private val keyOwnerViewPasswordHash = stringPreferencesKey("owner_view_password_hash")
+    private val keyLoggedInRole = stringPreferencesKey("logged_in_user_role")
 
     val autoLoginEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
         .map { prefs -> prefs[keyAutoLoginEnabled] ?: true }
@@ -85,21 +88,40 @@ class SessionPreferences(private val context: Context) {
             )
         }
 
+    val ownerViewPasswordHashFlow: Flow<String> = context.sessionDataStore.data
+        .map { prefs -> prefs[keyOwnerViewPasswordHash].orEmpty() }
+
+    val ownerViewConfiguredFlow: Flow<Boolean> = ownerViewPasswordHashFlow
+        .map { it.isNotBlank() }
+
     suspend fun getLoggedInUserId(): Long? {
         return context.sessionDataStore.data
             .map { prefs -> prefs[keyLoggedInUserId] }
             .first()
     }
 
-    suspend fun saveLoggedInUserId(userId: Long) {
+    suspend fun getLoggedInRole(): UserRole? {
+        val raw = context.sessionDataStore.data
+            .map { prefs -> prefs[keyLoggedInRole] }
+            .first()
+        return UserRole.entries.firstOrNull { it.name == raw }
+    }
+
+    suspend fun saveLoggedInUserId(userId: Long, role: UserRole? = null) {
         context.sessionDataStore.edit { prefs ->
             prefs[keyLoggedInUserId] = userId
+            if (role != null) {
+                prefs[keyLoggedInRole] = role.name
+            } else {
+                prefs.remove(keyLoggedInRole)
+            }
         }
     }
 
     suspend fun clearLoggedInUserId() {
         context.sessionDataStore.edit { prefs ->
             prefs.remove(keyLoggedInUserId)
+            prefs.remove(keyLoggedInRole)
         }
     }
 
@@ -188,6 +210,18 @@ class SessionPreferences(private val context: Context) {
             prefs.remove(keyAdminUsername)
             prefs.remove(keyAdminPasswordHash)
             prefs.remove(keyAdminRecoveryEmail)
+        }
+    }
+
+    suspend fun saveOwnerViewPasswordHash(passwordHash: String) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyOwnerViewPasswordHash] = passwordHash
+        }
+    }
+
+    suspend fun clearOwnerViewPasswordHash() {
+        context.sessionDataStore.edit { prefs ->
+            prefs.remove(keyOwnerViewPasswordHash)
         }
     }
 }

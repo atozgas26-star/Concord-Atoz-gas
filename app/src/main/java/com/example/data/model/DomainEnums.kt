@@ -2,7 +2,8 @@ package com.example.data.model
 
 enum class UserRole {
     ADMIN,
-    STAFF
+    STAFF,
+    OWNER_VIEW
 }
 
 enum class ProductCategory(val displayName: String, val shortCode: String, val sortOrder: Int) {

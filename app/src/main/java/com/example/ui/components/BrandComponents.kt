@@ -144,7 +144,7 @@ fun BrandHeaderBanner(
                     ) {
                         Image(
                             painter = painterResource(id = R.drawable.ic_concord_logo_v2),
-                            contentDescription = "Concord A to Z Gas Logo",
+                            contentDescription = "C&A Gas Logo",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.clip(RoundedCornerShape(10.dp))
                         )
@@ -1266,7 +1266,8 @@ fun AddStaffVehicleDialog(
 fun PendingCustomerCard(
     row: CustomerPendingRow,
     onCollectEmpty: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showCollectAction: Boolean = true
 ) {
     val isPending = row.pendingEmptyBalance > 0
     Card(
@@ -1315,14 +1316,16 @@ fun PendingCustomerCard(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
-                OutlinedButton(
-                    onClick = onCollectEmpty,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Icon(Icons.Default.Recycling, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Collect Empty", style = MaterialTheme.typography.labelSmall)
+                if (showCollectAction) {
+                    OutlinedButton(
+                        onClick = onCollectEmpty,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Default.Recycling, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Collect Empty", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }

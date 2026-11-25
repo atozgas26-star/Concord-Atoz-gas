@@ -1,6 +1,6 @@
 {
-  "name": "Concord A to Z Gas",
-  "description": "Offline-first industrial and LPG gas cylinder inventory, store, vehicle, and reporting system for Concord & A to Z Gas.",
+  "name": "C&A Gas",
+  "description": "Offline-first industrial and LPG gas cylinder inventory, store, vehicle, owner read-only view, and reporting system for C&A Gas.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

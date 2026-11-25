@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Concord A to Z Gas"
+rootProject.name = "C&A Gas"
 
 include(":app")

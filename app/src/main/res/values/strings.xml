@@ -1,9 +1,10 @@
 <resources>
-    <string name="app_name">Concord A to Z Gas</string>
-    <string name="company_full_name">CONCORD &amp; A TO Z GAS</string>
+    <string name="app_name">C&amp;A Gas</string>
+    <string name="company_full_name">C&amp;A GAS</string>
     <string name="company_subtitle">Industrial Gases &amp; LPG Distribution</string>
     <string name="login_admin_role">Admin</string>
     <string name="login_staff_role">Staff</string>
+    <string name="login_owner_view_role">Owner View</string>
     <string name="login_enter_pin">Enter 4-Digit PIN</string>
     <string name="login_sign_in">Unlock &amp; Sign In</string>
     <string name="login_invalid_pin">Incorrect PIN. Please try again.</string>

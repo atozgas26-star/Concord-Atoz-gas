@@ -27,6 +27,8 @@ import com.example.export.GoogleDriveBackupManager
 import com.example.export.ReportExporter
 import com.example.export.ReportTable
 import com.example.permissions.AppPermissionsManager
+import com.example.ui.components.QuickCalculatorEngine
+import com.example.ui.components.QuickCalculatorState
 import com.example.ui.viewmodel.AppViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -78,9 +80,9 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `app name matches Concord A to Z Gas`() {
+    fun `app name matches C&A Gas`() {
         val appName = context.getString(R.string.app_name)
-        assertEquals("Concord A to Z Gas", appName)
+        assertEquals("C&A Gas", appName)
     }
 
     @Test
@@ -1157,5 +1159,206 @@ class ExampleRobolectricTest {
         vm.loginAdminWithPassword("concord_boss", "NewSecure2026")
         waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
         assertEquals(UserRole.ADMIN, vm.authSession.value?.user?.role)
+    }
+
+    @Test
+    fun `quick calculator engine handles arithmetic, percent, sign toggle, divide by zero, and history reuse`() {
+        fun tap(initial: QuickCalculatorState, vararg keys: String): QuickCalculatorState {
+            var state = initial
+            for (k in keys) {
+                state = QuickCalculatorEngine.onKeyPress(state, k)
+            }
+            return state
+        }
+
+        // 12.5 × 4 = 50
+        val s1 = tap(QuickCalculatorState(), "1", "2", ".", "5", "×", "4", "=")
+        assertEquals("50", s1.display)
+        assertEquals(1, s1.history.size)
+        assertEquals("12.5 × 4 = 50", s1.history.first())
+
+        // 200 + 10% = 220
+        val s2 = tap(s1, "C", "2", "0", "0", "+", "1", "0", "%", "=")
+        assertEquals("220", s2.display)
+        assertEquals(2, s2.history.size)
+
+        // Sign toggle & backspace: 45 -> -45 -> -4 -> + 9 = 5
+        val s3 = tap(s2, "C", "4", "5", "±", "DEL", "+", "9", "=")
+        assertEquals("5", s3.display)
+
+        // Divide by zero handled safely without crashing
+        val s4 = tap(s3, "C", "8", "÷", "0", "=")
+        assertTrue(s4.hasError)
+        assertEquals("Cannot ÷ 0", s4.display)
+
+        // Next digit recovers cleanly from error state
+        val s5 = tap(s4, "7", "-", "2", "=")
+        assertFalse(s5.hasError)
+        assertEquals("5", s5.display)
+
+        // Reusing a history entry restores its numeric result
+        val s6 = QuickCalculatorEngine.applyHistoryResult(s5, "12.5 × 4 = 50")
+        assertEquals("50", s6.display)
+        assertFalse(s6.hasError)
+    }
+
+    @Test
+    fun `staff app login emits notification item and live dashboard banner`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = null,
+            appContext = context
+        )
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+
+        waitUntil { vm.isInitialized.value }
+        val nadeem = repository.usersFlow.first().first { it.displayName == "Nadeem" }
+        assertEquals(UserRole.STAFF, nadeem.role)
+
+        // Staff logs into the app with PIN
+        vm.login(nadeem.id, nadeem.pin, expectedRole = UserRole.STAFF)
+        waitUntil {
+            vm.authSession.value?.user?.id == nadeem.id &&
+                vm.latestStaffLoginBanner.value != null &&
+                vm.staffLoginNotifications.value.isNotEmpty()
+        }
+
+        val banner = vm.latestStaffLoginBanner.value
+        assertNotNull(banner)
+        assertEquals("Nadeem", banner!!.staffName)
+        assertEquals("NADEEM", banner.vehicleName)
+        assertTrue(vm.staffLoginNotifications.value.any { it.staffName == "Nadeem" && it.vehicleName == "NADEEM" })
+
+        // Dismissing the banner clears the top live banner while retaining notification history
+        vm.dismissStaffLoginBanner()
+        assertNull(vm.latestStaffLoginBanner.value)
+        assertTrue(vm.staffLoginNotifications.value.isNotEmpty())
+    }
+
+    @Test
+    fun `owner view creates one hashed password, signs in with password only, and strictly blocks all mutations`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        prefs.clearOwnerViewPasswordHash()
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = null,
+            appContext = context
+        )
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+
+        waitUntil { vm.isInitialized.value }
+        assertFalse(vm.ownerViewConfigured.value)
+
+        // 1. Create single Owner View password
+        vm.setupOwnerViewPassword("OwnerView@26", "OwnerView@26")
+        waitUntil {
+            vm.authSession.value?.user?.role == UserRole.OWNER_VIEW &&
+                vm.ownerViewConfigured.value
+        }
+        assertEquals(UserRole.OWNER_VIEW, vm.authSession.value?.user?.role)
+        val storedHash = prefs.ownerViewPasswordHashFlow.first()
+        assertTrue(storedHash.startsWith("pbkdf2\$"))
+        assertFalse(storedHash.contains("OwnerView@26"))
+
+        // 2. Logout -> wrong password rejected -> correct password logs into Owner View
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+
+        vm.loginOwnerViewWithPassword("WrongOwner99")
+        waitUntil { vm.loginError.value != null }
+        assertNull(vm.authSession.value)
+
+        vm.loginOwnerViewWithPassword("OwnerView@26")
+        waitUntil { vm.authSession.value?.user?.role == UserRole.OWNER_VIEW }
+        assertEquals(UserRole.OWNER_VIEW, vm.authSession.value?.user?.role)
+
+        // 3. Strictly verify NO entry or modification is permitted in Owner View
+        val product = repository.activeProductsFlow.first().first()
+        val initialTxCount = repository.transactionsFlow.first().size
+        val initialVehicleCount = repository.vehiclesFlow.first().size
+        val initialThreshold = vm.lowStockThreshold.value
+
+        vm.recordTransaction(
+            type = TransactionType.STORE_PURCHASE_FULL,
+            productId = product.id,
+            vehicleId = null,
+            quantity = 10,
+            purchaseCompanyName = "Test Co"
+        )
+        waitUntil { vm.warningAlert.value != null }
+        assertTrue(vm.warningAlert.value!!.title.contains("Owner View"))
+        vm.dismissWarningAlert()
+
+        vm.updateOpeningStock(
+            scope = "STORE",
+            vehicleId = 0L,
+            productId = product.id,
+            openingFull = 99,
+            openingEmpty = 12
+        )
+        waitUntil { vm.warningAlert.value != null }
+        vm.dismissWarningAlert()
+
+        vm.addStaffAndVehicle(
+            staffName = "Unauthorized Staff",
+            vehicleName = "VAN-X",
+            pin = "4321"
+        )
+        waitUntil { vm.warningAlert.value != null }
+        vm.dismissWarningAlert()
+
+        vm.updateLowStockThreshold(initialThreshold + 10)
+        waitUntil { vm.warningAlert.value != null }
+        assertEquals(initialThreshold, vm.lowStockThreshold.value)
+        vm.dismissWarningAlert()
+
+        vm.saveReportToCloudAndDrive(
+            reportType = ReportType.DAILY_STORE,
+            table = ReportTable(
+                reportTitle = "Test",
+                subtitle = "Test",
+                generatedBy = "Owner View",
+                headers = listOf("Col"),
+                rows = listOf(listOf("Val"))
+            ),
+            uploadPdfToDrive = false
+        )
+        waitUntil { vm.warningAlert.value != null }
+        vm.dismissWarningAlert()
+
+        vm.updateOwnerViewPasswordFromSettings("OwnerView@26", "NewPass@26", "NewPass@26")
+        waitUntil { vm.warningAlert.value != null }
+        vm.dismissWarningAlert()
+
+        // Confirm zero records were created or modified
+        assertEquals(initialTxCount, repository.transactionsFlow.first().size)
+        assertEquals(initialVehicleCount, repository.vehiclesFlow.first().size)
     }
 }

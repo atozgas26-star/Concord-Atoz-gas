@@ -41,11 +41,13 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -85,6 +87,7 @@ import com.example.data.local.StockTransactionEntity
 import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.StoreStockRow
+import com.example.notifications.StaffLoginNotificationItem
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CurrentInventoryTotalsCard
 import com.example.ui.components.DateSelectorBar
@@ -121,6 +124,10 @@ fun AdminDashboardScreen(
     pendingCustomerCount: Int = 0,
     totalPendingEmptyCount: Int = 0,
     lowStockAlert: LowStockAlertState = LowStockAlertState(),
+    isReadOnly: Boolean = false,
+    staffLoginNotifications: List<StaffLoginNotificationItem> = emptyList(),
+    latestStaffLoginBanner: StaffLoginNotificationItem? = null,
+    onDismissStaffLoginBanner: () -> Unit = {},
     darkModeEnabled: Boolean = false,
     onToggleDarkMode: () -> Unit = {},
     onDateSelected: (String) -> Unit,
@@ -140,8 +147,12 @@ fun AdminDashboardScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "CONCORD & A TO Z GAS",
-            subtitle = "Admin Dashboard • Welcome, $adminName",
+            title = "C&A GAS",
+            subtitle = if (isReadOnly) {
+                "Owner View (Read-Only) • No Entry or Modification"
+            } else {
+                "Admin Dashboard • Welcome, $adminName"
+            },
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
@@ -173,6 +184,116 @@ fun AdminDashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (isReadOnly) {
+                item {
+                    Surface(
+                        color = BrandGreenContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, BrandGreenPrimary.copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("owner_view_readonly_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = "Owner Read-Only Mode",
+                                tint = BrandGreenOnContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "OWNER VIEW • READ ONLY",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BrandGreenOnContainer
+                                )
+                                Text(
+                                    text = "Live monitoring active. Data entry, editing, and settings are locked.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = BrandGreenOnContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (latestStaffLoginBanner != null) {
+                item {
+                    val bannerTime = SimpleDateFormat("hh:mm a", Locale.US)
+                        .format(Date(latestStaffLoginBanner.loginTimestampMs))
+                    val vehicleSuffix = latestStaffLoginBanner.vehicleName
+                        .takeIf { it.isNotBlank() }
+                        ?.let { " • Vehicle: $it" }
+                        .orEmpty()
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("staff_login_alert_banner"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),
+                        border = BorderStroke(1.5.dp, BrandGreenPrimary)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandGreenPrimary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.NotificationsActive,
+                                        contentDescription = "Staff App Login Notification",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Staff App Login Notification",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BrandGreenOnContainer
+                                    )
+                                    Text(
+                                        text = "${latestStaffLoginBanner.staffName}$vehicleSuffix signed in at $bannerTime",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = BrandGreenOnContainer
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = onDismissStaffLoginBanner,
+                                modifier = Modifier.testTag("dismiss_staff_login_banner")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss staff login alert",
+                                    tint = BrandGreenOnContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 DateSelectorBar(
                     selectedDate = selectedDate,
@@ -240,9 +361,19 @@ fun AdminDashboardScreen(
                 ) {
                     LowStockAlertBannerCard(
                         alertState = lowStockAlert,
+                        isReadOnly = isReadOnly,
                         onOpenStore = onOpenStore,
-                        onConfigureThreshold = { showThresholdDialog = true },
+                        onConfigureThreshold = { if (!isReadOnly) showThresholdDialog = true },
                         onDismiss = onDismissLowStockAlert
+                    )
+                }
+            }
+
+            // Staff App Login Notifications Feed Card
+            if (staffLoginNotifications.isNotEmpty()) {
+                item {
+                    StaffLoginActivityCard(
+                        events = staffLoginNotifications
                     )
                 }
             }
@@ -273,9 +404,9 @@ fun AdminDashboardScreen(
                     RecentStoreActivityCard(
                         summary = summary,
                         selectedDate = selectedDate,
-                        canEdit = products.isNotEmpty(),
+                        canEdit = !isReadOnly && products.isNotEmpty(),
                         onOpenStore = onOpenStore,
-                        onEditTransaction = { tx -> editingTransaction = tx }
+                        onEditTransaction = { tx -> if (!isReadOnly) editingTransaction = tx }
                     )
                 }
 
@@ -389,16 +520,18 @@ fun AdminDashboardScreen(
                             Spacer(Modifier.width(4.dp))
                             Text("Calc", maxLines = 1)
                         }
-                        FilledTonalButton(
-                            onClick = { showThresholdDialog = true },
-                            modifier = Modifier.testTag("dashboard_threshold_button")
-                        ) {
-                            Icon(Icons.Default.Tune, contentDescription = "Low Stock Threshold", modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = if (lowStockAlert.threshold == 0) "Min: Off" else "Min: ${lowStockAlert.threshold}",
-                                maxLines = 1
-                            )
+                        if (!isReadOnly) {
+                            FilledTonalButton(
+                                onClick = { showThresholdDialog = true },
+                                modifier = Modifier.testTag("dashboard_threshold_button")
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = "Low Stock Threshold", modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = if (lowStockAlert.threshold == 0) "Min: Off" else "Min: ${lowStockAlert.threshold}",
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
@@ -560,7 +693,7 @@ fun AdminDashboardScreen(
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                         )
                                     }
-                                    if (products.isNotEmpty()) {
+                                    if (!isReadOnly && products.isNotEmpty()) {
                                         IconButton(onClick = { editingTransaction = tx }) {
                                             Icon(
                                                 imageVector = Icons.Default.Edit,
@@ -584,7 +717,7 @@ fun AdminDashboardScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "CONCORD & A TO Z GAS • Built by Ragavan",
+                        text = "C&A GAS • Built by Ragavan",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -606,7 +739,7 @@ fun AdminDashboardScreen(
         )
     }
 
-    if (showThresholdDialog) {
+    if (showThresholdDialog && !isReadOnly) {
         LowStockThresholdDialog(
             currentThreshold = lowStockAlert.threshold,
             onDismiss = { showThresholdDialog = false },
@@ -617,21 +750,112 @@ fun AdminDashboardScreen(
         )
     }
 
-    editingTransaction?.let { tx ->
-        EditTransactionDialog(
-            transaction = tx,
-            products = products,
-            onDismiss = { editingTransaction = null },
-            onConfirm = { prodId, qty, company, custName, notes ->
-                onUpdateTransaction(tx.id, prodId, qty, company, custName, notes)
+    if (!isReadOnly) {
+        editingTransaction?.let { tx ->
+            EditTransactionDialog(
+                transaction = tx,
+                products = products,
+                onDismiss = { editingTransaction = null },
+                onConfirm = { prodId, qty, company, custName, notes ->
+                    onUpdateTransaction(tx.id, prodId, qty, company, custName, notes)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun StaffLoginActivityCard(
+    events: List<StaffLoginNotificationItem>
+) {
+    val visibleEvents = events.take(5)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("staff_login_activity_card"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.NotificationsActive,
+                        contentDescription = "Staff App Logins",
+                        tint = BrandGreenPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Staff App Login Notifications",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Surface(
+                    color = BrandGreenContainer,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "${events.size} Logins",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandGreenOnContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
-        )
+            HorizontalDivider()
+            visibleEvents.forEach { ev ->
+                val timeLabel = SimpleDateFormat("dd MMM, hh:mm a", Locale.US)
+                    .format(Date(ev.loginTimestampMs))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = ev.staffName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (ev.vehicleName.isNotBlank()) {
+                            Text(
+                                text = "Vehicle: ${ev.vehicleName}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = BrandGreenPrimary
+                            )
+                        }
+                    }
+                    Text(
+                        text = timeLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = JetBrainsMono,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun LowStockAlertBannerCard(
     alertState: LowStockAlertState,
+    isReadOnly: Boolean = false,
     onOpenStore: () -> Unit,
     onConfigureThreshold: () -> Unit,
     onDismiss: () -> Unit
@@ -798,18 +1022,24 @@ private fun LowStockAlertBannerCard(
                         .weight(1f)
                         .testTag("low_stock_restock_button")
                 ) {
-                    Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(
+                        if (isReadOnly) Icons.Default.Store else Icons.Default.AddShoppingCart,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
-                    Text("Restock Store")
+                    Text(if (isReadOnly) "View Store Stock" else "Restock Store")
                 }
-                OutlinedButton(
-                    onClick = onConfigureThreshold,
-                    border = BorderStroke(1.dp, AmberOnContainer.copy(alpha = 0.5f)),
-                    modifier = Modifier.testTag("low_stock_threshold_button")
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = null, tint = AmberOnContainer, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Min: ${alertState.threshold}", color = AmberOnContainer)
+                if (!isReadOnly) {
+                    OutlinedButton(
+                        onClick = onConfigureThreshold,
+                        border = BorderStroke(1.dp, AmberOnContainer.copy(alpha = 0.5f)),
+                        modifier = Modifier.testTag("low_stock_threshold_button")
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = null, tint = AmberOnContainer, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Min: ${alertState.threshold}", color = AmberOnContainer)
+                    }
                 }
             }
         }

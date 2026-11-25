@@ -82,6 +82,9 @@ class CloudSyncRepository(
     private val _adminReports = MutableStateFlow<List<CloudAdminReportSnapshot>>(emptyList())
     val adminReports: StateFlow<List<CloudAdminReportSnapshot>> = _adminReports.asStateFlow()
 
+    private val _staffLoginEvents = MutableStateFlow<List<CloudStaffLoginEvent>>(emptyList())
+    val staffLoginEvents: StateFlow<List<CloudStaffLoginEvent>> = _staffLoginEvents.asStateFlow()
+
     @Volatile
     private var activeWorkspaceId: String? = null
 
@@ -246,7 +249,7 @@ class CloudSyncRepository(
 
         if (!snap.exists()) {
             val wsData = mapOf(
-                "companyName" to "CONCORD & A TO Z GAS",
+                "companyName" to "C&A GAS",
                 "ownerUid" to uid,
                 "memberUids" to listOf(uid),
                 "activeInviteCode" to inviteCode,
@@ -455,9 +458,25 @@ class CloudSyncRepository(
                             _adminReports.value = reports
                         }
                 }
+                launch {
+                    val loginEventsCol = wsRef.collection("staff_login_events")
+                    loginEventsCol.snapshots()
+                        .map { snap ->
+                            snap.toObjects(
+                                CloudStaffLoginEvent::class.java,
+                                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                            ).sortedByDescending { it.loginTimestampMs }
+                                .take(50)
+                        }
+                        .catch { error -> logListenerErrorIfAuthenticated(error, uid, loginEventsCol.path) }
+                        .collectLatest { events ->
+                            _staffLoginEvents.value = events
+                        }
+                }
             } else {
                 _adminSettings.value = null
                 _adminReports.value = emptyList()
+                _staffLoginEvents.value = emptyList()
             }
 
             // Listener 2: Staff & Admin accounts
@@ -1216,6 +1235,91 @@ class CloudSyncRepository(
         }
     }
 
+    suspend fun saveOwnerViewPasswordHashToCloud(
+        ownerViewPasswordHash: String
+    ): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val conn = _connectionState.value
+        if (conn is WorkspaceConnectionState.Connected && !conn.isOwnerOrAdmin) {
+            return Result.failure(SecurityException("Restricted: Only Admin can update the Owner View password."))
+        }
+        val docPath = "workspaces/$wsId/admin_settings/drive_backup"
+        return try {
+            val uid = requireUserId()
+            val email = auth.currentUser?.email.orEmpty().take(200)
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("admin_settings").document("drive_backup")
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "ownerViewPasswordHash" to ownerViewPasswordHash.take(256),
+                        "updatedByUid" to uid,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(
+                    mapOf(
+                        "settingId" to "drive_backup",
+                        "autoDriveBackupEnabled" to false,
+                        "lastDriveBackupAtMs" to 0L,
+                        "lastDriveFileId" to "",
+                        "lastDriveBackupStatus" to "Google Drive backup ready to connect",
+                        "driveAccountEmail" to email,
+                        "ownerViewPasswordHash" to ownerViewPasswordHash.take(256),
+                        "updatedByUid" to uid,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun recordStaffLoginEvent(
+        staffId: Long,
+        staffName: String,
+        vehicleName: String,
+        loginTimestampMs: Long = System.currentTimeMillis()
+    ): Result<String> {
+        val wsId = activeWorkspaceId ?: return Result.success("local_only")
+        val eventId = "login_${loginTimestampMs}_${UUID.randomUUID().toString().replace("-", "").take(8)}"
+        val docPath = "workspaces/$wsId/staff_login_events/$eventId"
+        return try {
+            val uid = requireUserId()
+            val payload = buildMap<String, Any> {
+                put("eventId", eventId)
+                put("staffId", staffId.coerceAtLeast(1L))
+                put("staffName", staffName.trim().take(100).ifBlank { "Staff" })
+                val safeVehicle = vehicleName.trim().take(64)
+                if (safeVehicle.isNotEmpty()) {
+                    put("vehicleName", safeVehicle)
+                }
+                put("loginTimestampMs", loginTimestampMs.coerceAtLeast(1L))
+                put("loginByUid", uid)
+                put("createdAt", FieldValue.serverTimestamp())
+            }
+            db.collection("workspaces").document(wsId)
+                .collection("staff_login_events")
+                .document(eventId)
+                .set(payload)
+                .await()
+            Result.success(eventId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docPath)
+            Result.failure(e)
+        }
+    }
+
     suspend fun saveAdminReportSnapshot(
         reportId: String,
         reportType: String,
@@ -1331,6 +1435,7 @@ class CloudSyncRepository(
         _loginMetadata.value = CloudLoginMetadata()
         _adminSettings.value = null
         _adminReports.value = emptyList()
+        _staffLoginEvents.value = emptyList()
         _connectionState.value = WorkspaceConnectionState.Checking
     }
 

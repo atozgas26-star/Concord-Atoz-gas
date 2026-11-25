@@ -79,6 +79,7 @@ fun ReportsScreen(
     vehicles: List<VehicleEntity>,
     selectedVehicleId: Long?,
     recentPurchaseCompanies: List<String> = emptyList(),
+    isReadOnly: Boolean = false,
     buildReportTable: (ReportType, Long?, Boolean, String?) -> ReportTable,
     onDateSelected: (String) -> Unit,
     onYearMonthSelected: (String) -> Unit,
@@ -143,7 +144,7 @@ fun ReportsScreen(
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = mime
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Concord & A to Z Gas - ${table.reportTitle}")
+                putExtra(Intent.EXTRA_SUBJECT, "C&A Gas - ${table.reportTitle}")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(shareIntent, "Share ${selectedReport.title}"))
@@ -156,8 +157,8 @@ fun ReportsScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "Reports & Export",
-            subtitle = "PDF & Excel (.xlsx) • Offline Business Analytics"
+            title = if (isReadOnly) "Reports (View Only)" else "Reports & Export",
+            subtitle = "PDF & Excel (.xlsx) • C&A Gas Business Analytics"
         )
 
         Column(
@@ -330,29 +331,31 @@ fun ReportsScreen(
                     Icon(Icons.Default.Download, contentDescription = "Share Excel", modifier = Modifier.size(18.dp))
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { onSaveReportCloudAndDrive(selectedReport, table, false) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("report_save_cloud_button")
+            if (!isReadOnly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Save Cloud Snapshot")
-                }
-                OutlinedButton(
-                    onClick = { onSaveReportCloudAndDrive(selectedReport, table, true) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("report_save_drive_button")
-                ) {
-                    Icon(Icons.Default.AddToDrive, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Upload PDF to Drive")
+                    OutlinedButton(
+                        onClick = { onSaveReportCloudAndDrive(selectedReport, table, false) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("report_save_cloud_button")
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Save Cloud Snapshot")
+                    }
+                    OutlinedButton(
+                        onClick = { onSaveReportCloudAndDrive(selectedReport, table, true) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("report_save_drive_button")
+                    ) {
+                        Icon(Icons.Default.AddToDrive, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Upload PDF to Drive")
+                    }
                 }
             }
         }

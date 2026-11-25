@@ -154,7 +154,7 @@ fun StaffDashboardScreen(
             .navigationBarsPadding()
     ) {
         BrandHeaderBanner(
-            title = "CONCORD & A TO Z GAS",
+            title = "C&A GAS",
             subtitle = "Staff: ${staffUser.displayName}  •  Vehicle: ${assignedVehicle?.name ?: "N/A"}",
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -228,9 +228,21 @@ service cloud.firestore {
              (!('adminLoginUsername' in data) || (data.adminLoginUsername is string && data.adminLoginUsername.size() <= 64)) &&
              (!('adminPasswordHash' in data) || (data.adminPasswordHash is string && data.adminPasswordHash.size() <= 256)) &&
              (!('adminRecoveryEmail' in data) || (data.adminRecoveryEmail is string && data.adminRecoveryEmail.size() <= 200)) &&
+             (!('ownerViewPasswordHash' in data) || (data.ownerViewPasswordHash is string && data.ownerViewPasswordHash.size() <= 256)) &&
              data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStaffLoginEvent(data, eventId) {
+      return data.eventId == eventId &&
+             data.eventId is string && isValidId(data.eventId) &&
+             data.staffId is int && data.staffId >= 1 &&
+             data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
+             (!('vehicleName' in data) || (data.vehicleName is string && data.vehicleName.size() <= 64)) &&
+             data.loginTimestampMs is int && data.loginTimestampMs > 0 &&
+             data.loginByUid is string && data.loginByUid.size() >= 1 && data.loginByUid.size() <= 128 &&
+             isValidTimestamp(data.createdAt);
     }
 
     function isValidAdminReport(data, reportId) {
@@ -550,7 +562,7 @@ service cloud.firestore {
                          isValidId(settingId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          incoming().keys().hasAll(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'adminLoginUsername', 'adminPasswordHash', 'adminRecoveryEmail', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'adminLoginUsername', 'adminPasswordHash', 'adminRecoveryEmail', 'ownerViewPasswordHash', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          isValidAdminSettings(incoming(), settingId);
 
         allow update: if isWorkspaceAdmin(workspaceId) &&
@@ -559,7 +571,7 @@ service cloud.firestore {
                          incoming().updatedByUid == request.auth.uid &&
                          incoming().createdAt == existing().createdAt &&
                          incoming().settingId == existing().settingId &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'adminLoginUsername', 'adminPasswordHash', 'adminRecoveryEmail', 'updatedByUid', 'updatedAt']) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'adminLoginUsername', 'adminPasswordHash', 'adminRecoveryEmail', 'ownerViewPasswordHash', 'updatedByUid', 'updatedAt']) &&
                          isValidAdminSettings(incoming(), settingId);
 
         allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(settingId);
@@ -588,6 +600,23 @@ service cloud.firestore {
                          isValidAdminReport(incoming(), reportId);
 
         allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(reportId);
+      }
+
+      // --- 3H. Staff App Login Events (Staff log own sign-in; Admin/Owner View reads alerts) ---
+      match /staff_login_events/{eventId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(eventId);
+        allow list: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId);
+
+        allow create: if isWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(eventId) &&
+                         incoming().loginByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['eventId', 'staffId', 'staffName', 'loginTimestampMs', 'loginByUid', 'createdAt']) &&
+                         incoming().keys().hasOnly(['eventId', 'staffId', 'staffName', 'vehicleName', 'loginTimestampMs', 'loginByUid', 'createdAt']) &&
+                         isValidStaffLoginEvent(incoming(), eventId);
+
+        allow update: if false;
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(eventId);
       }
     }
   }

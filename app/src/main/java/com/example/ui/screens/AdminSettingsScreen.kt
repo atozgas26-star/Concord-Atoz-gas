@@ -134,12 +134,14 @@ fun AdminSettingsScreen(
     autoLoginEnabled: Boolean = true,
     autoLogoutMode: AutoLogoutMode = AutoLogoutMode.OFF,
     adminCredentials: AdminCredentialsState = AdminCredentialsState(),
+    ownerViewConfigured: Boolean = false,
     onThemePresetChanged: (ThemePreset) -> Unit = {},
     onDarkModeChanged: (Boolean) -> Unit = {},
     onSoundEnabledChanged: (Boolean) -> Unit = {},
     onAutoLoginChanged: (Boolean) -> Unit = {},
     onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
     onUpdateAdminCredentials: (currentPassword: String, newUsername: String, newPassword: String, newRecoveryEmail: String) -> Unit = { _, _, _, _ -> },
+    onUpdateOwnerViewPassword: (currentAdminPassword: String, newOwnerPassword: String, confirmOwnerPassword: String) -> Unit = { _, _, _ -> },
     onPreviewStartupSplash: () -> Unit = {},
     onSyncNow: () -> Unit = {},
     onGoogleSignOut: () -> Unit = {},
@@ -168,6 +170,7 @@ fun AdminSettingsScreen(
     var showAddStaffDialog by remember { mutableStateOf(false) }
     var showAddProductDialog by remember { mutableStateOf(false) }
     var showEditAdminCredentialsDialog by remember { mutableStateOf(false) }
+    var showEditOwnerViewPasswordDialog by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -578,6 +581,51 @@ fun AdminSettingsScreen(
                     }
                 }
 
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.Visibility, contentDescription = null, tint = BrandGreenPrimary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "Owner View (Read-Only) Password",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = if (ownerViewConfigured) {
+                                                "Active • Single view-only password (no entry or modification)"
+                                            } else {
+                                                "Not created yet — set one view-only password for Owner"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { showEditOwnerViewPasswordDialog = true },
+                                    modifier = Modifier.testTag("edit_owner_view_password_button")
+                                ) {
+                                    Text(if (ownerViewConfigured) "Change" else "Create")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 items(users, key = { it.id }) { user ->
                     val isAdmin = user.role == UserRole.ADMIN
                     val linkedVehicle = if (isAdmin) null else vehicles.firstOrNull { it.staffUserId == user.id }
@@ -858,7 +906,7 @@ fun AdminSettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "CONCORD & A TO Z GAS • Built by Ragavan",
+                            text = "C&A GAS • Built by Ragavan",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -991,6 +1039,18 @@ fun AdminSettingsScreen(
             onConfirm = { currentPwd, newUser, newPwd, recoveryGmail ->
                 onUpdateAdminCredentials(currentPwd, newUser, newPwd, recoveryGmail)
                 showEditAdminCredentialsDialog = false
+            }
+        )
+    }
+
+    if (showEditOwnerViewPasswordDialog) {
+        EditOwnerViewPasswordDialog(
+            adminCredentialsConfigured = adminCredentials.isConfigured,
+            ownerViewConfigured = ownerViewConfigured,
+            onDismiss = { showEditOwnerViewPasswordDialog = false },
+            onConfirm = { currentAdminPwd, newOwnerPwd, confirmOwnerPwd ->
+                onUpdateOwnerViewPassword(currentAdminPwd, newOwnerPwd, confirmOwnerPwd)
+                showEditOwnerViewPasswordDialog = false
             }
         )
     }
@@ -1241,6 +1301,147 @@ private fun EditAdminCredentialsDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
+        }
+    )
+}
+
+@Composable
+private fun EditOwnerViewPasswordDialog(
+    adminCredentialsConfigured: Boolean,
+    ownerViewConfigured: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (currentAdminPassword: String, newOwnerPassword: String, confirmOwnerPassword: String) -> Unit
+) {
+    var currentAdminPassword by remember { mutableStateOf("") }
+    var newOwnerPassword by remember { mutableStateOf("") }
+    var confirmOwnerPassword by remember { mutableStateOf("") }
+    var showPasswords by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Visibility, contentDescription = null, tint = BrandGreenPrimary)
+                Spacer(Modifier.width(8.dp))
+                Text(if (ownerViewConfigured) "Change Owner View Password" else "Create Owner View Password")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Owner View uses one read-only password. Anyone signed into Owner View can see live stock, vehicles, staff login notifications, and reports, with zero entry or modification access.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (adminCredentialsConfigured) {
+                    OutlinedTextField(
+                        value = currentAdminPassword,
+                        onValueChange = {
+                            currentAdminPassword = it
+                            error = null
+                        },
+                        label = { Text("Current Admin Password") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { showPasswords = !showPasswords }) {
+                                Icon(
+                                    imageVector = if (showPasswords) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showPasswords) "Hide passwords" else "Show passwords"
+                                )
+                            }
+                        },
+                        visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_owner_admin_pwd_input")
+                    )
+                }
+
+                OutlinedTextField(
+                    value = newOwnerPassword,
+                    onValueChange = {
+                        newOwnerPassword = it
+                        error = null
+                    },
+                    label = { Text("Owner View Password (min 6 chars)") },
+                    leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                    trailingIcon = if (!adminCredentialsConfigured) {
+                        {
+                            IconButton(onClick = { showPasswords = !showPasswords }) {
+                                Icon(
+                                    imageVector = if (showPasswords) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showPasswords) "Hide passwords" else "Show passwords"
+                                )
+                            }
+                        }
+                    } else null,
+                    visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_owner_new_pwd_input")
+                )
+
+                OutlinedTextField(
+                    value = confirmOwnerPassword,
+                    onValueChange = {
+                        confirmOwnerPassword = it
+                        error = null
+                    },
+                    label = { Text("Confirm Owner View Password") },
+                    leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                    visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_owner_confirm_pwd_input")
+                )
+
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (adminCredentialsConfigured && currentAdminPassword.isEmpty()) {
+                        error = "Enter your current Admin password to confirm."
+                        return@Button
+                    }
+                    if (newOwnerPassword.length < 6) {
+                        error = "Owner View password must be at least 6 characters."
+                        return@Button
+                    }
+                    if (newOwnerPassword != confirmOwnerPassword) {
+                        error = "Owner View password and confirmation do not match."
+                        return@Button
+                    }
+                    onConfirm(currentAdminPassword, newOwnerPassword, confirmOwnerPassword)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                modifier = Modifier.testTag("settings_owner_pwd_save_button")
+            ) {
+                Text("Save Password")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

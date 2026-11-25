@@ -485,7 +485,7 @@ fun StartupSplashOverlay(
                         ) {
                             Image(
                                 painter = painterResource(id = R.drawable.ic_concord_logo_v2),
-                                contentDescription = "Concord & A to Z Gas Animated Logo",
+                                contentDescription = "C&A Gas Animated Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -540,7 +540,7 @@ fun StartupSplashOverlay(
 
                 // Staggered Headline Reveal
                 Text(
-                    text = "CONCORD & A TO Z GAS",
+                    text = "C&A GAS",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White,

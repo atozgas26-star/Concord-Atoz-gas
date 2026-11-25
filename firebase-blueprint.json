@@ -215,6 +215,7 @@
         "adminLoginUsername": { "type": "string" },
         "adminPasswordHash": { "type": "string" },
         "adminRecoveryEmail": { "type": "string" },
+        "ownerViewPasswordHash": { "type": "string" },
         "updatedByUid": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -253,6 +254,21 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["reportId", "reportType", "reportTitle", "subtitle", "businessDate", "yearMonth", "generatedBy", "rowCount", "summaryTotals", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "StaffLoginEvent": {
+      "title": "StaffLoginEvent",
+      "description": "Immutable staff sign-in notification event created when a staff user logs in, readable by Admin and Owner View.",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string" },
+        "staffId": { "type": "integer" },
+        "staffName": { "type": "string" },
+        "vehicleName": { "type": "string" },
+        "loginTimestampMs": { "type": "integer" },
+        "loginByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["eventId", "staffId", "staffName", "loginTimestampMs", "loginByUid", "createdAt"]
     }
   },
   "firestore": {
@@ -295,6 +311,10 @@
     "/workspaces/{workspaceId}/admin_reports/{reportId}": {
       "schema": { "$ref": "#/entities/AdminReportSnapshot" },
       "description": "Restricted Admin-only report snapshots and Drive export archive records."
+    },
+    "/workspaces/{workspaceId}/staff_login_events/{eventId}": {
+      "schema": { "$ref": "#/entities/StaffLoginEvent" },
+      "description": "Staff sign-in audit and live login notification events."
     }
   }
 }

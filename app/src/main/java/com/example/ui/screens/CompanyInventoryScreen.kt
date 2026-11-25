@@ -62,6 +62,7 @@ import com.example.ui.theme.JetBrainsMono
 fun CompanyInventoryScreen(
     selectedDate: String,
     stockRows: List<CompanyStockRow>,
+    isReadOnly: Boolean = false,
     onDateSelected: (String) -> Unit,
     onOpenProductMaster: () -> Unit,
     onOpenStockReport: () -> Unit,
@@ -90,8 +91,8 @@ fun CompanyInventoryScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "Company Inventory",
-            subtitle = "Combined Store + 7 Vehicles Stock",
+            title = if (isReadOnly) "Company Inventory (View Only)" else "Company Inventory",
+            subtitle = "Combined Store + Fleet Stock" + if (isReadOnly) " • Read-Only" else "",
             trailingContent = {
                 IconButton(
                     onClick = onBack,
@@ -154,15 +155,17 @@ fun CompanyInventoryScreen(
                     Spacer(Modifier.width(6.dp))
                     Text("Export Stock")
                 }
-                OutlinedButton(
-                    onClick = onOpenProductMaster,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("inventory_product_master_button")
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Product Master")
+                if (!isReadOnly) {
+                    OutlinedButton(
+                        onClick = onOpenProductMaster,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("inventory_product_master_button")
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Product Master")
+                    }
                 }
             }
 

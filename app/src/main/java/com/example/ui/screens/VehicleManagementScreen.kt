@@ -95,6 +95,7 @@ import java.util.Locale
 fun VehicleManagementScreen(
     selectedDate: String,
     vehicleOverviews: List<VehicleOverview>,
+    isReadOnly: Boolean = false,
     onDateSelected: (String) -> Unit,
     onSelectVehicle: (Long) -> Unit,
     onAddStaffAndVehicle: (staffName: String, vehicleName: String, pin: String) -> Unit = { _, _, _ -> }
@@ -103,8 +104,8 @@ fun VehicleManagementScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "Vehicle Management",
-            subtitle = "${vehicleOverviews.size} Fleet Accounts • Tap a vehicle for full ledger"
+            title = if (isReadOnly) "Vehicles (View Only)" else "Vehicle Management",
+            subtitle = "${vehicleOverviews.size} Fleet Accounts • Tap a vehicle for full ledger" + if (isReadOnly) " • Read-Only" else ""
         )
 
         LazyColumn(
@@ -116,17 +117,19 @@ fun VehicleManagementScreen(
                 DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
             }
 
-            item {
-                Button(
-                    onClick = { showAddVehicleDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("add_vehicle_staff_button")
-                ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add New Staff Login & Vehicle (#${vehicleOverviews.size + 1})")
+            if (!isReadOnly) {
+                item {
+                    Button(
+                        onClick = { showAddVehicleDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("add_vehicle_staff_button")
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add New Staff Login & Vehicle (#${vehicleOverviews.size + 1})")
+                    }
                 }
             }
 
@@ -200,7 +203,7 @@ fun VehicleManagementScreen(
         }
     }
 
-    if (showAddVehicleDialog) {
+    if (!isReadOnly && showAddVehicleDialog) {
         AddStaffVehicleDialog(
             nextVehicleNumber = vehicleOverviews.size + 1,
             onDismiss = { showAddVehicleDialog = false },
@@ -219,6 +222,7 @@ fun VehicleDetailScreen(
     transactions: List<TransactionDisplayItem> = emptyList(),
     pendingCustomers: List<CustomerPendingRow> = emptyList(),
     recentCustomerNames: List<String> = emptyList(),
+    isReadOnly: Boolean = false,
     onDateSelected: (String) -> Unit,
     onBack: () -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
@@ -254,7 +258,7 @@ fun VehicleDetailScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "Vehicle: ${vehicle?.name ?: ""}",
+            title = "Vehicle: ${vehicle?.name ?: ""}" + if (isReadOnly) " (View Only)" else "",
             subtitle = "Full Bal: ${rows.sumOf { it.fullBalance }}  •  Empty Bal: ${rows.sumOf { it.emptyBalance }}",
             trailingContent = {
                 IconButton(onClick = onBack, modifier = Modifier.testTag("vehicle_detail_back")) {
@@ -275,80 +279,82 @@ fun VehicleDetailScreen(
         ) {
             DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AssistChip(
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
-                    },
-                    label = { Text("Receive Full from Store") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Input, contentDescription = null, tint = BrandGreenPrimary) }
-                )
-                AssistChip(
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
-                    },
-                    label = { Text("Customer Sale") },
-                    leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null, tint = BrandRedSecondary) }
-                )
-                AssistChip(
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
-                    },
-                    label = { Text("New Cust Sale") },
-                    leadingIcon = { Icon(Icons.Default.PersonAddAlt1, contentDescription = null, tint = BrandGreenPrimary) }
-                )
-                AssistChip(
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
-                    },
-                    label = { Text("Complaint Replace") },
-                    leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = BrandRedSecondary) }
-                )
-                AssistChip(
-                    onClick = { showCalculator = true },
-                    label = { Text("Calculate") },
-                    leadingIcon = { Icon(Icons.Default.Calculate, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-                )
-                AssistChip(
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
-                    },
-                    label = { Text("Customer Empty Recd") },
-                    leadingIcon = { Icon(Icons.Default.Recycling, contentDescription = null, tint = BrandGreenPrimary) }
-                )
-                AssistChip(
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.CUSTOMER_EMPTY_PENDING_ADD
-                    },
-                    label = { Text("+ Add Pending") },
-                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = BrandRedSecondary) }
-                )
-                AssistChip(
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
-                    },
-                    label = { Text("Return Empty to Store") },
-                    leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = BrandRedSecondary) }
-                )
+            if (!isReadOnly) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
+                        },
+                        label = { Text("Receive Full from Store") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Input, contentDescription = null, tint = BrandGreenPrimary) }
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
+                        },
+                        label = { Text("Customer Sale") },
+                        leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null, tint = BrandRedSecondary) }
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                        },
+                        label = { Text("New Cust Sale") },
+                        leadingIcon = { Icon(Icons.Default.PersonAddAlt1, contentDescription = null, tint = BrandGreenPrimary) }
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
+                        },
+                        label = { Text("Complaint Replace") },
+                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = BrandRedSecondary) }
+                    )
+                    AssistChip(
+                        onClick = { showCalculator = true },
+                        label = { Text("Calculate") },
+                        leadingIcon = { Icon(Icons.Default.Calculate, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                        },
+                        label = { Text("Customer Empty Recd") },
+                        leadingIcon = { Icon(Icons.Default.Recycling, contentDescription = null, tint = BrandGreenPrimary) }
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.CUSTOMER_EMPTY_PENDING_ADD
+                        },
+                        label = { Text("+ Add Pending") },
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = BrandRedSecondary) }
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
+                        },
+                        label = { Text("Return Empty to Store") },
+                        leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = BrandRedSecondary) }
+                    )
+                }
             }
         }
 
@@ -386,8 +392,8 @@ fun VehicleDetailScreen(
                         items(filteredRows, key = { it.product.id }) { row ->
                             VehicleProductRowCard(
                                 row = row,
-                                canEditOpening = true,
-                                onEditOpening = { editingRow = row }
+                                canEditOpening = !isReadOnly,
+                                onEditOpening = if (isReadOnly) null else { { editingRow = row } }
                             )
                         }
                     }
@@ -400,19 +406,21 @@ fun VehicleDetailScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    item {
-                        Button(
-                            onClick = {
-                                prefillCustomerName = ""
-                                prefillQuantity = 1
-                                activeTxType = TransactionType.CUSTOMER_EMPTY_PENDING_ADD
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Add Customer Pending Empty")
+                    if (!isReadOnly) {
+                        item {
+                            Button(
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.CUSTOMER_EMPTY_PENDING_ADD
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add Customer Pending Empty")
+                            }
                         }
                     }
                     if (pendingCustomers.isEmpty()) {
@@ -427,10 +435,13 @@ fun VehicleDetailScreen(
                         items(pendingCustomers, key = { it.customerName }) { pendingRow ->
                             PendingCustomerCard(
                                 row = pendingRow,
+                                showCollectAction = !isReadOnly,
                                 onCollectEmpty = {
-                                    prefillCustomerName = pendingRow.customerName
-                                    prefillQuantity = pendingRow.pendingEmptyBalance.coerceAtLeast(1)
-                                    activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                                    if (!isReadOnly) {
+                                        prefillCustomerName = pendingRow.customerName
+                                        prefillQuantity = pendingRow.pendingEmptyBalance.coerceAtLeast(1)
+                                        activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                                    }
                                 }
                             )
                         }
@@ -492,19 +503,21 @@ fun VehicleDetailScreen(
                                             )
                                         }
                                     }
-                                    IconButton(onClick = { editingTransaction = tx }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = "Edit transaction",
-                                            tint = BrandGreenPrimary
-                                        )
-                                    }
-                                    IconButton(onClick = { deleteCandidateId = tx.id }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete transaction",
-                                            tint = BrandRedBright
-                                        )
+                                    if (!isReadOnly) {
+                                        IconButton(onClick = { editingTransaction = tx }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Edit transaction",
+                                                tint = BrandGreenPrimary
+                                            )
+                                        }
+                                        IconButton(onClick = { deleteCandidateId = tx.id }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete transaction",
+                                                tint = BrandRedBright
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -515,7 +528,7 @@ fun VehicleDetailScreen(
         }
     }
 
-    if (activeTxType != null && vehicle != null) {
+    if (!isReadOnly && activeTxType != null && vehicle != null) {
         val type = activeTxType!!
         val showCust = type == TransactionType.VEHICLE_CUSTOMER_SALE ||
             type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE ||
@@ -610,7 +623,7 @@ fun VehicleDetailScreen(
         )
     }
 
-    editingTransaction?.let { tx ->
+    if (!isReadOnly) editingTransaction?.let { tx ->
         EditTransactionDialog(
             transaction = tx,
             products = products,
@@ -621,7 +634,7 @@ fun VehicleDetailScreen(
         )
     }
 
-    if (editingRow != null && vehicle != null) {
+    if (!isReadOnly && editingRow != null && vehicle != null) {
         val r = editingRow!!
         OpeningStockEditDialog(
             title = "Set ${vehicle.name} Old Stock ($selectedDate)",
@@ -635,7 +648,7 @@ fun VehicleDetailScreen(
         )
     }
 
-    deleteCandidateId?.let { txId ->
+    if (!isReadOnly) deleteCandidateId?.let { txId ->
         AlertDialog(
             onDismissRequest = { deleteCandidateId = null },
             title = { Text("Delete Transaction?") },

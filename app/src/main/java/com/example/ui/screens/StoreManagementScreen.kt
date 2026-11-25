@@ -111,6 +111,7 @@ fun StoreManagementScreen(
     transactions: List<TransactionDisplayItem>,
     recentPurchaseCompanies: List<String> = emptyList(),
     recentCustomerNames: List<String> = emptyList(),
+    isReadOnly: Boolean = false,
     onDateSelected: (String) -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, String) -> Unit,
     onUpdateOpeningStock: (productId: Long, full: Int, empty: Int) -> Unit,
@@ -145,8 +146,8 @@ fun StoreManagementScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "Store Management",
-            subtitle = "Yard Full: $totalFull  •  Yard Empty: $totalEmpty"
+            title = if (isReadOnly) "Store Stock (View Only)" else "Store Management",
+            subtitle = "Yard Full: $totalFull  •  Yard Empty: $totalEmpty" + if (isReadOnly) " • Read-Only" else ""
         )
 
         Column(
@@ -157,45 +158,47 @@ fun StoreManagementScreen(
         ) {
             DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
 
-            // Action Buttons Strip
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StoreActionChip("Purchase Full", Icons.Default.AddShoppingCart, BrandGreenPrimary) {
-                    activeModal = StoreModalAction.PURCHASE_FULL
-                }
-                StoreActionChip("Purchase Empty", Icons.Default.AddBusiness, BrandGreenPrimary) {
-                    activeModal = StoreModalAction.PURCHASE_EMPTY
-                }
-                StoreActionChip("Complaint Replace", Icons.Default.SwapHoriz, BrandRedSecondary) {
-                    activeModal = StoreModalAction.PURCHASE_COMPLAINT_REPLACE
-                }
-                StoreActionChip("Calculate", Icons.Default.Calculate, MaterialTheme.colorScheme.primary) {
-                    showCalculator = true
-                }
-                StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, BrandRedSecondary) {
-                    activeModal = StoreModalAction.FULL_DISPATCH_VEHICLE
-                }
-                StoreActionChip("Empty Recd (Veh)", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
-                    activeModal = StoreModalAction.EMPTY_RECEIVED_VEHICLE
-                }
-                StoreActionChip("Full Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
-                    activeModal = StoreModalAction.FULL_INWARD
-                }
-                StoreActionChip("Empty Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
-                    activeModal = StoreModalAction.EMPTY_INWARD
-                }
-                StoreActionChip("Direct Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
-                    activeModal = StoreModalAction.FULL_DISPATCH_DIRECT
-                }
-                StoreActionChip("Empty Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
-                    activeModal = StoreModalAction.EMPTY_DISPATCH_PLANT
-                }
-                StoreActionChip("Stock Adjustment", Icons.Default.Tune, MaterialTheme.colorScheme.tertiary) {
-                    showAdjustmentPicker = true
+            if (!isReadOnly) {
+                // Action Buttons Strip
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StoreActionChip("Purchase Full", Icons.Default.AddShoppingCart, BrandGreenPrimary) {
+                        activeModal = StoreModalAction.PURCHASE_FULL
+                    }
+                    StoreActionChip("Purchase Empty", Icons.Default.AddBusiness, BrandGreenPrimary) {
+                        activeModal = StoreModalAction.PURCHASE_EMPTY
+                    }
+                    StoreActionChip("Complaint Replace", Icons.Default.SwapHoriz, BrandRedSecondary) {
+                        activeModal = StoreModalAction.PURCHASE_COMPLAINT_REPLACE
+                    }
+                    StoreActionChip("Calculate", Icons.Default.Calculate, MaterialTheme.colorScheme.primary) {
+                        showCalculator = true
+                    }
+                    StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, BrandRedSecondary) {
+                        activeModal = StoreModalAction.FULL_DISPATCH_VEHICLE
+                    }
+                    StoreActionChip("Empty Recd (Veh)", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                        activeModal = StoreModalAction.EMPTY_RECEIVED_VEHICLE
+                    }
+                    StoreActionChip("Full Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                        activeModal = StoreModalAction.FULL_INWARD
+                    }
+                    StoreActionChip("Empty Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                        activeModal = StoreModalAction.EMPTY_INWARD
+                    }
+                    StoreActionChip("Direct Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
+                        activeModal = StoreModalAction.FULL_DISPATCH_DIRECT
+                    }
+                    StoreActionChip("Empty Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
+                        activeModal = StoreModalAction.EMPTY_DISPATCH_PLANT
+                    }
+                    StoreActionChip("Stock Adjustment", Icons.Default.Tune, MaterialTheme.colorScheme.tertiary) {
+                        showAdjustmentPicker = true
+                    }
                 }
             }
         }
@@ -241,7 +244,8 @@ fun StoreManagementScreen(
                     items(filteredRows, key = { it.product.id }) { row ->
                         StoreProductCard(
                             row = row,
-                            onEditOpening = { editingOpeningRow = row }
+                            canEditOpening = !isReadOnly,
+                            onEditOpening = { if (!isReadOnly) editingOpeningRow = row }
                         )
                     }
                 }
@@ -310,25 +314,27 @@ fun StoreManagementScreen(
                                         )
                                     }
                                 }
-                                IconButton(
-                                    onClick = { editingTransaction = tx },
-                                    modifier = Modifier.testTag("edit_tx_${tx.id}")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Edit transaction",
-                                        tint = BrandGreenPrimary
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { deleteCandidateId = tx.id },
-                                    modifier = Modifier.testTag("delete_tx_${tx.id}")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete transaction",
-                                        tint = BrandRedBright
-                                    )
+                                if (!isReadOnly) {
+                                    IconButton(
+                                        onClick = { editingTransaction = tx },
+                                        modifier = Modifier.testTag("edit_tx_${tx.id}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit transaction",
+                                            tint = BrandGreenPrimary
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { deleteCandidateId = tx.id },
+                                        modifier = Modifier.testTag("delete_tx_${tx.id}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete transaction",
+                                            tint = BrandRedBright
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -339,7 +345,7 @@ fun StoreManagementScreen(
     }
 
     // Adjustment type picker
-    if (showAdjustmentPicker) {
+    if (!isReadOnly && showAdjustmentPicker) {
         AlertDialog(
             onDismissRequest = { showAdjustmentPicker = false },
             title = { Text("Select Stock Adjustment Type") },
@@ -383,7 +389,7 @@ fun StoreManagementScreen(
     }
 
     // Transaction Modal
-    activeModal?.let { action ->
+    if (!isReadOnly) activeModal?.let { action ->
         val (title, txType, needsVehicle) = when (action) {
             StoreModalAction.PURCHASE_FULL -> Triple("Full Cylinder Purchase", TransactionType.STORE_PURCHASE_FULL, false)
             StoreModalAction.PURCHASE_EMPTY -> Triple("Empty Cylinder Purchase", TransactionType.STORE_PURCHASE_EMPTY, false)
@@ -462,7 +468,7 @@ fun StoreManagementScreen(
     }
 
     // Edit Recorded Transaction Dialog
-    editingTransaction?.let { tx ->
+    if (!isReadOnly) editingTransaction?.let { tx ->
         EditTransactionDialog(
             transaction = tx,
             products = allProducts,
@@ -474,7 +480,7 @@ fun StoreManagementScreen(
     }
 
     // Opening Stock Edit Dialog
-    editingOpeningRow?.let { row ->
+    if (!isReadOnly) editingOpeningRow?.let { row ->
         OpeningStockEditDialog(
             title = "Set Store Opening Stock ($selectedDate)",
             productName = "${row.product.category.displayName} • ${row.product.name}",
@@ -488,7 +494,7 @@ fun StoreManagementScreen(
     }
 
     // Delete Confirmation
-    deleteCandidateId?.let { txId ->
+    if (!isReadOnly) deleteCandidateId?.let { txId ->
         AlertDialog(
             onDismissRequest = { deleteCandidateId = null },
             title = { Text("Delete Transaction?") },
@@ -538,6 +544,7 @@ private fun StoreActionChip(
 @Composable
 private fun StoreProductCard(
     row: StoreStockRow,
+    canEditOpening: Boolean = true,
     onEditOpening: () -> Unit
 ) {
     Card(
@@ -569,16 +576,18 @@ private fun StoreProductCard(
                 ) {
                     StockPill(label = "Full", value = row.storeFullBalance, isFull = true)
                     StockPill(label = "Empty", value = row.storeEmptyBalance, isFull = false)
-                    IconButton(
-                        onClick = onEditOpening,
-                        modifier = Modifier.testTag("edit_store_opening_${row.product.id}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit opening stock",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                    if (canEditOpening) {
+                        IconButton(
+                            onClick = onEditOpening,
+                            modifier = Modifier.testTag("edit_store_opening_${row.product.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit opening stock",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }

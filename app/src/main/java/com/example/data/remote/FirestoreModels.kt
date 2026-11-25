@@ -315,6 +315,7 @@ data class CloudAdminSettings(
     val adminLoginUsername: String = "",
     val adminPasswordHash: String = "",
     val adminRecoveryEmail: String = "",
+    val ownerViewPasswordHash: String = "",
     val updatedByUid: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
@@ -337,4 +338,17 @@ data class CloudAdminReportSnapshot(
     val createdByUid: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class CloudStaffLoginEvent(
+    @DocumentId val id: String = "",
+    val eventId: String = "",
+    val staffId: Long = 0L,
+    val staffName: String = "",
+    val vehicleName: String = "",
+    val loginTimestampMs: Long = 0L,
+    val loginByUid: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null
 )

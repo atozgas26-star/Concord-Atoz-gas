@@ -322,7 +322,7 @@ fun GoogleAuthScreen(
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.img_company_banner),
-                    contentDescription = "Concord & A to Z Gas Banner",
+                    contentDescription = "C&A Gas Banner",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -401,14 +401,14 @@ fun GoogleAuthScreen(
                         ) {
                             Image(
                                 painter = painterResource(id = R.drawable.ic_concord_logo_v2),
-                                contentDescription = "Concord & A to Z Gas Logo",
+                                contentDescription = "C&A Gas Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "CONCORD & A TO Z GAS",
+                                text = "C&A GAS",
                                 style = MaterialTheme.typography.headlineSmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold

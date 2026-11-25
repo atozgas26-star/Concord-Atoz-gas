@@ -1,5 +1,7 @@
 package com.example
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -68,7 +71,9 @@ import com.example.data.model.StockCalculator
 import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
+import com.example.ui.components.FloatingCalculatorIconButton
 import com.example.ui.components.InsufficientStockWarningDialog
+import com.example.ui.components.QuickCalculatorPopupDialog
 import com.example.ui.components.StartupSplashOverlay
 import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.AdminSettingsScreen
@@ -226,6 +231,11 @@ fun ConcordGasRootApp(
     val adminCredentials by viewModel.adminCredentialsState.collectAsStateWithLifecycle()
     val adminRecoveryState by viewModel.adminRecoveryState.collectAsStateWithLifecycle()
     val gmailConsentRequest by viewModel.gmailConsentRequest.collectAsStateWithLifecycle()
+    val ownerViewConfigured by viewModel.ownerViewConfigured.collectAsStateWithLifecycle()
+    val staffLoginNotifications by viewModel.staffLoginNotifications.collectAsStateWithLifecycle()
+    val latestStaffLoginBanner by viewModel.latestStaffLoginBanner.collectAsStateWithLifecycle()
+    var showQuickCalculator by rememberSaveable { mutableStateOf(false) }
+    var promptedNotifPermission by rememberSaveable { mutableStateOf(false) }
 
     // Subscribe to report flows so report tables stay live
     viewModel.monthlySalesReport.collectAsStateWithLifecycle()
@@ -234,6 +244,23 @@ fun ConcordGasRootApp(
     val companyStockReport by viewModel.companyStockReport.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        viewModel.refreshPermissionsStatus()
+    }
+
+    LaunchedEffect(authSession?.user?.role, permissionsStatus.requiresNotificationPrompt) {
+        if (authSession != null &&
+            !promptedNotifPermission &&
+            permissionsStatus.requiresNotificationPrompt &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+        ) {
+            promptedNotifPermission = true
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     val driveConsentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -338,371 +365,433 @@ fun ConcordGasRootApp(
     }
 
     val session = authSession
-    if (session == null) {
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            contentWindowInsets = WindowInsets(0, 0, 0, 0)
-        ) { innerPadding ->
-            Box(modifier = Modifier.padding(innerPadding)) {
-                LoginScreen(
-                    users = users,
-                    loginError = loginError,
-                    googleEmail = googleEmail,
-                    workspaceState = workspaceState,
-                    cloudBusy = cloudBusy,
-                    isAuthenticating = isAuthenticating,
-                    linkedStaffUsername = cloudLoginMetadata.linkedStaffUsername,
-                    linkedStaffRole = cloudLoginMetadata.linkedStaffRole,
-                    themePreset = themePreset,
-                    darkModeEnabled = effectiveDarkMode,
-                    soundEnabled = soundEnabled,
-                    autoLoginEnabled = autoLoginEnabled,
-                    adminCredentials = adminCredentials,
-                    adminRecoveryState = adminRecoveryState,
-                    onThemeCycle = {
-                        SoundEffectsManager.playTapTick(soundEnabled)
-                        val next = ThemePreset.entries[(themePreset.ordinal + 1) % ThemePreset.entries.size]
-                        viewModel.setThemePreset(next)
-                    },
-                    onToggleDarkMode = {
-                        SoundEffectsManager.playTapTick(soundEnabled)
-                        viewModel.toggleDarkMode()
-                    },
-                    onToggleSound = {
-                        val next = !soundEnabled
-                        viewModel.setSoundEnabled(next)
-                        if (next) SoundEffectsManager.playSuccessChime(true)
-                    },
-                    onToggleAutoLogin = viewModel::setAutoLoginEnabled,
-                    onJoinWorkspace = viewModel::joinWorkspace,
-                    onCreateWorkspace = viewModel::createStandaloneWorkspace,
-                    onRetryCloud = viewModel::retryCloudConnect,
-                    onGoogleSignOut = handleGoogleSignOut,
-                    onLogin = viewModel::login,
-                    onSetupAdminCredentials = viewModel::setupInitialAdminCredentials,
-                    onLoginAdminWithPassword = viewModel::loginAdminWithPassword,
-                    onOpenAdminRecovery = { purpose -> viewModel.openAdminRecovery(purpose, googleEmail) },
-                    onSendRecoveryCode = { email -> viewModel.sendAdminRecoveryCode(email) },
-                    onVerifyPasswordReset = viewModel::verifyCodeAndResetAdminPassword,
-                    onVerifyUsernameRecovery = viewModel::verifyCodeAndRecoverAdminUsername,
-                    onUpdateRecoveredUsername = viewModel::updateAdminUsernameAfterRecovery,
-                    onClearRecoveryError = viewModel::clearAdminRecoveryError,
-                    onDismissRecovery = viewModel::dismissAdminRecovery,
-                    onClearError = viewModel::clearLoginError
-                )
-            }
-        }
-    } else if (session.user.role == UserRole.STAFF) {
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            contentWindowInsets = WindowInsets.safeDrawing
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                StaffDashboardScreen(
-                    staffUser = session.user,
-                    assignedVehicle = session.assignedVehicle,
-                    selectedDate = selectedDate,
-                    vehicleRows = staffVehicleRows,
-                    storeRows = storeRows,
-                    products = activeProducts,
-                    allTransactions = allTransactions,
-                    pendingCustomers = staffVehiclePendingRows,
-                    recentCustomerNames = recentCustomerNames,
-                    isOnlineSynced = workspaceState is WorkspaceConnectionState.Connected,
-                    autoLoginEnabled = autoLoginEnabled,
-                    autoLogoutMode = autoLogoutMode,
-                    darkModeEnabled = effectiveDarkMode,
-                    onToggleDarkMode = {
-                        SoundEffectsManager.playTapTick(soundEnabled)
-                        viewModel.toggleDarkMode()
-                    },
-                    onAutoLoginChanged = viewModel::setAutoLoginEnabled,
-                    onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
-                    onDateSelected = viewModel::setSelectedDate,
-                    onRecordTransaction = { type, pId, vId, qty, notes, custName, empNow ->
-                        viewModel.recordTransaction(
-                            type = type,
-                            productId = pId,
-                            vehicleId = vId,
-                            quantity = qty,
-                            notes = notes,
-                            customerName = custName,
-                            emptyCollectedNow = empNow
-                        )
-                    },
-                    onLogout = viewModel::logout
-                )
-            }
-        }
-    } else {
-        var currentTab by rememberSaveable { mutableStateOf(AdminNavTab.DASHBOARD) }
-        var viewingVehicleDetail by rememberSaveable { mutableStateOf(false) }
-        var viewingCompanyInventory by rememberSaveable { mutableStateOf(false) }
+    var calcBottomClearanceDp by remember { mutableStateOf(20.dp) }
 
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val useRail = maxWidth >= 600.dp
-
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (session == null) {
+            calcBottomClearanceDp = 20.dp
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
-                contentWindowInsets = WindowInsets.safeDrawing,
-                bottomBar = {
-                    if (!useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
-                        NavigationBar {
-                            AdminNavTab.entries.forEach { tab ->
-                                val selected = currentTab == tab
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = {
-                                        currentTab = tab
-                                        viewingVehicleDetail = false
-                                        viewingCompanyInventory = false
-                                    },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = tab.label
-                                        )
-                                    },
-                                    label = { Text(tab.label, maxLines = 1) },
-                                    modifier = Modifier.testTag("nav_${tab.name.lowercase()}")
-                                )
-                            }
-                        }
-                    }
-                }
+                contentWindowInsets = WindowInsets(0, 0, 0, 0)
             ) { innerPadding ->
-                Row(
+                Box(modifier = Modifier.padding(innerPadding)) {
+                    LoginScreen(
+                        users = users,
+                        loginError = loginError,
+                        googleEmail = googleEmail,
+                        workspaceState = workspaceState,
+                        cloudBusy = cloudBusy,
+                        isAuthenticating = isAuthenticating,
+                        linkedStaffUsername = cloudLoginMetadata.linkedStaffUsername,
+                        linkedStaffRole = cloudLoginMetadata.linkedStaffRole,
+                        themePreset = themePreset,
+                        darkModeEnabled = effectiveDarkMode,
+                        soundEnabled = soundEnabled,
+                        autoLoginEnabled = autoLoginEnabled,
+                        adminCredentials = adminCredentials,
+                        adminRecoveryState = adminRecoveryState,
+                        ownerViewConfigured = ownerViewConfigured,
+                        onThemeCycle = {
+                            SoundEffectsManager.playTapTick(soundEnabled)
+                            val next = ThemePreset.entries[(themePreset.ordinal + 1) % ThemePreset.entries.size]
+                            viewModel.setThemePreset(next)
+                        },
+                        onToggleDarkMode = {
+                            SoundEffectsManager.playTapTick(soundEnabled)
+                            viewModel.toggleDarkMode()
+                        },
+                        onToggleSound = {
+                            val next = !soundEnabled
+                            viewModel.setSoundEnabled(next)
+                            if (next) SoundEffectsManager.playSuccessChime(true)
+                        },
+                        onToggleAutoLogin = viewModel::setAutoLoginEnabled,
+                        onJoinWorkspace = viewModel::joinWorkspace,
+                        onCreateWorkspace = viewModel::createStandaloneWorkspace,
+                        onRetryCloud = viewModel::retryCloudConnect,
+                        onGoogleSignOut = handleGoogleSignOut,
+                        onLogin = viewModel::login,
+                        onSetupAdminCredentials = viewModel::setupInitialAdminCredentials,
+                        onLoginAdminWithPassword = viewModel::loginAdminWithPassword,
+                        onSetupOwnerViewPassword = viewModel::setupOwnerViewPassword,
+                        onLoginOwnerViewWithPassword = viewModel::loginOwnerViewWithPassword,
+                        onOpenAdminRecovery = { purpose -> viewModel.openAdminRecovery(purpose, googleEmail) },
+                        onSendRecoveryCode = { email -> viewModel.sendAdminRecoveryCode(email) },
+                        onVerifyPasswordReset = viewModel::verifyCodeAndResetAdminPassword,
+                        onVerifyUsernameRecovery = viewModel::verifyCodeAndRecoverAdminUsername,
+                        onUpdateRecoveredUsername = viewModel::updateAdminUsernameAfterRecovery,
+                        onClearRecoveryError = viewModel::clearAdminRecoveryError,
+                        onDismissRecovery = viewModel::dismissAdminRecovery,
+                        onClearError = viewModel::clearLoginError
+                    )
+                }
+            }
+        } else if (session.user.role == UserRole.STAFF) {
+            calcBottomClearanceDp = 20.dp
+            Scaffold(
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                contentWindowInsets = WindowInsets.safeDrawing
+            ) { innerPadding ->
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                 ) {
-                    if (useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
-                        NavigationRail(modifier = Modifier.statusBarsPadding()) {
-                            AdminNavTab.entries.forEach { tab ->
-                                val selected = currentTab == tab
-                                NavigationRailItem(
-                                    selected = selected,
-                                    onClick = {
-                                        currentTab = tab
-                                        viewingVehicleDetail = false
-                                        viewingCompanyInventory = false
-                                    },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = tab.label
-                                        )
-                                    },
-                                    label = { Text(tab.label) },
-                                    modifier = Modifier.testTag("rail_${tab.name.lowercase()}")
-                                )
+                    StaffDashboardScreen(
+                        staffUser = session.user,
+                        assignedVehicle = session.assignedVehicle,
+                        selectedDate = selectedDate,
+                        vehicleRows = staffVehicleRows,
+                        storeRows = storeRows,
+                        products = activeProducts,
+                        allTransactions = allTransactions,
+                        pendingCustomers = staffVehiclePendingRows,
+                        recentCustomerNames = recentCustomerNames,
+                        isOnlineSynced = workspaceState is WorkspaceConnectionState.Connected,
+                        autoLoginEnabled = autoLoginEnabled,
+                        autoLogoutMode = autoLogoutMode,
+                        darkModeEnabled = effectiveDarkMode,
+                        onToggleDarkMode = {
+                            SoundEffectsManager.playTapTick(soundEnabled)
+                            viewModel.toggleDarkMode()
+                        },
+                        onAutoLoginChanged = viewModel::setAutoLoginEnabled,
+                        onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
+                        onDateSelected = viewModel::setSelectedDate,
+                        onRecordTransaction = { type, pId, vId, qty, notes, custName, empNow ->
+                            viewModel.recordTransaction(
+                                type = type,
+                                productId = pId,
+                                vehicleId = vId,
+                                quantity = qty,
+                                notes = notes,
+                                customerName = custName,
+                                emptyCollectedNow = empNow
+                            )
+                        },
+                        onLogout = viewModel::logout
+                    )
+                }
+            }
+        } else {
+            val isReadOnly = session.user.role == UserRole.OWNER_VIEW
+            val navTabs = remember(isReadOnly) {
+                if (isReadOnly) {
+                    AdminNavTab.entries.filter { it != AdminNavTab.SETTINGS }
+                } else {
+                    AdminNavTab.entries
+                }
+            }
+            var currentTab by rememberSaveable { mutableStateOf(AdminNavTab.DASHBOARD) }
+            var viewingVehicleDetail by rememberSaveable { mutableStateOf(false) }
+            var viewingCompanyInventory by rememberSaveable { mutableStateOf(false) }
+
+            LaunchedEffect(isReadOnly) {
+                if (isReadOnly && currentTab == AdminNavTab.SETTINGS) {
+                    currentTab = AdminNavTab.DASHBOARD
+                }
+            }
+
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val useRail = maxWidth >= 600.dp
+                val showBottomBar = !useRail && !viewingVehicleDetail && !viewingCompanyInventory
+                calcBottomClearanceDp = if (showBottomBar) 92.dp else 20.dp
+
+                Scaffold(
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                    bottomBar = {
+                        if (showBottomBar) {
+                            NavigationBar {
+                                navTabs.forEach { tab ->
+                                    val selected = currentTab == tab
+                                    NavigationBarItem(
+                                        selected = selected,
+                                        onClick = {
+                                            currentTab = tab
+                                            viewingVehicleDetail = false
+                                            viewingCompanyInventory = false
+                                        },
+                                        icon = {
+                                            Icon(
+                                                imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                                contentDescription = tab.label
+                                            )
+                                        },
+                                        label = { Text(tab.label, maxLines = 1) },
+                                        modifier = Modifier.testTag("nav_${tab.name.lowercase()}")
+                                    )
+                                }
                             }
                         }
                     }
-
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (viewingCompanyInventory) {
-                            CompanyInventoryScreen(
-                                selectedDate = selectedDate,
-                                stockRows = companyStockReport,
-                                onDateSelected = viewModel::setSelectedDate,
-                                onOpenProductMaster = {
-                                    viewingCompanyInventory = false
-                                    currentTab = AdminNavTab.SETTINGS
-                                },
-                                onOpenStockReport = {
-                                    viewingCompanyInventory = false
-                                    currentTab = AdminNavTab.REPORTS
-                                },
-                                onBack = { viewingCompanyInventory = false }
-                            )
-                        } else if (viewingVehicleDetail) {
-                            val activeVehicle = vehicles.firstOrNull { it.id == selectedVehicleId }
-                            VehicleDetailScreen(
-                                vehicle = activeVehicle,
-                                selectedDate = selectedDate,
-                                rows = selectedVehicleRows,
-                                storeRows = storeRows,
-                                products = activeProducts,
-                                transactions = allTransactions,
-                                pendingCustomers = selectedVehiclePendingRows,
-                                recentCustomerNames = recentCustomerNames,
-                                onDateSelected = viewModel::setSelectedDate,
-                                onBack = { viewingVehicleDetail = false },
-                                onRecordTransaction = { type, pId, vId, qty, notes, custName, empNow ->
-                                    viewModel.recordTransaction(
-                                        type = type,
-                                        productId = pId,
-                                        vehicleId = vId,
-                                        quantity = qty,
-                                        notes = notes,
-                                        customerName = custName,
-                                        emptyCollectedNow = empNow
-                                    )
-                                },
-                                onUpdateTransaction = viewModel::updateTransaction,
-                                onDeleteTransaction = viewModel::deleteTransaction,
-                                onUpdateVehicleOpening = { vId, pId, oldFull, oldEmpty ->
-                                    viewModel.updateOpeningStock(
-                                        scope = StockCalculator.SCOPE_VEHICLE,
-                                        vehicleId = vId,
-                                        productId = pId,
-                                        openingFull = oldFull,
-                                        openingEmpty = oldEmpty
+                ) { innerPadding ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        if (useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
+                            NavigationRail(modifier = Modifier.statusBarsPadding()) {
+                                navTabs.forEach { tab ->
+                                    val selected = currentTab == tab
+                                    NavigationRailItem(
+                                        selected = selected,
+                                        onClick = {
+                                            currentTab = tab
+                                            viewingVehicleDetail = false
+                                            viewingCompanyInventory = false
+                                        },
+                                        icon = {
+                                            Icon(
+                                                imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                                contentDescription = tab.label
+                                            )
+                                        },
+                                        label = { Text(tab.label) },
+                                        modifier = Modifier.testTag("rail_${tab.name.lowercase()}")
                                     )
                                 }
-                            )
-                        } else {
-                            when (currentTab) {
-                                AdminNavTab.DASHBOARD -> AdminDashboardScreen(
-                                    adminName = session.user.displayName,
-                                    selectedDate = selectedDate,
-                                    summary = dashboardSummary,
-                                    storeRows = storeRows,
-                                    products = allProducts,
-                                    pendingCustomerCount = allCustomerPendingRows.count { it.pendingEmptyBalance > 0 },
-                                    totalPendingEmptyCount = allCustomerPendingRows.sumOf { it.pendingEmptyBalance.coerceAtLeast(0) },
-                                    lowStockAlert = lowStockAlert,
-                                    darkModeEnabled = effectiveDarkMode,
-                                    onToggleDarkMode = {
-                                        SoundEffectsManager.playTapTick(soundEnabled)
-                                        viewModel.toggleDarkMode()
-                                    },
-                                    onDateSelected = viewModel::setSelectedDate,
-                                    onOpenInventory = { viewingCompanyInventory = true },
-                                    onOpenStore = { currentTab = AdminNavTab.STORE },
-                                    onOpenVehicles = { currentTab = AdminNavTab.VEHICLES },
-                                    onOpenVehicleDetail = { vehicleId ->
-                                        viewModel.selectVehicle(vehicleId)
-                                        currentTab = AdminNavTab.VEHICLES
-                                        viewingVehicleDetail = true
-                                    },
-                                    onOpenReports = { currentTab = AdminNavTab.REPORTS },
-                                    onUpdateLowStockThreshold = viewModel::updateLowStockThreshold,
-                                    onDismissLowStockAlert = viewModel::dismissLowStockAlert,
-                                    onUpdateTransaction = viewModel::updateTransaction,
-                                    onLogout = viewModel::logout
-                                )
+                            }
+                        }
 
-                                AdminNavTab.STORE -> StoreManagementScreen(
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (viewingCompanyInventory) {
+                                CompanyInventoryScreen(
                                     selectedDate = selectedDate,
+                                    stockRows = companyStockReport,
+                                    isReadOnly = isReadOnly,
+                                    onDateSelected = viewModel::setSelectedDate,
+                                    onOpenProductMaster = {
+                                        if (!isReadOnly) {
+                                            viewingCompanyInventory = false
+                                            currentTab = AdminNavTab.SETTINGS
+                                        }
+                                    },
+                                    onOpenStockReport = {
+                                        viewingCompanyInventory = false
+                                        currentTab = AdminNavTab.REPORTS
+                                    },
+                                    onBack = { viewingCompanyInventory = false }
+                                )
+                            } else if (viewingVehicleDetail) {
+                                val activeVehicle = vehicles.firstOrNull { it.id == selectedVehicleId }
+                                VehicleDetailScreen(
+                                    vehicle = activeVehicle,
+                                    selectedDate = selectedDate,
+                                    rows = selectedVehicleRows,
                                     storeRows = storeRows,
                                     products = activeProducts,
-                                    allProducts = allProducts,
-                                    vehicles = vehicles,
                                     transactions = allTransactions,
-                                    recentPurchaseCompanies = recentPurchaseCompanies,
+                                    pendingCustomers = selectedVehiclePendingRows,
                                     recentCustomerNames = recentCustomerNames,
+                                    isReadOnly = isReadOnly,
                                     onDateSelected = viewModel::setSelectedDate,
-                                    onRecordTransaction = { type, pId, vId, qty, notes, company, custName ->
+                                    onBack = { viewingVehicleDetail = false },
+                                    onRecordTransaction = { type, pId, vId, qty, notes, custName, empNow ->
                                         viewModel.recordTransaction(
                                             type = type,
                                             productId = pId,
                                             vehicleId = vId,
                                             quantity = qty,
                                             notes = notes,
-                                            purchaseCompanyName = company,
-                                            customerName = custName
-                                        )
-                                    },
-                                    onUpdateOpeningStock = { productId, full, empty ->
-                                        viewModel.updateOpeningStock(
-                                            scope = StockCalculator.SCOPE_STORE,
-                                            vehicleId = 0L,
-                                            productId = productId,
-                                            openingFull = full,
-                                            openingEmpty = empty
+                                            customerName = custName,
+                                            emptyCollectedNow = empNow
                                         )
                                     },
                                     onUpdateTransaction = viewModel::updateTransaction,
-                                    onDeleteTransaction = viewModel::deleteTransaction
+                                    onDeleteTransaction = viewModel::deleteTransaction,
+                                    onUpdateVehicleOpening = { vId, pId, oldFull, oldEmpty ->
+                                        viewModel.updateOpeningStock(
+                                            scope = StockCalculator.SCOPE_VEHICLE,
+                                            vehicleId = vId,
+                                            productId = pId,
+                                            openingFull = oldFull,
+                                            openingEmpty = oldEmpty
+                                        )
+                                    }
                                 )
+                            } else {
+                                val effectiveTab = if (isReadOnly && currentTab == AdminNavTab.SETTINGS) {
+                                    AdminNavTab.DASHBOARD
+                                } else {
+                                    currentTab
+                                }
+                                when (effectiveTab) {
+                                    AdminNavTab.DASHBOARD -> AdminDashboardScreen(
+                                        adminName = session.user.displayName,
+                                        selectedDate = selectedDate,
+                                        summary = dashboardSummary,
+                                        storeRows = storeRows,
+                                        products = allProducts,
+                                        pendingCustomerCount = allCustomerPendingRows.count { it.pendingEmptyBalance > 0 },
+                                        totalPendingEmptyCount = allCustomerPendingRows.sumOf { it.pendingEmptyBalance.coerceAtLeast(0) },
+                                        lowStockAlert = lowStockAlert,
+                                        isReadOnly = isReadOnly,
+                                        staffLoginNotifications = staffLoginNotifications,
+                                        latestStaffLoginBanner = latestStaffLoginBanner,
+                                        onDismissStaffLoginBanner = viewModel::dismissStaffLoginBanner,
+                                        darkModeEnabled = effectiveDarkMode,
+                                        onToggleDarkMode = {
+                                            SoundEffectsManager.playTapTick(soundEnabled)
+                                            viewModel.toggleDarkMode()
+                                        },
+                                        onDateSelected = viewModel::setSelectedDate,
+                                        onOpenInventory = { viewingCompanyInventory = true },
+                                        onOpenStore = { currentTab = AdminNavTab.STORE },
+                                        onOpenVehicles = { currentTab = AdminNavTab.VEHICLES },
+                                        onOpenVehicleDetail = { vehicleId ->
+                                            viewModel.selectVehicle(vehicleId)
+                                            currentTab = AdminNavTab.VEHICLES
+                                            viewingVehicleDetail = true
+                                        },
+                                        onOpenReports = { currentTab = AdminNavTab.REPORTS },
+                                        onUpdateLowStockThreshold = viewModel::updateLowStockThreshold,
+                                        onDismissLowStockAlert = viewModel::dismissLowStockAlert,
+                                        onUpdateTransaction = viewModel::updateTransaction,
+                                        onLogout = viewModel::logout
+                                    )
 
-                                AdminNavTab.VEHICLES -> VehicleManagementScreen(
-                                    selectedDate = selectedDate,
-                                    vehicleOverviews = dashboardSummary?.vehicleOverviews.orEmpty(),
-                                    onDateSelected = viewModel::setSelectedDate,
-                                    onSelectVehicle = { vehicleId ->
-                                        viewModel.selectVehicle(vehicleId)
-                                        viewingVehicleDetail = true
-                                    },
-                                    onAddStaffAndVehicle = viewModel::addStaffAndVehicle
-                                )
+                                    AdminNavTab.STORE -> StoreManagementScreen(
+                                        selectedDate = selectedDate,
+                                        storeRows = storeRows,
+                                        products = activeProducts,
+                                        allProducts = allProducts,
+                                        vehicles = vehicles,
+                                        transactions = allTransactions,
+                                        recentPurchaseCompanies = recentPurchaseCompanies,
+                                        recentCustomerNames = recentCustomerNames,
+                                        isReadOnly = isReadOnly,
+                                        onDateSelected = viewModel::setSelectedDate,
+                                        onRecordTransaction = { type, pId, vId, qty, notes, company, custName ->
+                                            viewModel.recordTransaction(
+                                                type = type,
+                                                productId = pId,
+                                                vehicleId = vId,
+                                                quantity = qty,
+                                                notes = notes,
+                                                purchaseCompanyName = company,
+                                                customerName = custName
+                                            )
+                                        },
+                                        onUpdateOpeningStock = { productId, full, empty ->
+                                            viewModel.updateOpeningStock(
+                                                scope = StockCalculator.SCOPE_STORE,
+                                                vehicleId = 0L,
+                                                productId = productId,
+                                                openingFull = full,
+                                                openingEmpty = empty
+                                            )
+                                        },
+                                        onUpdateTransaction = viewModel::updateTransaction,
+                                        onDeleteTransaction = viewModel::deleteTransaction
+                                    )
 
-                                AdminNavTab.REPORTS -> ReportsScreen(
-                                    selectedDate = selectedDate,
-                                    selectedYearMonth = selectedYearMonth,
-                                    vehicles = vehicles,
-                                    selectedVehicleId = selectedVehicleId,
-                                    recentPurchaseCompanies = recentPurchaseCompanies,
-                                    buildReportTable = viewModel::buildReportTable,
-                                    onDateSelected = viewModel::setSelectedDate,
-                                    onYearMonthSelected = viewModel::setSelectedYearMonth,
-                                    onSelectVehicle = { id -> if (id != null) viewModel.selectVehicle(id) },
-                                    onSaveReportCloudAndDrive = viewModel::saveReportToCloudAndDrive,
-                                    onMessage = viewModel::showMessage
-                                )
+                                    AdminNavTab.VEHICLES -> VehicleManagementScreen(
+                                        selectedDate = selectedDate,
+                                        vehicleOverviews = dashboardSummary?.vehicleOverviews.orEmpty(),
+                                        isReadOnly = isReadOnly,
+                                        onDateSelected = viewModel::setSelectedDate,
+                                        onSelectVehicle = { vehicleId ->
+                                            viewModel.selectVehicle(vehicleId)
+                                            viewingVehicleDetail = true
+                                        },
+                                        onAddStaffAndVehicle = viewModel::addStaffAndVehicle
+                                    )
 
-                                AdminNavTab.SETTINGS -> AdminSettingsScreen(
-                                    users = users,
-                                    vehicles = vehicles,
-                                    products = allProducts,
-                                    googleEmail = googleEmail,
-                                    workspaceState = workspaceState,
-                                    driveBackupState = driveBackupState,
-                                    permissionsStatus = permissionsStatus,
-                                    pendingDriveRestoreJson = pendingDriveRestoreJson,
-                                    themePreset = themePreset,
-                                    darkModeEnabled = effectiveDarkMode,
-                                    soundEnabled = soundEnabled,
-                                    autoLoginEnabled = autoLoginEnabled,
-                                    autoLogoutMode = autoLogoutMode,
-                                    adminCredentials = adminCredentials,
-                                    onThemePresetChanged = { preset ->
-                                        SoundEffectsManager.playTapTick(soundEnabled)
-                                        viewModel.setThemePreset(preset)
-                                    },
-                                    onDarkModeChanged = { enabled ->
-                                        SoundEffectsManager.playTapTick(soundEnabled)
-                                        viewModel.setDarkModeEnabled(enabled)
-                                    },
-                                    onSoundEnabledChanged = { enabled ->
-                                        viewModel.setSoundEnabled(enabled)
-                                        if (enabled) SoundEffectsManager.playSuccessChime(true)
-                                    },
-                                    onAutoLoginChanged = viewModel::setAutoLoginEnabled,
-                                    onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
-                                    onUpdateAdminCredentials = viewModel::updateAdminCredentialsFromSettings,
-                                    onPreviewStartupSplash = onPreviewStartupSplash,
-                                    onSyncNow = viewModel::syncNow,
-                                    onGoogleSignOut = handleGoogleSignOut,
-                                    onGrantAllPermissionsAndDrive = viewModel::requestGoogleDriveAuthorizationAndEnable,
-                                    onToggleAutoDriveBackup = viewModel::setAutoDriveBackupEnabled,
-                                    onBackUpToDriveNow = { viewModel.backUpToGoogleDriveNow() },
-                                    onRestoreFromDriveNow = { viewModel.restoreFromGoogleDriveNow() },
-                                    onConfirmDriveRestore = viewModel::confirmPendingDriveRestore,
-                                    onDismissDriveRestore = viewModel::dismissPendingDriveRestore,
-                                    onRefreshPermissions = { viewModel.refreshPermissionsStatus() },
-                                    onAddStaffAndVehicle = viewModel::addStaffAndVehicle,
-                                    onUpdateStaffName = viewModel::updateStaffName,
-                                    onUpdatePin = viewModel::updateUserPin,
-                                    onAddProduct = viewModel::addProduct,
-                                    onToggleProductActive = viewModel::toggleProductActive,
-                                    onExportBackupJson = viewModel::exportBackupJson,
-                                    onRestoreBackupJson = viewModel::restoreBackupJson,
-                                    onMessage = viewModel::showMessage,
-                                    onLogout = viewModel::logout
-                                )
+                                    AdminNavTab.REPORTS -> ReportsScreen(
+                                        selectedDate = selectedDate,
+                                        selectedYearMonth = selectedYearMonth,
+                                        vehicles = vehicles,
+                                        selectedVehicleId = selectedVehicleId,
+                                        recentPurchaseCompanies = recentPurchaseCompanies,
+                                        isReadOnly = isReadOnly,
+                                        buildReportTable = viewModel::buildReportTable,
+                                        onDateSelected = viewModel::setSelectedDate,
+                                        onYearMonthSelected = viewModel::setSelectedYearMonth,
+                                        onSelectVehicle = { id -> if (id != null) viewModel.selectVehicle(id) },
+                                        onSaveReportCloudAndDrive = viewModel::saveReportToCloudAndDrive,
+                                        onMessage = viewModel::showMessage
+                                    )
+
+                                    AdminNavTab.SETTINGS -> AdminSettingsScreen(
+                                        users = users,
+                                        vehicles = vehicles,
+                                        products = allProducts,
+                                        googleEmail = googleEmail,
+                                        workspaceState = workspaceState,
+                                        driveBackupState = driveBackupState,
+                                        permissionsStatus = permissionsStatus,
+                                        pendingDriveRestoreJson = pendingDriveRestoreJson,
+                                        themePreset = themePreset,
+                                        darkModeEnabled = effectiveDarkMode,
+                                        soundEnabled = soundEnabled,
+                                        autoLoginEnabled = autoLoginEnabled,
+                                        autoLogoutMode = autoLogoutMode,
+                                        adminCredentials = adminCredentials,
+                                        ownerViewConfigured = ownerViewConfigured,
+                                        onThemePresetChanged = { preset ->
+                                            SoundEffectsManager.playTapTick(soundEnabled)
+                                            viewModel.setThemePreset(preset)
+                                        },
+                                        onDarkModeChanged = { enabled ->
+                                            SoundEffectsManager.playTapTick(soundEnabled)
+                                            viewModel.setDarkModeEnabled(enabled)
+                                        },
+                                        onSoundEnabledChanged = { enabled ->
+                                            viewModel.setSoundEnabled(enabled)
+                                            if (enabled) SoundEffectsManager.playSuccessChime(true)
+                                        },
+                                        onAutoLoginChanged = viewModel::setAutoLoginEnabled,
+                                        onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
+                                        onUpdateAdminCredentials = viewModel::updateAdminCredentialsFromSettings,
+                                        onUpdateOwnerViewPassword = viewModel::updateOwnerViewPasswordFromSettings,
+                                        onPreviewStartupSplash = onPreviewStartupSplash,
+                                        onSyncNow = viewModel::syncNow,
+                                        onGoogleSignOut = handleGoogleSignOut,
+                                        onGrantAllPermissionsAndDrive = viewModel::requestGoogleDriveAuthorizationAndEnable,
+                                        onToggleAutoDriveBackup = viewModel::setAutoDriveBackupEnabled,
+                                        onBackUpToDriveNow = { viewModel.backUpToGoogleDriveNow() },
+                                        onRestoreFromDriveNow = { viewModel.restoreFromGoogleDriveNow() },
+                                        onConfirmDriveRestore = viewModel::confirmPendingDriveRestore,
+                                        onDismissDriveRestore = viewModel::dismissPendingDriveRestore,
+                                        onRefreshPermissions = { viewModel.refreshPermissionsStatus() },
+                                        onAddStaffAndVehicle = viewModel::addStaffAndVehicle,
+                                        onUpdateStaffName = viewModel::updateStaffName,
+                                        onUpdatePin = viewModel::updateUserPin,
+                                        onAddProduct = viewModel::addProduct,
+                                        onToggleProductActive = viewModel::toggleProductActive,
+                                        onExportBackupJson = viewModel::exportBackupJson,
+                                        onRestoreBackupJson = viewModel::restoreBackupJson,
+                                        onMessage = viewModel::showMessage,
+                                        onLogout = viewModel::logout
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+
+        // Small always-accessible floating calculator icon button
+        FloatingCalculatorIconButton(
+            onClick = {
+                SoundEffectsManager.playTapTick(soundEnabled)
+                showQuickCalculator = true
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 14.dp, bottom = calcBottomClearanceDp)
+        )
+    }
+
+    if (showQuickCalculator) {
+        QuickCalculatorPopupDialog(
+            onDismiss = { showQuickCalculator = false },
+            onResultCopied = { msg -> viewModel.showMessage(msg) }
+        )
     }
 
     warningAlert?.let { alert ->

@@ -469,7 +469,7 @@ test("Restricted Admin Settings and Admin Reports block Staff reads and writes",
       })
   );
 
-  // Admin updates password hash & username
+  // Admin updates password hash, username & Owner View password hash
   await assertSucceeds(
     adminDb
       .collection("workspaces")
@@ -480,6 +480,7 @@ test("Restricted Admin Settings and Admin Reports block Staff reads and writes",
         adminLoginUsername: "ragavan_admin",
         adminPasswordHash: "pbkdf2$120000$bmV3c2FsdA==$bmV3aGFzaA==",
         adminRecoveryEmail: "atozgas26@gmail.com",
+        ownerViewPasswordHash: "pbkdf2$120000$b3duZXJzYWx0$b3duZXJoYXNo",
         updatedByUid: ADMIN_UID,
         updatedAt: pastDate(400),
       })
@@ -488,6 +489,78 @@ test("Restricted Admin Settings and Admin Reports block Staff reads and writes",
   // Admin reads settings
   await assertSucceeds(
     adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_settings").doc("drive_backup").get()
+  );
+
+  // Staff logs own sign-in event -> succeeds
+  const loginEventId = "login_20261125_abc12345";
+  await assertSucceeds(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_login_events")
+      .doc(loginEventId)
+      .set({
+        eventId: loginEventId,
+        staffId: 2,
+        staffName: "Nadeem",
+        vehicleName: "NADEEM",
+        loginTimestampMs: Date.now() - 500,
+        loginByUid: STAFF_NADEEM_UID,
+        createdAt: ts,
+      })
+  );
+
+  // Staff CANNOT spoof another UID on staff_login_events
+  await assertFails(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_login_events")
+      .doc("login_spoof_001")
+      .set({
+        eventId: "login_spoof_001",
+        staffId: 2,
+        staffName: "Nadeem",
+        vehicleName: "NADEEM",
+        loginTimestampMs: Date.now() - 500,
+        loginByUid: ADMIN_UID,
+        createdAt: ts,
+      })
+  );
+
+  // Staff CANNOT read, list, update, or delete staff_login_events
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("staff_login_events").doc(loginEventId).get()
+  );
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("staff_login_events").get()
+  );
+  await assertFails(
+    staffDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_login_events")
+      .doc(loginEventId)
+      .update({ staffName: "Tampered" })
+  );
+
+  // Admin CAN list, read, and delete staff_login_events (immutable -> cannot update)
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("staff_login_events").get()
+  );
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("staff_login_events").doc(loginEventId).get()
+  );
+  await assertFails(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("staff_login_events")
+      .doc(loginEventId)
+      .update({ staffName: "Edited" })
+  );
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("staff_login_events").doc(loginEventId).delete()
   );
 
   // Staff CANNOT read, list, create, update, or delete admin_settings (including admin credentials)

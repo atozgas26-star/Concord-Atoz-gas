@@ -119,6 +119,7 @@ fun LoginScreen(
     autoLoginEnabled: Boolean = true,
     adminCredentials: AdminCredentialsState = AdminCredentialsState(),
     adminRecoveryState: AdminRecoveryUiState = AdminRecoveryUiState(),
+    ownerViewConfigured: Boolean = false,
     onThemeCycle: () -> Unit = {},
     onToggleDarkMode: () -> Unit = {},
     onToggleSound: () -> Unit = {},
@@ -130,6 +131,8 @@ fun LoginScreen(
     onLogin: (userId: Long, pin: String, role: UserRole) -> Unit,
     onSetupAdminCredentials: (username: String, password: String, confirmPassword: String, recoveryEmail: String) -> Unit = { _, _, _, _ -> },
     onLoginAdminWithPassword: (username: String, password: String) -> Unit = { _, _ -> },
+    onSetupOwnerViewPassword: (password: String, confirmPassword: String) -> Unit = { _, _ -> },
+    onLoginOwnerViewWithPassword: (password: String) -> Unit = {},
     onOpenAdminRecovery: (RecoveryPurpose) -> Unit = {},
     onSendRecoveryCode: (String) -> Unit = {},
     onVerifyPasswordReset: (code: String, newPassword: String, confirmPassword: String) -> Unit = { _, _, _ -> },
@@ -167,8 +170,13 @@ fun LoginScreen(
     }
     var showSetupPassword by remember { mutableStateOf(false) }
 
+    // Owner View (Read-Only) One-Password inputs
+    var ownerPasswordInput by remember { mutableStateOf("") }
+    var ownerConfirmPasswordInput by remember { mutableStateOf("") }
+    var showOwnerPassword by remember { mutableStateOf(false) }
+
     LaunchedEffect(isStaffRestrictedCloud, linkedStaffRole, linkedStaffUsername, users) {
-        if (isStaffRestrictedCloud) {
+        if (isStaffRestrictedCloud && selectedRole == UserRole.ADMIN) {
             selectedRole = UserRole.STAFF
         } else if (!userTouchedRole) {
             linkedStaffRole?.let { selectedRole = it }
@@ -180,15 +188,17 @@ fun LoginScreen(
         }
     }
 
-    val targetUser = if (selectedRole == UserRole.ADMIN) {
-        adminUser
-    } else {
-        staffUsers.firstOrNull { it.id == selectedStaffId } ?: staffUsers.firstOrNull()
+    val targetUser = when (selectedRole) {
+        UserRole.ADMIN -> adminUser
+        UserRole.OWNER_VIEW -> null
+        UserRole.STAFF -> staffUsers.firstOrNull { it.id == selectedStaffId } ?: staffUsers.firstOrNull()
     }
 
     LaunchedEffect(selectedRole, selectedStaffId) {
         pinInput = ""
         adminPasswordInput = ""
+        ownerPasswordInput = ""
+        ownerConfirmPasswordInput = ""
         onClearError()
     }
 
@@ -213,7 +223,7 @@ fun LoginScreen(
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.img_company_banner),
-                    contentDescription = "Concord & A to Z Gas Industrial Cylinders",
+                    contentDescription = "C&A Gas Industrial Cylinders",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -295,14 +305,14 @@ fun LoginScreen(
                         ) {
                             Image(
                                 painter = painterResource(id = R.drawable.ic_concord_logo_v2),
-                                contentDescription = "Concord & A to Z Gas Logo",
+                                contentDescription = "C&A Gas Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "CONCORD & A TO Z GAS",
+                                text = "C&A GAS",
                                 style = MaterialTheme.typography.headlineSmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
@@ -341,39 +351,61 @@ fun LoginScreen(
                     onGoogleSignOut = onGoogleSignOut
                 )
 
-                // Role Toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                // Role Toggle (Staff, Admin, Owner View)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        RoleToggleButton(
+                            title = "Staff Login",
+                            subtitle = "${staffUsers.size} Vehicles",
+                            icon = Icons.Default.LocalShipping,
+                            selected = selectedRole == UserRole.STAFF,
+                            onClick = {
+                                userTouchedRole = true
+                                selectedRole = UserRole.STAFF
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("role_staff_tab")
+                        )
+                        RoleToggleButton(
+                            title = "Admin Login",
+                            subtitle = if (isStaffRestrictedCloud) "Restricted" else "Full Access",
+                            icon = Icons.Default.AdminPanelSettings,
+                            selected = selectedRole == UserRole.ADMIN,
+                            enabled = !isStaffRestrictedCloud,
+                            onClick = {
+                                if (!isStaffRestrictedCloud) {
+                                    userTouchedRole = true
+                                    selectedRole = UserRole.ADMIN
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("role_admin_tab")
+                        )
+                    }
                     RoleToggleButton(
-                        title = "Staff Login",
-                        subtitle = "${staffUsers.size} Vehicle Accounts",
-                        icon = Icons.Default.LocalShipping,
-                        selected = selectedRole == UserRole.STAFF,
+                        title = "Owner View",
+                        subtitle = if (ownerViewConfigured) {
+                            "One Password • View Only (No Entry or Modification)"
+                        } else if (isStaffRestrictedCloud) {
+                            "Not yet configured by Admin"
+                        } else {
+                            "Create 1 Password • Strictly View Only"
+                        },
+                        icon = Icons.Default.Visibility,
+                        selected = selectedRole == UserRole.OWNER_VIEW,
+                        enabled = !isStaffRestrictedCloud || ownerViewConfigured,
                         onClick = {
                             userTouchedRole = true
-                            selectedRole = UserRole.STAFF
+                            selectedRole = UserRole.OWNER_VIEW
                         },
                         modifier = Modifier
-                            .weight(1f)
-                            .testTag("role_staff_tab")
-                    )
-                    RoleToggleButton(
-                        title = "Admin Login",
-                        subtitle = if (isStaffRestrictedCloud) "Admin Only (Restricted)" else "Ragavan (Full Access)",
-                        icon = Icons.Default.AdminPanelSettings,
-                        selected = selectedRole == UserRole.ADMIN,
-                        enabled = !isStaffRestrictedCloud,
-                        onClick = {
-                            if (!isStaffRestrictedCloud) {
-                                userTouchedRole = true
-                                selectedRole = UserRole.ADMIN
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("role_admin_tab")
+                            .fillMaxWidth()
+                            .testTag("role_owner_view_tab")
                     )
                 }
 
@@ -409,6 +441,38 @@ fun LoginScreen(
                                     )
                                     Text(
                                         text = "Full Store, Vehicle, Reports & PIN Control",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        } else if (selectedRole == UserRole.OWNER_VIEW) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandGreenContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Visibility,
+                                        contentDescription = "Owner View",
+                                        tint = BrandGreenOnContainer
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Owner View (Read-Only)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "View live stock, vehicles, staff logins & reports — no entry or modification allowed",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -806,6 +870,222 @@ fun LoginScreen(
                             }
                         }
                     }
+                } else if (selectedRole == UserRole.OWNER_VIEW) {
+                    // Owner View One-Password Card (Strictly Read-Only — No Entry or Modification)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                color = BrandGreenContainer,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Visibility,
+                                        contentDescription = null,
+                                        tint = BrandGreenOnContainer,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = "VIEW ONLY • No Entry or Modification",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BrandGreenOnContainer
+                                    )
+                                }
+                            }
+
+                            if (!ownerViewConfigured) {
+                                Text(
+                                    text = "Create One Owner View Password",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Set one shared read-only password (6+ characters). Anyone using this password can view live stock and reports but cannot add, edit, or delete anything.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                OutlinedTextField(
+                                    value = ownerPasswordInput,
+                                    onValueChange = {
+                                        ownerPasswordInput = it
+                                        onClearError()
+                                    },
+                                    label = { Text("Create Owner View Password") },
+                                    placeholder = { Text("At least 6 characters") },
+                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                    trailingIcon = {
+                                        IconButton(onClick = { showOwnerPassword = !showOwnerPassword }) {
+                                            Icon(
+                                                imageVector = if (showOwnerPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (showOwnerPassword) "Hide password" else "Show password"
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (showOwnerPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("owner_setup_password_input")
+                                )
+
+                                OutlinedTextField(
+                                    value = ownerConfirmPasswordInput,
+                                    onValueChange = {
+                                        ownerConfirmPasswordInput = it
+                                        onClearError()
+                                    },
+                                    label = { Text("Confirm Owner View Password") },
+                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                    visualTransformation = if (showOwnerPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("owner_setup_confirm_password_input")
+                                )
+
+                                if (loginError != null) {
+                                    Surface(
+                                        color = BrandRedContainer,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = loginError,
+                                            color = BrandRedBright,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(8.dp)
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        onSetupOwnerViewPassword(ownerPasswordInput, ownerConfirmPasswordInput)
+                                    },
+                                    enabled = !isAuthenticating &&
+                                        ownerPasswordInput.length >= 6 &&
+                                        ownerConfirmPasswordInput.isNotEmpty(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(50.dp)
+                                        .testTag("owner_setup_submit_button")
+                                ) {
+                                    if (isAuthenticating) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Text("Creating Owner View Password...")
+                                    } else {
+                                        Text(
+                                            text = "Create Password & Open Owner View",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = "Owner View Password Sign In",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Enter the single Owner View password to open read-only dashboards and reports.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                OutlinedTextField(
+                                    value = ownerPasswordInput,
+                                    onValueChange = {
+                                        ownerPasswordInput = it
+                                        onClearError()
+                                    },
+                                    label = { Text("Owner View Password") },
+                                    placeholder = { Text("Enter Owner View password") },
+                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                    trailingIcon = {
+                                        IconButton(onClick = { showOwnerPassword = !showOwnerPassword }) {
+                                            Icon(
+                                                imageVector = if (showOwnerPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (showOwnerPassword) "Hide password" else "Show password"
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (showOwnerPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("owner_login_password_input")
+                                )
+
+                                if (loginError != null) {
+                                    Surface(
+                                        color = BrandRedContainer,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = loginError,
+                                            color = BrandRedBright,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(8.dp)
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = { onLoginOwnerViewWithPassword(ownerPasswordInput) },
+                                    enabled = !isAuthenticating && ownerPasswordInput.isNotEmpty(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(50.dp)
+                                        .testTag("owner_login_submit_button")
+                                ) {
+                                    if (isAuthenticating) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Text("Opening Owner View...")
+                                    } else {
+                                        Text(
+                                            text = "Sign In to Owner View (Read-Only)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     // Staff 4-Digit Vehicle PIN Pad Card
                     Card(
@@ -1014,7 +1294,7 @@ fun LoginScreen(
                 }
 
                 Text(
-                    text = "CONCORD & A TO Z GAS • Built by Ragavan",
+                    text = "C&A GAS • Built by Ragavan",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
