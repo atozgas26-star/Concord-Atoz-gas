@@ -106,7 +106,9 @@ import com.example.data.remote.WorkspaceConnectionState
 import com.example.export.DriveBackupState
 import com.example.permissions.AppPermissionsStatus
 import com.example.ui.components.AddStaffVehicleDialog
+import com.example.ui.components.AppUpdateSettingsCard
 import com.example.ui.components.BrandHeaderBanner
+import com.example.update.AppUpdateUiState
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -135,6 +137,9 @@ fun AdminSettingsScreen(
     autoLogoutMode: AutoLogoutMode = AutoLogoutMode.OFF,
     adminCredentials: AdminCredentialsState = AdminCredentialsState(),
     ownerViewConfigured: Boolean = false,
+    appUpdateState: AppUpdateUiState = AppUpdateUiState(),
+    onCheckForAppUpdate: () -> Unit = {},
+    onOpenAppUpdate: () -> Unit = {},
     onThemePresetChanged: (ThemePreset) -> Unit = {},
     onDarkModeChanged: (Boolean) -> Unit = {},
     onSoundEnabledChanged: (Boolean) -> Unit = {},
@@ -242,6 +247,13 @@ fun AdminSettingsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item {
+                    AppUpdateSettingsCard(
+                        state = appUpdateState,
+                        onCheckForUpdate = onCheckForAppUpdate,
+                        onOpenUpdateDialog = onOpenAppUpdate
+                    )
+                }
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),

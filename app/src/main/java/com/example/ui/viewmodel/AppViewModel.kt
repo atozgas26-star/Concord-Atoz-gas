@@ -55,6 +55,10 @@ import com.example.notifications.StaffLoginNotificationItem
 import com.example.notifications.StaffLoginNotificationManager
 import com.example.permissions.AppPermissionsManager
 import com.example.permissions.AppPermissionsStatus
+import com.example.update.AppUpdateCheckResult
+import com.example.update.AppUpdateManager
+import com.example.update.AppUpdateStatus
+import com.example.update.AppUpdateUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -108,7 +112,8 @@ class AppViewModel(
     private val sessionPreferences: SessionPreferences? = null,
     private val driveBackupManager: GoogleDriveBackupManager? = null,
     private val appContext: Context? = null,
-    private val gmailVerificationManager: GmailVerificationManager? = null
+    private val gmailVerificationManager: GmailVerificationManager? = null,
+    private val appUpdateManager: AppUpdateManager = AppUpdateManager()
 ) : ViewModel() {
 
     private val _isInitialized = MutableStateFlow(false)
@@ -134,6 +139,9 @@ class AppViewModel(
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
+    private val _appUpdateState = MutableStateFlow(AppUpdateUiState())
+    val appUpdateState: StateFlow<AppUpdateUiState> = _appUpdateState.asStateFlow()
 
     val workspaceConnectionState: StateFlow<WorkspaceConnectionState> =
         cloudSync?.connectionState ?: MutableStateFlow(WorkspaceConnectionState.Checking).asStateFlow()
@@ -2891,6 +2899,63 @@ class AppViewModel(
                 )
             }
         }
+    }
+
+    fun checkForAppUpdate(silent: Boolean = false) {
+        if (_appUpdateState.value.isChecking) return
+        viewModelScope.launch {
+            _appUpdateState.value = _appUpdateState.value.copy(
+                isChecking = true,
+                errorMessage = null
+            )
+            when (val res = appUpdateManager.checkForUpdate(_appUpdateState.value.currentVersion)) {
+                is AppUpdateCheckResult.Success -> {
+                    val newStatus = if (res.isUpdateAvailable) {
+                        AppUpdateStatus.UPDATE_AVAILABLE
+                    } else {
+                        AppUpdateStatus.UP_TO_DATE
+                    }
+                    _appUpdateState.value = _appUpdateState.value.copy(
+                        currentVersion = res.currentVersion,
+                        latestVersion = res.latestVersion,
+                        releaseTitle = res.releaseTitle,
+                        releaseNotes = res.releaseNotes,
+                        publishedAt = res.publishedAt,
+                        downloadUrl = res.downloadUrl,
+                        releasePageUrl = res.releasePageUrl,
+                        apkSizeMb = res.apkSizeMb,
+                        isChecking = false,
+                        status = newStatus,
+                        errorMessage = null,
+                        lastCheckedAtMs = System.currentTimeMillis(),
+                        bannerDismissed = if (res.isUpdateAvailable) false else _appUpdateState.value.bannerDismissed
+                    )
+                    if (!silent) {
+                        _snackbarMessage.value = if (res.isUpdateAvailable) {
+                            "New version v${res.latestVersion} is available!"
+                        } else {
+                            "C&A Gas v${res.currentVersion} is up to date."
+                        }
+                    }
+                }
+                is AppUpdateCheckResult.Error -> {
+                    _appUpdateState.value = _appUpdateState.value.copy(
+                        isChecking = false,
+                        status = if (silent && _appUpdateState.value.status != AppUpdateStatus.IDLE) {
+                            _appUpdateState.value.status
+                        } else {
+                            AppUpdateStatus.ERROR
+                        },
+                        errorMessage = if (silent) null else res.message,
+                        lastCheckedAtMs = System.currentTimeMillis()
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissAppUpdateBanner() {
+        _appUpdateState.value = _appUpdateState.value.copy(bannerDismissed = true)
     }
 
     companion object {

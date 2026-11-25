@@ -73,6 +73,7 @@ import com.example.data.model.StockCalculator
 import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.FloatingCalculatorIconButton
 import com.example.ui.components.InsufficientStockWarningDialog
 import com.example.ui.components.QuickCalculatorPopupDialog
@@ -241,8 +242,18 @@ fun ConcordGasRootApp(
     val biometricUnlockState by viewModel.biometricUnlockState.collectAsStateWithLifecycle()
     val biometricAvailability by viewModel.biometricAvailability.collectAsStateWithLifecycle()
     val shouldAutoPromptBiometric by viewModel.shouldAutoPromptBiometric.collectAsStateWithLifecycle()
+    val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+    var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
+    var checkedUpdateOnce by rememberSaveable { mutableStateOf(false) }
     var showQuickCalculator by rememberSaveable { mutableStateOf(false) }
     var promptedNotifPermission by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(authSession != null) {
+        if (authSession != null && !checkedUpdateOnce) {
+            checkedUpdateOnce = true
+            viewModel.checkForAppUpdate(silent = true)
+        }
+    }
 
     val triggerBiometricUnlock: () -> Unit = {
         val fragmentActivity = context as? FragmentActivity
@@ -529,6 +540,12 @@ fun ConcordGasRootApp(
                             )
                         },
                         onTransferBetweenVehicles = viewModel::transferBetweenVehicles,
+                        appUpdateState = appUpdateState,
+                        onOpenAppUpdate = {
+                            showAppUpdateDialog = true
+                            viewModel.checkForAppUpdate(silent = false)
+                        },
+                        onDismissAppUpdateBanner = viewModel::dismissAppUpdateBanner,
                         onLogout = viewModel::logout
                     )
                 }
@@ -698,6 +715,12 @@ fun ConcordGasRootApp(
                                             SoundEffectsManager.playTapTick(soundEnabled)
                                             viewModel.toggleDarkMode()
                                         },
+                                        appUpdateState = appUpdateState,
+                                        onOpenAppUpdate = {
+                                            showAppUpdateDialog = true
+                                            viewModel.checkForAppUpdate(silent = false)
+                                        },
+                                        onDismissAppUpdateBanner = viewModel::dismissAppUpdateBanner,
                                         onDateSelected = viewModel::setSelectedDate,
                                         onOpenInventory = { viewingCompanyInventory = true },
                                         onOpenStore = { currentTab = AdminNavTab.STORE },
@@ -792,6 +815,9 @@ fun ConcordGasRootApp(
                                         autoLogoutMode = autoLogoutMode,
                                         adminCredentials = adminCredentials,
                                         ownerViewConfigured = ownerViewConfigured,
+                                        appUpdateState = appUpdateState,
+                                        onCheckForAppUpdate = { viewModel.checkForAppUpdate(silent = false) },
+                                        onOpenAppUpdate = { showAppUpdateDialog = true },
                                         onThemePresetChanged = { preset ->
                                             SoundEffectsManager.playTapTick(soundEnabled)
                                             viewModel.setThemePreset(preset)
@@ -853,6 +879,22 @@ fun ConcordGasRootApp(
         QuickCalculatorPopupDialog(
             onDismiss = { showQuickCalculator = false },
             onResultCopied = { msg -> viewModel.showMessage(msg) }
+        )
+    }
+
+    if (showAppUpdateDialog) {
+        val roleLabel = when (authSession?.user?.role) {
+            UserRole.ADMIN -> "Admin Build"
+            UserRole.OWNER_VIEW -> "Owner View Build"
+            UserRole.STAFF -> "Staff Build"
+            null -> "C&A Gas Build"
+        }
+        AppUpdateDialog(
+            state = appUpdateState,
+            roleLabel = roleLabel,
+            onCheckForUpdate = { viewModel.checkForAppUpdate(silent = false) },
+            onDismiss = { showAppUpdateDialog = false },
+            onMessage = viewModel::showMessage
         )
     }
 

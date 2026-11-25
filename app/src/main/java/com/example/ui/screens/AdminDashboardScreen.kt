@@ -87,8 +87,13 @@ import com.example.data.local.StockTransactionEntity
 import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.StoreStockRow
+import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.SystemUpdate
 import com.example.notifications.StaffLoginNotificationItem
+import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
+import com.example.update.AppUpdateStatus
+import com.example.update.AppUpdateUiState
 import com.example.ui.components.CurrentInventoryTotalsCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
@@ -130,6 +135,9 @@ fun AdminDashboardScreen(
     onDismissStaffLoginBanner: () -> Unit = {},
     darkModeEnabled: Boolean = false,
     onToggleDarkMode: () -> Unit = {},
+    appUpdateState: AppUpdateUiState = AppUpdateUiState(),
+    onOpenAppUpdate: () -> Unit = {},
+    onDismissAppUpdateBanner: () -> Unit = {},
     onDateSelected: (String) -> Unit,
     onOpenInventory: () -> Unit,
     onOpenStore: () -> Unit,
@@ -155,6 +163,17 @@ fun AdminDashboardScreen(
             },
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val hasUpdate = appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE
+                    IconButton(
+                        onClick = onOpenAppUpdate,
+                        modifier = Modifier.testTag("admin_app_update_button")
+                    ) {
+                        Icon(
+                            imageVector = if (hasUpdate) Icons.Default.NewReleases else Icons.Default.SystemUpdate,
+                            contentDescription = if (hasUpdate) "New App Version Available" else "Check App System Update",
+                            tint = if (hasUpdate) Color(0xFFFFD54F) else Color.White
+                        )
+                    }
                     IconButton(
                         onClick = onToggleDarkMode,
                         modifier = Modifier.testTag("admin_dark_mode_toggle")
@@ -184,6 +203,15 @@ fun AdminDashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (appUpdateState.shouldShowBanner) {
+                item {
+                    AppUpdateBanner(
+                        state = appUpdateState,
+                        onOpenUpdateDialog = onOpenAppUpdate,
+                        onDismiss = onDismissAppUpdateBanner
+                    )
+                }
+            }
             if (isReadOnly) {
                 item {
                     Surface(

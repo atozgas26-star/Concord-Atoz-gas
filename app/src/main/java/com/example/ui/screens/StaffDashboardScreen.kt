@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LockClock
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material.icons.filled.PropaneTank
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -75,7 +77,10 @@ import com.example.data.model.StoreStockRow
 import com.example.data.model.TransactionDisplayItem
 import com.example.data.model.TransactionType
 import com.example.data.model.VehicleStockRow
+import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
+import com.example.update.AppUpdateStatus
+import com.example.update.AppUpdateUiState
 import com.example.ui.components.CategoryFilterRow
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.KpiMetricCard
@@ -123,6 +128,9 @@ fun StaffDashboardScreen(
         emptyQty: Int,
         notes: String
     ) -> Unit = { _, _, _, _, _, _ -> },
+    appUpdateState: AppUpdateUiState = AppUpdateUiState(),
+    onOpenAppUpdate: () -> Unit = {},
+    onDismissAppUpdateBanner: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
@@ -198,6 +206,17 @@ fun StaffDashboardScreen(
                         }
                         Spacer(Modifier.width(4.dp))
                     }
+                    val hasUpdate = appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE
+                    IconButton(
+                        onClick = onOpenAppUpdate,
+                        modifier = Modifier.testTag("staff_app_update_button")
+                    ) {
+                        Icon(
+                            imageVector = if (hasUpdate) Icons.Default.NewReleases else Icons.Default.SystemUpdate,
+                            contentDescription = if (hasUpdate) "New App Version Available" else "Check App System Update",
+                            tint = if (hasUpdate) Color(0xFFFFD54F) else Color.White
+                        )
+                    }
                     IconButton(
                         onClick = onToggleDarkMode,
                         modifier = Modifier.testTag("staff_dark_mode_toggle")
@@ -238,6 +257,13 @@ fun StaffDashboardScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (appUpdateState.shouldShowBanner) {
+                AppUpdateBanner(
+                    state = appUpdateState,
+                    onOpenUpdateDialog = onOpenAppUpdate,
+                    onDismiss = onDismissAppUpdateBanner
+                )
+            }
             DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
 
             // Daily Closing Balance Summary Cards

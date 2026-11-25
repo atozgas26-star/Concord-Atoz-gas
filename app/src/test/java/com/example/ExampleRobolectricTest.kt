@@ -30,6 +30,8 @@ import com.example.permissions.AppPermissionsManager
 import com.example.ui.components.QuickCalculatorEngine
 import com.example.ui.components.QuickCalculatorState
 import com.example.ui.viewmodel.AppViewModel
+import com.example.update.AppUpdateManager
+import com.example.update.AppUpdateStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -1718,5 +1720,158 @@ class ExampleRobolectricTest {
         ReportExporter.writeXlsx(purchaseMonthlyEmirates, purchaseXlsxOut)
         val purchaseBytes = purchaseXlsxOut.toByteArray()
         assertTrue(purchaseBytes.size > 100 && purchaseBytes[0] == 0x50.toByte() && purchaseBytes[1] == 0x4B.toByte())
+    }
+
+    @Test
+    fun `app system update manager compares semver, enforces trusted github release urls, and updates viewmodel state`() = runTest {
+        assertEquals("1.7.0", BuildConfig.VERSION_NAME)
+        assertEquals(7, BuildConfig.VERSION_CODE)
+
+        // 1. Semantic version comparisons
+        assertTrue(AppUpdateManager.compareSemVer("v1.8.0", "1.7.0") > 0)
+        assertEquals(0, AppUpdateManager.compareSemVer("v1.7.0", "1.7.0"))
+        assertTrue(AppUpdateManager.compareSemVer("v1.6.0", "1.7.0") < 0)
+        assertTrue(AppUpdateManager.compareSemVer("1.10.0", "1.9.5") > 0)
+        assertEquals("1.8.0", AppUpdateManager.normalizeVersion("v1.8.0-beta1"))
+
+        // 2. Strict trusted HTTPS release URL validation
+        assertTrue(
+            AppUpdateManager.isTrustedReleaseUrl(
+                "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk"
+            )
+        )
+        assertTrue(
+            AppUpdateManager.isTrustedReleaseUrl(
+                "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.8.0"
+            )
+        )
+        assertFalse(
+            AppUpdateManager.isTrustedReleaseUrl(
+                "http://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk"
+            )
+        )
+        assertFalse(
+            AppUpdateManager.isTrustedReleaseUrl(
+                "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk"
+            )
+        )
+        assertFalse(
+            AppUpdateManager.isTrustedReleaseUrl("javascript:alert(1)")
+        )
+        assertFalse(
+            AppUpdateManager.isTrustedReleaseUrl(
+                "https://github.com/other-org/other-repo/releases/download/v1.8.0/app.apk"
+            )
+        )
+        assertFalse(
+            AppUpdateManager.isTrustedReleaseUrl(
+                "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/../../other/evil.apk"
+            )
+        )
+        assertFalse(
+            AppUpdateManager.isTrustedReleaseUrl(
+                "https://user@github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.8.0"
+            )
+        )
+
+        // 3. Mocked GitHub Releases API responses driven through AppViewModel
+        var mockedCode = 200
+        var mockedBody = """
+            {
+              "tag_name": "v1.8.0",
+              "name": "C&A Gas v1.8.0",
+              "body": "Added offline sync enhancements and invoice fixes.",
+              "published_at": "2026-12-01T10:00:00Z",
+              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.8.0",
+              "assets": [
+                {
+                  "name": "tampered.apk",
+                  "browser_download_url": "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/tampered.apk",
+                  "size": 1048576
+                },
+                {
+                  "name": "CA-Gas-v1.8.0.apk",
+                  "browser_download_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk",
+                  "size": 31457280
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val mockClient = OkHttpClient.Builder()
+            .addInterceptor(Interceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(mockedCode)
+                    .message(if (mockedCode == 200) "OK" else "Error")
+                    .body(mockedBody.toResponseBody("application/json".toMediaType()))
+                    .build()
+            })
+            .build()
+
+        val updateManager = AppUpdateManager(httpClient = mockClient)
+        val prefs = SessionPreferences(context)
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = null,
+            appContext = context,
+            appUpdateManager = updateManager
+        )
+
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+
+        // Case A: Newer release v1.8.0 available -> skips tampered asset URL, picks trusted official APK URL
+        vm.checkForAppUpdate(silent = false)
+        waitUntil { !vm.appUpdateState.value.isChecking && vm.appUpdateState.value.status != AppUpdateStatus.IDLE }
+        val available = vm.appUpdateState.value
+        assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, available.status)
+        assertEquals("1.8.0", available.latestVersion)
+        assertTrue(available.shouldShowBanner)
+        assertEquals(
+            "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk",
+            available.downloadUrl
+        )
+        assertEquals(30.0, available.apkSizeMb ?: 0.0, 0.1)
+        assertTrue(available.releaseNotes.contains("offline sync"))
+
+        // Dismiss banner hides banner while keeping update status
+        vm.dismissAppUpdateBanner()
+        assertFalse(vm.appUpdateState.value.shouldShowBanner)
+        assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, vm.appUpdateState.value.status)
+
+        // Case B: Up-to-date release v1.7.0
+        mockedBody = """
+            {
+              "tag_name": "v1.7.0",
+              "name": "C&A Gas v1.7.0",
+              "body": "Current version.",
+              "published_at": "2026-11-25T10:00:00Z",
+              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.7.0",
+              "assets": []
+            }
+        """.trimIndent()
+        vm.checkForAppUpdate(silent = false)
+        waitUntil { !vm.appUpdateState.value.isChecking && vm.appUpdateState.value.status == AppUpdateStatus.UP_TO_DATE }
+        assertEquals(AppUpdateStatus.UP_TO_DATE, vm.appUpdateState.value.status)
+        assertFalse(vm.appUpdateState.value.shouldShowBanner)
+
+        // Case C: Server HTTP 500 error
+        mockedCode = 500
+        mockedBody = """{"message": "Internal Error"}"""
+        vm.checkForAppUpdate(silent = false)
+        waitUntil { !vm.appUpdateState.value.isChecking && vm.appUpdateState.value.status == AppUpdateStatus.ERROR }
+        assertEquals(AppUpdateStatus.ERROR, vm.appUpdateState.value.status)
+        assertNotNull(vm.appUpdateState.value.errorMessage)
     }
 }
