@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.ConcordDatabase
+import com.example.data.local.SessionPreferences
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ReportType
@@ -19,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -266,5 +268,153 @@ class ExampleRobolectricTest {
             newVehicleName = "SAJAN"
         )
         assertTrue(dupRes is OperationResult.ValidationError)
+    }
+
+    @Test
+    fun `customer empty pending balance, combo sale, and manual pending addition calculate accurately`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val nadeemVehicle = repository.vehiclesFlow.first().first { it.staffUserId == nadeem.id }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        val day = "2026-11-25"
+
+        repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, oxygen.id, day, 30, 5, admin)
+        repository.recordTransaction(day, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, nadeemVehicle.id, admin, 20, "")
+
+        // Sale 10 full cylinders to "Al Noor Hotel" with 4 empties collected now -> Pending = +6
+        val comboRes = repository.recordCustomerSaleWithEmpty(
+            businessDate = day,
+            productId = oxygen.id,
+            vehicleId = nadeemVehicle.id,
+            actor = nadeem,
+            saleQty = 10,
+            emptyCollectedNow = 4,
+            customerName = "Al Noor Hotel",
+            notes = "Inv 101"
+        )
+        assertTrue(comboRes is OperationResult.Success)
+
+        // Add 3 manual pending empties (previous balance) -> Pending = 6 + 3 = 9
+        val manualRes = repository.recordTransaction(
+            businessDate = day,
+            type = TransactionType.CUSTOMER_EMPTY_PENDING_ADD,
+            productId = oxygen.id,
+            vehicleId = nadeemVehicle.id,
+            actor = nadeem,
+            quantity = 3,
+            notes = "Opening empty pending",
+            customerName = "Al Noor Hotel"
+        )
+        assertTrue(manualRes is OperationResult.Success)
+
+        // Physical vehicle stock should ignore CUSTOMER_EMPTY_PENDING_ADD:
+        // FullBal = 20 - 10 = 10, EmptyBal = 4
+        val vehRow = repository.observeVehicleStock(nadeemVehicle.id, day).first().first { it.product.id == oxygen.id }
+        assertEquals(10, vehRow.fullBalance)
+        assertEquals(4, vehRow.emptyBalance)
+
+        // Customer pending balance should be 10 + 3 - 4 = 9
+        val pendingList = repository.observeCustomerPendingBalances(nadeemVehicle.id).first()
+        assertEquals(1, pendingList.size)
+        val hotel = pendingList.first()
+        assertEquals("Al Noor Hotel", hotel.customerName)
+        assertEquals(10, hotel.fullSold)
+        assertEquals(3, hotel.manualPendingAdded)
+        assertEquals(4, hotel.emptyCollected)
+        assertEquals(9, hotel.pendingEmptyBalance)
+
+        // Backup preserves customerName and CUSTOMER_EMPTY_PENDING_ADD
+        val json = backupManager.exportBackupJson()
+        assertTrue(backupManager.restoreBackupJson(json) is OperationResult.Success)
+        val restoredPending = repository.observeCustomerPendingBalances(nadeemVehicle.id).first().first()
+        assertEquals(9, restoredPending.pendingEmptyBalance)
+    }
+
+    @Test
+    fun `editing recorded transactions updates supplier, customer, quantity and blocks negative stock`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val sivanVeh = repository.vehiclesFlow.first().first { it.name == "SIVAN" }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        val day = "2026-11-25"
+
+        // Purchase 12 full from Supplier A
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = day,
+                type = TransactionType.STORE_PURCHASE_FULL,
+                productId = oxygen.id,
+                vehicleId = null,
+                actor = admin,
+                quantity = 12,
+                notes = "Initial bill",
+                purchaseCompanyName = "Supplier A"
+            ) is OperationResult.Success
+        )
+        // Dispatch 10 to SIVAN -> Store Full = 2
+        assertTrue(
+            repository.recordTransaction(day, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, sivanVeh.id, admin, 10, "")
+                is OperationResult.Success
+        )
+
+        val purchaseTx = repository.transactionsFlow.first().first { it.type == TransactionType.STORE_PURCHASE_FULL }
+
+        // Reducing purchase from 12 down to 8 would make Store Full = -2 -> must fail
+        val invalidEdit = repository.updateTransaction(
+            transactionId = purchaseTx.id,
+            newProductId = oxygen.id,
+            newQuantity = 8,
+            newPurchaseCompanyName = "Emirates Gas",
+            newCustomerName = "",
+            newNotes = "Too low",
+            admin = admin
+        )
+        assertTrue(invalidEdit is OperationResult.InsufficientStock)
+
+        // Valid edit: change quantity to 15 and supplier name to "ADNOC Gas" -> Store Full = 5
+        val validEdit = repository.updateTransaction(
+            transactionId = purchaseTx.id,
+            newProductId = oxygen.id,
+            newQuantity = 15,
+            newPurchaseCompanyName = "ADNOC Gas",
+            newCustomerName = "",
+            newNotes = "Corrected bill",
+            admin = admin
+        )
+        assertTrue(validEdit is OperationResult.Success)
+        val storeRow = repository.observeStoreStock(day).first().first { it.product.id == oxygen.id }
+        assertEquals(5, storeRow.storeFullBalance)
+        val updatedTx = repository.transactionsFlow.first().first { it.id == purchaseTx.id }
+        assertEquals("ADNOC Gas", updatedTx.purchaseCompanyName)
+        assertEquals("Corrected bill", updatedTx.notes)
+    }
+
+    @Test
+    fun `admin can add up to 10 plus vehicles and staff logins and session preference persists`() = runTest {
+        repository.initializeDatabase()
+
+        assertTrue(repository.addStaffAndVehicle("Imran", "TRUCK 8", "1008") is OperationResult.Success)
+        assertTrue(repository.addStaffAndVehicle("Raju", "TRUCK 9", "1009") is OperationResult.Success)
+        assertTrue(repository.addStaffAndVehicle("Karim", "TRUCK 10", "1010") is OperationResult.Success)
+
+        val vehicles = repository.vehiclesFlow.first()
+        val users = repository.usersFlow.first()
+        assertEquals(10, vehicles.size)
+        assertEquals(11, users.size) // 1 Admin + 10 Staff
+
+        val karimUser = users.first { it.displayName == "Karim" }
+        val session = repository.authenticate(karimUser.id, "1010")
+        assertNotNull(session)
+        assertEquals("TRUCK 10", session!!.assignedVehicle!!.name)
+
+        // Verify one-time open login persistence via SessionPreferences
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        assertNull(prefs.getLoggedInUserId())
+        prefs.saveLoggedInUserId(karimUser.id)
+        assertEquals(karimUser.id, prefs.getLoggedInUserId())
+        prefs.clearLoggedInUserId()
+        assertNull(prefs.getLoggedInUserId())
     }
 }

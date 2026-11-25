@@ -35,6 +35,9 @@ interface UserDao {
     @Query("UPDATE user_accounts SET displayName = :newDisplayName WHERE id = :userId")
     suspend fun updateDisplayName(userId: Long, newDisplayName: String)
 
+    @Query("UPDATE user_accounts SET isActive = :isActive WHERE id = :userId")
+    suspend fun updateIsActive(userId: Long, isActive: Boolean)
+
     @Query("DELETE FROM user_accounts")
     suspend fun deleteAll()
 }
@@ -61,6 +64,9 @@ interface VehicleDao {
 
     @Query("UPDATE vehicles SET name = :newName WHERE id = :vehicleId")
     suspend fun updateName(vehicleId: Long, newName: String)
+
+    @Query("UPDATE vehicles SET isActive = :isActive WHERE id = :vehicleId")
+    suspend fun updateIsActive(vehicleId: Long, isActive: Boolean)
 
     @Query("DELETE FROM vehicles")
     suspend fun deleteAll()
@@ -157,6 +163,9 @@ interface TransactionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(txs: List<StockTransactionEntity>)
+
+    @Update
+    suspend fun update(tx: StockTransactionEntity)
 
     @Query("UPDATE stock_transactions SET remoteId = :remoteId WHERE id = :id")
     suspend fun updateRemoteId(id: Long, remoteId: String)

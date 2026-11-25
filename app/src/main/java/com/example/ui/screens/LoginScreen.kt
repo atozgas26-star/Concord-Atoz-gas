@@ -232,7 +232,7 @@ fun LoginScreen(
                 ) {
                     RoleToggleButton(
                         title = "Staff Login",
-                        subtitle = "7 Vehicle Accounts",
+                        subtitle = "${staffUsers.size} Vehicle Accounts",
                         icon = Icons.Default.LocalShipping,
                         selected = selectedRole == UserRole.STAFF,
                         onClick = { selectedRole = UserRole.STAFF },
@@ -578,7 +578,7 @@ private fun CloudSyncStatusBanner(
                                 is WorkspaceConnectionState.Connected ->
                                     "Online Sync Active (${workspaceState.memberCount} device${if (workspaceState.memberCount == 1) "" else "s"})"
                                 is WorkspaceConnectionState.NeedsSetup ->
-                                    "Connect Device to 7-Staff Online Sync"
+                                    "Connect Device to Online Sync"
                                 is WorkspaceConnectionState.Error ->
                                     "Cloud Sync Reconnecting"
                                 WorkspaceConnectionState.Checking ->
@@ -612,7 +612,7 @@ private fun CloudSyncStatusBanner(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "7-Staff Invite Code: ${workspaceState.inviteCode}  •  Share with staff phones for live sync",
+                            text = "Staff Invite Code: ${workspaceState.inviteCode}  •  Share with staff phones for live sync",
                             style = MaterialTheme.typography.labelSmall,
                             color = BrandGreenOnContainer,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)

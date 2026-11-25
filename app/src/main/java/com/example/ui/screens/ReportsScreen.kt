@@ -86,9 +86,7 @@ fun ReportsScreen(
     var selectedReport by remember { mutableStateOf(ReportType.DAILY_STORE) }
     var vehicleFilterId by remember { mutableStateOf<Long?>(null) }
 
-    val table = remember(selectedReport, selectedDate, selectedYearMonth, vehicleFilterId, selectedVehicleId) {
-        buildReportTable(selectedReport, vehicleFilterId)
-    }
+    val table = buildReportTable(selectedReport, vehicleFilterId)
 
     // SAF launchers to save PDF / Excel directly to user's chosen location (Play-policy compliant)
     val savePdfLauncher = rememberLauncherForActivityResult(
@@ -199,8 +197,8 @@ fun ReportsScreen(
                 }
             }
 
-            // Vehicle filter for Daily Vehicle Report
-            if (selectedReport == ReportType.DAILY_VEHICLE) {
+            // Vehicle filter for Daily Vehicle & Customer Pending Reports
+            if (selectedReport == ReportType.DAILY_VEHICLE || selectedReport == ReportType.CUSTOMER_PENDING) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -213,7 +211,7 @@ fun ReportsScreen(
                             vehicleFilterId = null
                             onSelectVehicle(null)
                         },
-                        label = { Text("All 7 Vehicles") }
+                        label = { Text("All ${vehicles.size} Vehicles") }
                     )
                     vehicles.forEach { v ->
                         FilterChip(

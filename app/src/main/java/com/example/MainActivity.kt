@@ -106,7 +106,8 @@ class MainActivity : ComponentActivity() {
                             factory = AppViewModel.Factory(
                                 repository = app.container.repository,
                                 backupManager = app.container.backupManager,
-                                cloudSync = app.container.cloudSyncRepository
+                                cloudSync = app.container.cloudSyncRepository,
+                                sessionPreferences = app.container.sessionPreferences
                             )
                         )
                         ConcordGasRootApp(
@@ -147,6 +148,10 @@ fun ConcordGasRootApp(
     val staffVehicleRows by viewModel.staffVehicleRows.collectAsStateWithLifecycle()
     val allTransactions by viewModel.allTransactionDisplayItems.collectAsStateWithLifecycle()
     val recentPurchaseCompanies by viewModel.recentPurchaseCompanies.collectAsStateWithLifecycle()
+    val recentCustomerNames by viewModel.recentCustomerNames.collectAsStateWithLifecycle()
+    val allCustomerPendingRows by viewModel.allCustomerPendingRows.collectAsStateWithLifecycle()
+    val selectedVehiclePendingRows by viewModel.selectedVehiclePendingRows.collectAsStateWithLifecycle()
+    val staffVehiclePendingRows by viewModel.staffVehiclePendingRows.collectAsStateWithLifecycle()
     val warningAlert by viewModel.warningAlert.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
 
@@ -220,9 +225,21 @@ fun ConcordGasRootApp(
                     storeRows = storeRows,
                     products = activeProducts,
                     allTransactions = allTransactions,
+                    pendingCustomers = staffVehiclePendingRows,
+                    recentCustomerNames = recentCustomerNames,
                     isOnlineSynced = workspaceState is WorkspaceConnectionState.Connected,
                     onDateSelected = viewModel::setSelectedDate,
-                    onRecordTransaction = viewModel::recordTransaction,
+                    onRecordTransaction = { type, pId, vId, qty, notes, custName, empNow ->
+                        viewModel.recordTransaction(
+                            type = type,
+                            productId = pId,
+                            vehicleId = vId,
+                            quantity = qty,
+                            notes = notes,
+                            customerName = custName,
+                            emptyCollectedNow = empNow
+                        )
+                    },
                     onLogout = viewModel::logout
                 )
             }
@@ -317,9 +334,24 @@ fun ConcordGasRootApp(
                                 rows = selectedVehicleRows,
                                 storeRows = storeRows,
                                 products = activeProducts,
+                                transactions = allTransactions,
+                                pendingCustomers = selectedVehiclePendingRows,
+                                recentCustomerNames = recentCustomerNames,
                                 onDateSelected = viewModel::setSelectedDate,
                                 onBack = { viewingVehicleDetail = false },
-                                onRecordTransaction = viewModel::recordTransaction,
+                                onRecordTransaction = { type, pId, vId, qty, notes, custName, empNow ->
+                                    viewModel.recordTransaction(
+                                        type = type,
+                                        productId = pId,
+                                        vehicleId = vId,
+                                        quantity = qty,
+                                        notes = notes,
+                                        customerName = custName,
+                                        emptyCollectedNow = empNow
+                                    )
+                                },
+                                onUpdateTransaction = viewModel::updateTransaction,
+                                onDeleteTransaction = viewModel::deleteTransaction,
                                 onUpdateVehicleOpening = { vId, pId, oldFull, oldEmpty ->
                                     viewModel.updateOpeningStock(
                                         scope = StockCalculator.SCOPE_VEHICLE,
@@ -336,6 +368,9 @@ fun ConcordGasRootApp(
                                     adminName = session.user.displayName,
                                     selectedDate = selectedDate,
                                     summary = dashboardSummary,
+                                    products = allProducts,
+                                    pendingCustomerCount = allCustomerPendingRows.count { it.pendingEmptyBalance > 0 },
+                                    totalPendingEmptyCount = allCustomerPendingRows.sumOf { it.pendingEmptyBalance.coerceAtLeast(0) },
                                     onDateSelected = viewModel::setSelectedDate,
                                     onOpenInventory = { viewingCompanyInventory = true },
                                     onOpenStore = { currentTab = AdminNavTab.STORE },
@@ -346,6 +381,7 @@ fun ConcordGasRootApp(
                                         viewingVehicleDetail = true
                                     },
                                     onOpenReports = { currentTab = AdminNavTab.REPORTS },
+                                    onUpdateTransaction = viewModel::updateTransaction,
                                     onLogout = viewModel::logout
                                 )
 
@@ -353,11 +389,23 @@ fun ConcordGasRootApp(
                                     selectedDate = selectedDate,
                                     storeRows = storeRows,
                                     products = activeProducts,
+                                    allProducts = allProducts,
                                     vehicles = vehicles,
                                     transactions = allTransactions,
                                     recentPurchaseCompanies = recentPurchaseCompanies,
+                                    recentCustomerNames = recentCustomerNames,
                                     onDateSelected = viewModel::setSelectedDate,
-                                    onRecordTransaction = viewModel::recordTransaction,
+                                    onRecordTransaction = { type, pId, vId, qty, notes, company, custName ->
+                                        viewModel.recordTransaction(
+                                            type = type,
+                                            productId = pId,
+                                            vehicleId = vId,
+                                            quantity = qty,
+                                            notes = notes,
+                                            purchaseCompanyName = company,
+                                            customerName = custName
+                                        )
+                                    },
                                     onUpdateOpeningStock = { productId, full, empty ->
                                         viewModel.updateOpeningStock(
                                             scope = StockCalculator.SCOPE_STORE,
@@ -367,6 +415,7 @@ fun ConcordGasRootApp(
                                             openingEmpty = empty
                                         )
                                     },
+                                    onUpdateTransaction = viewModel::updateTransaction,
                                     onDeleteTransaction = viewModel::deleteTransaction
                                 )
 
@@ -377,7 +426,8 @@ fun ConcordGasRootApp(
                                     onSelectVehicle = { vehicleId ->
                                         viewModel.selectVehicle(vehicleId)
                                         viewingVehicleDetail = true
-                                    }
+                                    },
+                                    onAddStaffAndVehicle = viewModel::addStaffAndVehicle
                                 )
 
                                 AdminNavTab.REPORTS -> ReportsScreen(
@@ -400,6 +450,7 @@ fun ConcordGasRootApp(
                                     workspaceState = workspaceState,
                                     onSyncNow = viewModel::syncNow,
                                     onGoogleSignOut = handleGoogleSignOut,
+                                    onAddStaffAndVehicle = viewModel::addStaffAndVehicle,
                                     onUpdateStaffName = viewModel::updateStaffName,
                                     onUpdatePin = viewModel::updateUserPin,
                                     onAddProduct = viewModel::addProduct,

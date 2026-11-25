@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
@@ -41,6 +42,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,9 +55,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.local.ProductEntity
+import com.example.data.local.StockTransactionEntity
 import com.example.data.model.DashboardSummary
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.StockPill
 import com.example.ui.theme.AmberContainer
@@ -77,14 +85,20 @@ fun AdminDashboardScreen(
     adminName: String,
     selectedDate: String,
     summary: DashboardSummary?,
+    products: List<ProductEntity> = emptyList(),
+    pendingCustomerCount: Int = 0,
+    totalPendingEmptyCount: Int = 0,
     onDateSelected: (String) -> Unit,
     onOpenInventory: () -> Unit,
     onOpenStore: () -> Unit,
     onOpenVehicles: () -> Unit,
     onOpenVehicleDetail: (Long) -> Unit,
     onOpenReports: () -> Unit,
+    onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onLogout: () -> Unit
 ) {
+    var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
             title = "CONCORD & A TO Z GAS",
@@ -152,7 +166,7 @@ fun AdminDashboardScreen(
                         )
                         QuickNavCard(
                             title = "Vehicles",
-                            subtitle = summary?.let { "${it.vehicleOverviews.size} Active Fleet" } ?: "7 Vehicles",
+                            subtitle = summary?.let { "${it.vehicleOverviews.size} Active Fleet" } ?: "All Vehicles",
                             icon = Icons.Default.LocalShipping,
                             accentColor = BrandRedSecondary,
                             containerColor = BrandRedContainer,
@@ -162,6 +176,52 @@ fun AdminDashboardScreen(
                                 .weight(1f)
                                 .testTag("quick_nav_vehicles")
                         )
+                    }
+                }
+            }
+
+            if (pendingCustomerCount > 0 || totalPendingEmptyCount > 0) {
+                item {
+                    Card(
+                        onClick = onOpenReports,
+                        colors = CardDefaults.cardColors(containerColor = BrandRedContainer),
+                        border = BorderStroke(1.dp, BrandRedSecondary)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(
+                                    imageVector = Icons.Default.Recycling,
+                                    contentDescription = "Customer Pending Empty",
+                                    tint = BrandRedOnContainer
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Customer Pending Empty Balance",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = BrandRedOnContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "$pendingCustomerCount customers owe $totalPendingEmptyCount empty cylinders",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = BrandRedOnContainer
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "View",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandRedSecondary
+                            )
+                        }
                     }
                 }
             }
@@ -270,7 +330,7 @@ fun AdminDashboardScreen(
                 // Vehicle-Wise Stock Section
                 item {
                     Text(
-                        text = "Vehicle-Wise Stock (7 Vehicles)",
+                        text = "Vehicle-Wise Stock (${summary.vehicleOverviews.size} Vehicles)",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(top = 4.dp)
                     )
@@ -402,18 +462,38 @@ fun AdminDashboardScreen(
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
+                                    if (tx.customerName.isNotBlank()) {
+                                        Text(
+                                            text = "Customer: ${tx.customerName}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = BrandRedSecondary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
-                                Surface(
-                                    color = BrandGreenContainer,
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(
-                                        text = "×${tx.quantity}",
-                                        fontFamily = JetBrainsMono,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BrandGreenOnContainer,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = BrandGreenContainer,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "×${tx.quantity}",
+                                            fontFamily = JetBrainsMono,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BrandGreenOnContainer,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    if (products.isNotEmpty()) {
+                                        IconButton(onClick = { editingTransaction = tx }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Edit transaction",
+                                                tint = BrandGreenPrimary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -421,6 +501,17 @@ fun AdminDashboardScreen(
                 }
             }
         }
+    }
+
+    editingTransaction?.let { tx ->
+        EditTransactionDialog(
+            transaction = tx,
+            products = products,
+            onDismiss = { editingTransaction = null },
+            onConfirm = { prodId, qty, company, custName, notes ->
+                onUpdateTransaction(tx.id, prodId, qty, company, custName, notes)
+            }
+        )
     }
 }
 
@@ -484,4 +575,3 @@ private fun QuickNavCard(
         }
     }
 }
-

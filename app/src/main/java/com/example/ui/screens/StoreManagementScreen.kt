@@ -12,17 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.AddBusiness
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Input
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Outbox
 import androidx.compose.material.icons.filled.Search
@@ -57,6 +56,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
+import com.example.data.local.StockTransactionEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.ProductCategory
 import com.example.data.model.StockCalculator
@@ -66,6 +66,7 @@ import com.example.data.model.TransactionType
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFilterRow
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.OpeningStockEditDialog
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
@@ -101,12 +102,15 @@ fun StoreManagementScreen(
     selectedDate: String,
     storeRows: List<StoreStockRow>,
     products: List<ProductEntity>,
+    allProducts: List<ProductEntity> = products,
     vehicles: List<VehicleEntity>,
     transactions: List<TransactionDisplayItem>,
     recentPurchaseCompanies: List<String> = emptyList(),
+    recentCustomerNames: List<String> = emptyList(),
     onDateSelected: (String) -> Unit,
-    onRecordTransaction: (TransactionType, Long, Long?, Int, String, String) -> Unit,
+    onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, String) -> Unit,
     onUpdateOpeningStock: (productId: Long, full: Int, empty: Int) -> Unit,
+    onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onDeleteTransaction: (Long) -> Unit
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
@@ -115,6 +119,7 @@ fun StoreManagementScreen(
     var activeModal by remember { mutableStateOf<StoreModalAction?>(null) }
     var showAdjustmentPicker by remember { mutableStateOf(false) }
     var editingOpeningRow by remember { mutableStateOf<StoreStockRow?>(null) }
+    var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
 
     val filteredRows = remember(storeRows, selectedCategory, searchQuery) {
@@ -163,13 +168,13 @@ fun StoreManagementScreen(
                 StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, BrandRedSecondary) {
                     activeModal = StoreModalAction.FULL_DISPATCH_VEHICLE
                 }
-                StoreActionChip("Empty Recd (Veh)", Icons.Default.Input, BrandGreenPrimary) {
+                StoreActionChip("Empty Recd (Veh)", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
                     activeModal = StoreModalAction.EMPTY_RECEIVED_VEHICLE
                 }
-                StoreActionChip("Full Inward", Icons.Default.Input, BrandGreenPrimary) {
+                StoreActionChip("Full Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
                     activeModal = StoreModalAction.FULL_INWARD
                 }
-                StoreActionChip("Empty Inward", Icons.Default.Input, BrandGreenPrimary) {
+                StoreActionChip("Empty Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
                     activeModal = StoreModalAction.EMPTY_INWARD
                 }
                 StoreActionChip("Direct Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
@@ -278,6 +283,14 @@ fun StoreManagementScreen(
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
+                                    if (tx.customerName.isNotBlank()) {
+                                        Text(
+                                            text = "Customer: ${tx.customerName}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = BrandRedSecondary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                     if (tx.notes.isNotBlank()) {
                                         Text(
                                             text = "Note: ${tx.notes}",
@@ -285,6 +298,16 @@ fun StoreManagementScreen(
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                     }
+                                }
+                                IconButton(
+                                    onClick = { editingTransaction = tx },
+                                    modifier = Modifier.testTag("edit_tx_${tx.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit transaction",
+                                        tint = BrandGreenPrimary
+                                    )
                                 }
                                 IconButton(
                                     onClick = { deleteCandidateId = tx.id },
@@ -367,6 +390,7 @@ fun StoreManagementScreen(
 
         val isPurchaseAction = txType == TransactionType.STORE_PURCHASE_FULL ||
             txType == TransactionType.STORE_PURCHASE_EMPTY
+        val showCustField = txType == TransactionType.STORE_FULL_DISPATCH_DIRECT
 
         TransactionEntryDialog(
             title = title,
@@ -376,13 +400,62 @@ fun StoreManagementScreen(
             requireVehicleSelection = needsVehicle,
             showPurchaseCompanyField = isPurchaseAction,
             recentPurchaseCompanies = recentPurchaseCompanies,
+            showCustomerNameField = showCustField,
+            recentCustomerNames = recentCustomerNames,
             availableStockHint = { productId, _ ->
                 val row = storeRows.firstOrNull { it.product.id == productId }
                 row?.let { "Store Available -> Full: ${it.storeFullBalance}  |  Empty: ${it.storeEmptyBalance}" }
             },
+            liveCalculationPreview = { productId, _, qty, _ ->
+                val row = storeRows.firstOrNull { it.product.id == productId }
+                if (row == null || qty <= 0) null
+                else {
+                    val previewTx = StockTransactionEntity(
+                        businessDate = selectedDate,
+                        timestamp = 0L,
+                        type = txType,
+                        productId = productId,
+                        vehicleId = null,
+                        vehicleName = null,
+                        staffId = 0L,
+                        staffName = "",
+                        quantity = qty,
+                        notes = ""
+                    )
+                    val fDelta = StockCalculator.storeFullDelta(previewTx)
+                    val eDelta = StockCalculator.storeEmptyDelta(previewTx)
+                    val newFull = row.storeFullBalance + fDelta
+                    val newEmpty = row.storeEmptyBalance + eDelta
+                    buildString {
+                        append("Store Calculate: ")
+                        if (fDelta != 0) {
+                            append("Full ${row.storeFullBalance} -> $newFull")
+                        }
+                        if (fDelta != 0 && eDelta != 0) append("  |  ")
+                        if (eDelta != 0) {
+                            append("Empty ${row.storeEmptyBalance} -> $newEmpty")
+                        }
+                        if (newFull < 0 || newEmpty < 0) {
+                            append(" (Insufficient!)")
+                        }
+                    }
+                }
+            },
             onDismiss = { activeModal = null },
-            onConfirm = { productId, vehicleId, qty, notes, purchaseCompany ->
-                onRecordTransaction(txType, productId, vehicleId, qty, notes, purchaseCompany)
+            onConfirm = { productId, vehicleId, qty, notes, purchaseCompany, custName, _ ->
+                onRecordTransaction(txType, productId, vehicleId, qty, notes, purchaseCompany, custName)
+            }
+        )
+    }
+
+    // Edit Recorded Transaction Dialog
+    editingTransaction?.let { tx ->
+        EditTransactionDialog(
+            transaction = tx,
+            products = allProducts,
+            onDismiss = { editingTransaction = null },
+            onConfirm = { prodId, qty, company, custName, notes ->
+                onUpdateTransaction(tx.id, prodId, qty, company, custName, notes)
             }
         )
     }

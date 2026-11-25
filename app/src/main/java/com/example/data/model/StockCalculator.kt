@@ -244,6 +244,7 @@ object StockCalculator {
         TransactionType.VEHICLE_ADJUST_EMPTY_IN -> tx.quantity
         TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
         TransactionType.VEHICLE_ADJUST_EMPTY_OUT -> -tx.quantity
+        TransactionType.CUSTOMER_EMPTY_PENDING_ADD -> 0
         else -> 0
     }
 }

@@ -15,6 +15,9 @@ class AppContainer(application: Application) {
     val cloudSyncRepository: CloudSyncRepository by lazy {
         CloudSyncRepository(firestore, database)
     }
+    val sessionPreferences: com.example.data.local.SessionPreferences by lazy {
+        com.example.data.local.SessionPreferences(application)
+    }
     val repository: InventoryRepository by lazy {
         InventoryRepository(database, cloudSyncRepository)
     }

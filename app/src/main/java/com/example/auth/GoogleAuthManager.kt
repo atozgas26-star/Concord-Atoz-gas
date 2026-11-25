@@ -373,7 +373,7 @@ fun GoogleAuthScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "7 Staff Online Entry, Store & Vehicle Cloud Sync",
+                        text = "Fleet Online Entry, Store & Vehicle Cloud Sync",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.88f)
                     )
@@ -423,7 +423,7 @@ fun GoogleAuthScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Sync entries live across all 7 staff vehicles & Admin",
+                                    text = "Sync entries live across all staff vehicles & Admin",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -448,7 +448,7 @@ fun GoogleAuthScreen(
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Text(
-                                    text = "After signing in with Google, staff members select their vehicle (Nadeem, Fazalamin, Fawad, Ragavan, Sivan, Jinu, SAJAN) with their 4-digit PIN.",
+                                    text = "Sign in with Google once, then pick your assigned vehicle account with your 4-digit PIN (stays signed in until you log out).",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

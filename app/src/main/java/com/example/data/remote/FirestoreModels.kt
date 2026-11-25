@@ -239,6 +239,7 @@ data class CloudStockTransaction(
     val staffName: String = "",
     val quantity: Int = 0,
     val purchaseCompanyName: String = "",
+    val customerName: String = "",
     val notes: String = "",
     val createdByUid: String = "",
     val memberUids: List<String> = emptyList(),
@@ -261,6 +262,7 @@ data class CloudStockTransaction(
             staffName = staffName,
             quantity = quantity,
             purchaseCompanyName = purchaseCompanyName,
+            customerName = customerName,
             notes = notes,
             remoteId = slug
         )
@@ -285,6 +287,7 @@ data class CloudStockTransaction(
             "staffName" to entity.staffName,
             "quantity" to entity.quantity,
             "purchaseCompanyName" to entity.purchaseCompanyName.takeIf { it.isNotBlank() },
+            "customerName" to entity.customerName.takeIf { it.isNotBlank() },
             "notes" to entity.notes,
             "createdByUid" to uid,
             "memberUids" to memberUids,

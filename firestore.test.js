@@ -504,3 +504,91 @@ test("Purchase transactions with purchaseCompanyName and staff/vehicle name edit
       })
   );
 });
+
+test("Customer empty pending tracking and editing existing transactions follow rules", async () => {
+  const { adminDb } = await seedWorkspaceWithAdminAndInvite();
+  const members = [ADMIN_UID];
+
+  const txId = "tx_1700000009_cust_sale";
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc(txId)
+      .set({
+        clientTxId: txId,
+        businessDate: "2026-11-25",
+        clientTimestampMs: Date.now() - 1000,
+        type: "VEHICLE_CUSTOMER_SALE",
+        productId: 1,
+        vehicleId: 1,
+        vehicleName: "NADEEM",
+        staffId: 2,
+        staffName: "Nadeem",
+        quantity: 10,
+        customerName: "Al Noor Workshop",
+        notes: "4 empty pending",
+        createdByUid: ADMIN_UID,
+        memberUids: members,
+        createdAt: pastDate(1000),
+        updatedAt: pastDate(1000),
+      })
+  );
+
+  // Editing quantity, customerName, notes succeeds
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc(txId)
+      .update({
+        quantity: 12,
+        customerName: "Al Noor Auto Repair",
+        notes: "Updated quantity",
+        updatedAt: pastDate(400),
+      })
+  );
+
+  // Changing immutable type or clientTxId fails
+  await assertFails(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc(txId)
+      .update({
+        type: "STORE_PURCHASE_FULL",
+        updatedAt: pastDate(200),
+      })
+  );
+
+  // Manual CUSTOMER_EMPTY_PENDING_ADD succeeds
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("transactions")
+      .doc("tx_1700000010_pending")
+      .set({
+        clientTxId: "tx_1700000010_pending",
+        businessDate: "2026-11-25",
+        clientTimestampMs: Date.now() - 1000,
+        type: "CUSTOMER_EMPTY_PENDING_ADD",
+        productId: 1,
+        vehicleId: 1,
+        vehicleName: "NADEEM",
+        staffId: 2,
+        staffName: "Nadeem",
+        quantity: 3,
+        customerName: "Al Noor Auto Repair",
+        notes: "Opening pending",
+        createdByUid: ADMIN_UID,
+        memberUids: members,
+        createdAt: pastDate(1000),
+        updatedAt: pastDate(1000),
+      })
+  );
+});
+

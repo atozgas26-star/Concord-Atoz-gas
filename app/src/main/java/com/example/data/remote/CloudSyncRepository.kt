@@ -531,13 +531,35 @@ class CloudSyncRepository(
 
                         localDb.withTransaction {
                             val existingTxs = localDb.transactionDao().getAllTransactionsOnce()
-                            val existingRemoteIds = existingTxs.mapNotNull { it.remoteId }.toSet()
+                            val existingByRemoteId = existingTxs
+                                .mapNotNull { tx -> tx.remoteId?.let { r -> r to tx } }
+                                .toMap()
 
                             for (ct in cloudTxs) {
                                 val entity = ct.toEntity() ?: continue
                                 val slug = entity.remoteId ?: continue
-                                if (slug !in existingRemoteIds) {
+                                val existing = existingByRemoteId[slug]
+                                if (existing == null) {
                                     localDb.transactionDao().insertIgnore(entity)
+                                } else if (existing.productId != entity.productId ||
+                                    existing.vehicleId != entity.vehicleId ||
+                                    existing.vehicleName != entity.vehicleName ||
+                                    existing.quantity != entity.quantity ||
+                                    existing.purchaseCompanyName != entity.purchaseCompanyName ||
+                                    existing.customerName != entity.customerName ||
+                                    existing.notes != entity.notes
+                                ) {
+                                    localDb.transactionDao().update(
+                                        existing.copy(
+                                            productId = entity.productId,
+                                            vehicleId = entity.vehicleId,
+                                            vehicleName = entity.vehicleName,
+                                            quantity = entity.quantity,
+                                            purchaseCompanyName = entity.purchaseCompanyName,
+                                            customerName = entity.customerName,
+                                            notes = entity.notes
+                                        )
+                                    )
                                 }
                             }
 
@@ -607,6 +629,7 @@ class CloudSyncRepository(
             val payload = CloudStockTransaction.toCreateMap(
                 entity = tx.copy(
                     purchaseCompanyName = tx.purchaseCompanyName.take(120),
+                    customerName = tx.customerName.take(120),
                     notes = tx.notes.take(300)
                 ),
                 remoteTxId = remoteId,
@@ -622,6 +645,51 @@ class CloudSyncRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.CREATE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun pushTransactionUpdate(tx: StockTransactionEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val remoteId = tx.remoteId ?: return pushTransaction(tx.copy(remoteId = generateRemoteTxId()))
+        val docPath = "workspaces/$wsId/transactions/$remoteId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("transactions").document(remoteId)
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                val updates = mutableMapOf<String, Any>(
+                    "productId" to tx.productId,
+                    "quantity" to tx.quantity,
+                    "purchaseCompanyName" to tx.purchaseCompanyName.take(120),
+                    "customerName" to tx.customerName.take(120),
+                    "notes" to tx.notes.take(300),
+                    "memberUids" to members,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                tx.vehicleId?.let { updates["vehicleId"] = it }
+                tx.vehicleName?.takeIf { it.isNotBlank() }?.let { updates["vehicleName"] = it.take(64) }
+                docRef.update(updates).await()
+            } else {
+                val payload = CloudStockTransaction.toCreateMap(
+                    entity = tx.copy(
+                        purchaseCompanyName = tx.purchaseCompanyName.take(120),
+                        customerName = tx.customerName.take(120),
+                        notes = tx.notes.take(300)
+                    ),
+                    remoteTxId = remoteId,
+                    memberUids = members,
+                    uid = uid
+                )
+                docRef.set(payload).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docPath)
             Result.failure(e)
         }
     }

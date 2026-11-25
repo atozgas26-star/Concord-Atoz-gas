@@ -93,6 +93,7 @@ class BackupManager(private val db: ConcordDatabase) {
                         put("staffName", t.staffName)
                         put("quantity", t.quantity)
                         put("purchaseCompanyName", t.purchaseCompanyName)
+                        put("customerName", t.customerName)
                         put("notes", t.notes)
                     })
                 }
@@ -179,6 +180,7 @@ class BackupManager(private val db: ConcordDatabase) {
                     staffName = o.getString("staffName"),
                     quantity = o.getInt("quantity"),
                     purchaseCompanyName = o.optString("purchaseCompanyName", ""),
+                    customerName = o.optString("customerName", ""),
                     notes = o.optString("notes", "")
                 )
             }

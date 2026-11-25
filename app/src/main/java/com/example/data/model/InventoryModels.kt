@@ -103,6 +103,19 @@ data class CompanyStockRow(
     val totalEmpty: Int
 )
 
+data class CustomerPendingRow(
+    val customerName: String,
+    val primaryVehicleId: Long?,
+    val primaryVehicleName: String,
+    val fullSold: Int,
+    val emptyCollected: Int,
+    val manualPendingAdded: Int,
+    val pendingEmptyBalance: Int,
+    val lastActivityDate: String,
+    val lastProductId: Long?,
+    val lastProductName: String
+)
+
 data class AuthSession(
     val user: UserAccountEntity,
     val assignedVehicle: VehicleEntity?

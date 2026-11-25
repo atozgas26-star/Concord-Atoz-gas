@@ -204,7 +204,8 @@
             "VEHICLE_ADJUST_FULL_IN",
             "VEHICLE_ADJUST_FULL_OUT",
             "VEHICLE_ADJUST_EMPTY_IN",
-            "VEHICLE_ADJUST_EMPTY_OUT"
+            "VEHICLE_ADJUST_EMPTY_OUT",
+            "CUSTOMER_EMPTY_PENDING_ADD"
           ]
         },
         "productId": { "type": "integer", "description": "Product localId." },
@@ -214,6 +215,7 @@
         "staffName": { "type": "string", "description": "Staff/Admin display name." },
         "quantity": { "type": "integer", "description": "Positive cylinder count." },
         "purchaseCompanyName": { "type": "string", "description": "Optional supplier or purchase company name." },
+        "customerName": { "type": "string", "description": "Optional customer name for sales and empty collection tracking." },
         "notes": { "type": "string", "description": "Optional entry notes." },
         "createdByUid": { "type": "string", "description": "Google UID of user who entered this transaction." },
         "memberUids": { "type": "array", "description": "Denormalized workspace member UIDs." },

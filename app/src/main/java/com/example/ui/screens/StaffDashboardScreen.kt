@@ -17,10 +17,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.Input
-import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.CustomerPendingRow
 import com.example.data.model.ProductCategory
 import com.example.data.model.StoreStockRow
 import com.example.data.model.TransactionDisplayItem
@@ -63,6 +64,7 @@ import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFilterRow
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.PendingCustomerCard
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
@@ -84,15 +86,19 @@ fun StaffDashboardScreen(
     storeRows: List<StoreStockRow>,
     products: List<ProductEntity>,
     allTransactions: List<TransactionDisplayItem>,
+    pendingCustomers: List<CustomerPendingRow> = emptyList(),
+    recentCustomerNames: List<String> = emptyList(),
     isOnlineSynced: Boolean = true,
     onDateSelected: (String) -> Unit,
-    onRecordTransaction: (TransactionType, Long, Long?, Int, String) -> Unit,
+    onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
     onLogout: () -> Unit
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
+    var prefillCustomerName by remember { mutableStateOf("") }
+    var prefillQuantity by remember { mutableIntStateOf(1) }
 
     val filteredRows = remember(vehicleRows, selectedCategory, searchQuery) {
         vehicleRows.filter { row ->
@@ -118,6 +124,7 @@ fun StaffDashboardScreen(
     val totalSales = vehicleRows.sumOf { it.customerSales }
     val totalCustEmpty = vehicleRows.sumOf { it.customerEmptyReceived }
     val totalRetEmpty = vehicleRows.sumOf { it.emptyReturnedToStore }
+    val activePendingCount = pendingCustomers.count { it.pendingEmptyBalance > 0 }
 
     Column(
         modifier = Modifier
@@ -211,9 +218,13 @@ fun StaffDashboardScreen(
             ) {
                 StaffBigActionButton(
                     label = "Receive Full\nfrom Store",
-                    icon = Icons.Default.Input,
+                    icon = Icons.AutoMirrored.Filled.Input,
                     containerColor = BrandGreenPrimary,
-                    onClick = { activeTxType = TransactionType.VEHICLE_FULL_RECEIVED },
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("staff_action_receive_full")
@@ -222,7 +233,11 @@ fun StaffDashboardScreen(
                     label = "Customer\nSale",
                     icon = Icons.Default.Sell,
                     containerColor = BrandRedSecondary,
-                    onClick = { activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE },
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("staff_action_customer_sale")
@@ -236,7 +251,11 @@ fun StaffDashboardScreen(
                     label = "Empty Recd\n(Customer)",
                     icon = Icons.Default.Recycling,
                     containerColor = BrandGreenPrimary,
-                    onClick = { activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER },
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("staff_action_empty_customer")
@@ -245,7 +264,11 @@ fun StaffDashboardScreen(
                     label = "Return Empty\nto Store",
                     icon = Icons.Default.Output,
                     containerColor = BrandRedSecondary,
-                    onClick = { activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE },
+                    onClick = {
+                        prefillCustomerName = ""
+                        prefillQuantity = 1
+                        activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("staff_action_return_empty")
@@ -257,112 +280,183 @@ fun StaffDashboardScreen(
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                text = { Text("Vehicle Stock") }
+                text = { Text("Stock") }
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
-                text = { Text("Day Activity (${myVehicleTransactions.size})") }
+                text = { Text("Pending ($activePendingCount)") },
+                modifier = Modifier.testTag("staff_tab_pending")
+            )
+            Tab(
+                selected = activeTab == 2,
+                onClick = { activeTab = 2 },
+                text = { Text("Activity (${myVehicleTransactions.size})") }
             )
         }
 
-        if (activeTab == 0) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search gas cylinder...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    CategoryFilterRow(
-                        selectedCategory = selectedCategory,
-                        onCategorySelected = { selectedCategory = it }
-                    )
-                }
+        when (activeTab) {
+            0 -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search gas cylinder...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        CategoryFilterRow(
+                            selectedCategory = selectedCategory,
+                            onCategorySelected = { selectedCategory = it }
+                        )
+                    }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredRows, key = { it.product.id }) { row ->
-                        // Staff CANNOT change opening stock
-                        VehicleProductRowCard(row = row, canEditOpening = false)
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(filteredRows, key = { it.product.id }) { row ->
+                            // Staff CANNOT change opening stock
+                            VehicleProductRowCard(row = row, canEditOpening = false)
+                        }
                     }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (myVehicleTransactions.isEmpty()) {
+
+            1 -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     item {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        Button(
+                            onClick = {
+                                prefillCustomerName = ""
+                                prefillQuantity = 1
+                                activeTxType = TransactionType.CUSTOMER_EMPTY_PENDING_ADD
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("staff_add_pending_button")
                         ) {
-                            Text(
-                                text = "No entries recorded for ${assignedVehicle?.name ?: "your vehicle"} on $selectedDate.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(16.dp)
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add Customer Pending Empty")
+                        }
+                    }
+                    if (pendingCustomers.isEmpty()) {
+                        item {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "No customer pending empty cylinders recorded for ${assignedVehicle?.name ?: "your vehicle"}.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        items(pendingCustomers, key = { it.customerName }) { pendingRow ->
+                            PendingCustomerCard(
+                                row = pendingRow,
+                                onCollectEmpty = {
+                                    prefillCustomerName = pendingRow.customerName
+                                    prefillQuantity = pendingRow.pendingEmptyBalance.coerceAtLeast(1)
+                                    activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                                }
                             )
                         }
                     }
-                } else {
-                    // Staff CANNOT delete transactions (read-only audit log)
-                    items(myVehicleTransactions, key = { it.transaction.id }) { item ->
-                        val tx = item.transaction
-                        val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                }
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (myVehicleTransactions.isEmpty()) {
+                        item {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "${tx.type.label} • ${item.productName}",
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(
-                                        text = "${item.productCategory.displayName} • Recorded by ${tx.staffName} • $timeStr",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    if (tx.notes.isNotBlank()) {
+                                Text(
+                                    text = "No entries recorded for ${assignedVehicle?.name ?: "your vehicle"} on $selectedDate.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // Staff CANNOT delete transactions (read-only audit log)
+                        items(myVehicleTransactions, key = { it.transaction.id }) { item ->
+                            val tx = item.transaction
+                            val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "Note: ${tx.notes}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
+                                            text = "${tx.type.label} • ${item.productName}",
+                                            style = MaterialTheme.typography.titleSmall
+                                        )
+                                        Text(
+                                            text = "${item.productCategory.displayName} • Recorded by ${tx.staffName} • $timeStr",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (tx.customerName.isNotBlank()) {
+                                            Text(
+                                                text = "Customer: ${tx.customerName}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = BrandRedSecondary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        if (tx.notes.isNotBlank()) {
+                                            Text(
+                                                text = "Note: ${tx.notes}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        color = BrandGreenContainer,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "×${tx.quantity}",
+                                            fontFamily = JetBrainsMono,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BrandGreenOnContainer,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                         )
                                     }
-                                }
-                                Surface(
-                                    color = BrandGreenContainer,
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(
-                                        text = "×${tx.quantity}",
-                                        fontFamily = JetBrainsMono,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BrandGreenOnContainer,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                    )
                                 }
                             }
                         }
@@ -374,12 +468,23 @@ fun StaffDashboardScreen(
 
     if (activeTxType != null && assignedVehicle != null) {
         val type = activeTxType!!
+        val showCust = type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+            type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ||
+            type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD
+        val requireCust = type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD
+
         TransactionEntryDialog(
             title = "${assignedVehicle.name} — ${type.label}",
             transactionType = type,
             products = products,
             fixedVehicle = assignedVehicle,
             requireVehicleSelection = false,
+            showCustomerNameField = showCust,
+            requireCustomerName = requireCust,
+            recentCustomerNames = recentCustomerNames,
+            initialCustomerName = prefillCustomerName,
+            initialQuantity = prefillQuantity,
+            showEmptyCollectedNowField = (type == TransactionType.VEHICLE_CUSTOMER_SALE),
             availableStockHint = { prodId, _ ->
                 val vRow = vehicleRows.firstOrNull { it.product.id == prodId }
                 val sRow = storeRows.firstOrNull { it.product.id == prodId }
@@ -387,15 +492,34 @@ fun StaffDashboardScreen(
                     TransactionType.VEHICLE_FULL_RECEIVED ->
                         "Store Full Available: ${sRow?.storeFullBalance ?: 0}  |  Vehicle Full: ${vRow?.fullBalance ?: 0}"
                     TransactionType.VEHICLE_CUSTOMER_SALE ->
-                        "Vehicle Full Available: ${vRow?.fullBalance ?: 0}"
+                        "Vehicle Full Available: ${vRow?.fullBalance ?: 0}  |  Empty: ${vRow?.emptyBalance ?: 0}"
                     TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
                         "Vehicle Empty Available: ${vRow?.emptyBalance ?: 0}"
+                    TransactionType.CUSTOMER_EMPTY_PENDING_ADD ->
+                        "Records opening / missed customer pending empty cylinders"
                     else -> "Vehicle Empty Balance: ${vRow?.emptyBalance ?: 0}"
                 }
             },
+            liveCalculationPreview = { prodId, _, qty, empNow ->
+                val vRow = vehicleRows.firstOrNull { it.product.id == prodId }
+                if (vRow == null || qty <= 0) null
+                else when (type) {
+                    TransactionType.VEHICLE_FULL_RECEIVED ->
+                        "Vehicle Full: ${vRow.fullBalance} -> ${vRow.fullBalance + qty}"
+                    TransactionType.VEHICLE_CUSTOMER_SALE ->
+                        "Veh Full: ${vRow.fullBalance} -> ${vRow.fullBalance - qty}  |  Veh Empty: ${vRow.emptyBalance} -> ${vRow.emptyBalance + empNow}"
+                    TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ->
+                        "Veh Empty: ${vRow.emptyBalance} -> ${vRow.emptyBalance + qty}  |  Pending -$qty"
+                    TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
+                        "Veh Empty: ${vRow.emptyBalance} -> ${vRow.emptyBalance - qty}"
+                    TransactionType.CUSTOMER_EMPTY_PENDING_ADD ->
+                        "Customer Empty Pending: +$qty"
+                    else -> null
+                }
+            },
             onDismiss = { activeTxType = null },
-            onConfirm = { prodId, _, qty, notes, _ ->
-                onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes)
+            onConfirm = { prodId, _, qty, notes, _, custName, empNow ->
+                onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes, custName, empNow)
             }
         )
     }

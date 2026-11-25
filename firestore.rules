@@ -149,7 +149,8 @@ service cloud.firestore {
                'VEHICLE_ADJUST_FULL_IN',
                'VEHICLE_ADJUST_FULL_OUT',
                'VEHICLE_ADJUST_EMPTY_IN',
-               'VEHICLE_ADJUST_EMPTY_OUT'
+               'VEHICLE_ADJUST_EMPTY_OUT',
+               'CUSTOMER_EMPTY_PENDING_ADD'
              ] &&
              data.productId is int && data.productId >= 1 &&
              (!('vehicleId' in data) || (data.vehicleId is int && data.vehicleId >= 1)) &&
@@ -158,6 +159,7 @@ service cloud.firestore {
              data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
              data.quantity is int && data.quantity > 0 && data.quantity <= 100000 &&
              (!('purchaseCompanyName' in data) || (data.purchaseCompanyName is string && data.purchaseCompanyName.size() <= 120)) &&
+             (!('customerName' in data) || (data.customerName is string && data.customerName.size() <= 120)) &&
              data.notes is string && data.notes.size() <= 300 &&
              data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
              isValidMemberUids(data.memberUids) &&
@@ -410,7 +412,7 @@ service cloud.firestore {
                          incoming().createdByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
                          incoming().keys().hasAll(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'staffId', 'staffName', 'quantity', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'vehicleId', 'vehicleName', 'staffId', 'staffName', 'quantity', 'purchaseCompanyName', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'vehicleId', 'vehicleName', 'staffId', 'staffName', 'quantity', 'purchaseCompanyName', 'customerName', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
                          isValidTransaction(incoming()) &&
                          isWorkspaceMember(workspaceId);
 
@@ -419,11 +421,19 @@ service cloud.firestore {
                          isValidId(txId) &&
                          isValidTransaction(incoming()) &&
                          incoming().clientTxId == existing().clientTxId &&
+                         incoming().businessDate == existing().businessDate &&
+                         incoming().type == existing().type &&
+                         incoming().staffId == existing().staffId &&
+                         incoming().staffName == existing().staffName &&
                          incoming().createdByUid == existing().createdByUid &&
                          incoming().createdAt == existing().createdAt &&
                          isWorkspaceMember(workspaceId) &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
-                         incoming().memberUids == workspaceData(workspaceId).memberUids;
+                         (
+                           (incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+                            incoming().memberUids == workspaceData(workspaceId).memberUids) ||
+                           (incoming().diff(existing()).affectedKeys().hasOnly(['productId', 'vehicleId', 'vehicleName', 'quantity', 'purchaseCompanyName', 'customerName', 'notes', 'memberUids', 'updatedAt']) &&
+                            incoming().memberUids.hasAll(existing().memberUids))
+                         );
 
         allow delete: if isSignedIn() &&
                          isValidId(workspaceId) &&

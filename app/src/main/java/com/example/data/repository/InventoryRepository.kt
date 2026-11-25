@@ -9,6 +9,7 @@ import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.AuthSession
 import com.example.data.model.CompanyStockRow
+import com.example.data.model.CustomerPendingRow
 import com.example.data.model.DashboardSummary
 import com.example.data.model.MonthlyDailySaleRow
 import com.example.data.model.OperationResult
@@ -61,6 +62,19 @@ class InventoryRepository(
         seen.toList()
     }
 
+    val recentCustomerNamesFlow: Flow<List<String>> = transactionsFlow.map { txs ->
+        val seen = LinkedHashSet<String>()
+        val dedupLower = HashSet<String>()
+        for (tx in txs) {
+            val customer = tx.customerName.trim()
+            if (customer.isNotEmpty() && dedupLower.add(customer.lowercase(Locale.US))) {
+                seen.add(customer)
+                if (seen.size >= 16) break
+            }
+        }
+        seen.toList()
+    }
+
     suspend fun initializeDatabase() {
         db.ensureSeeded()
     }
@@ -68,6 +82,17 @@ class InventoryRepository(
     suspend fun authenticate(userId: Long, pin: String): AuthSession? {
         val user = userDao.getUserById(userId) ?: return null
         if (!user.isActive || user.pin != pin) return null
+        val vehicle = if (user.role == UserRole.STAFF) {
+            vehicleDao.getVehicleByStaffUserId(user.id)
+        } else {
+            null
+        }
+        return AuthSession(user = user, assignedVehicle = vehicle)
+    }
+
+    suspend fun getSessionForUserId(userId: Long): AuthSession? {
+        val user = userDao.getUserById(userId) ?: return null
+        if (!user.isActive) return null
         val vehicle = if (user.role == UserRole.STAFF) {
             vehicleDao.getVehicleByStaffUserId(user.id)
         } else {
@@ -134,6 +159,76 @@ class InventoryRepository(
         if (result is OperationResult.Success && cloudSync != null) {
             updatedUser?.let { cloudSync.pushStaffAccount(it) }
             updatedVehicle?.let { cloudSync.pushVehicle(it) }
+        }
+        return result
+    }
+
+    suspend fun addStaffAndVehicle(
+        staffName: String,
+        vehicleName: String,
+        pin: String
+    ): OperationResult {
+        val cleanStaff = staffName.trim().take(100)
+        val cleanVehicle = vehicleName.trim().uppercase().take(64)
+        val cleanPin = pin.trim()
+        if (cleanStaff.isEmpty()) {
+            return OperationResult.ValidationError("Staff name cannot be empty.")
+        }
+        if (cleanVehicle.isEmpty()) {
+            return OperationResult.ValidationError("Vehicle name cannot be empty.")
+        }
+        if (cleanPin.length != 4 || !cleanPin.all { it.isDigit() }) {
+            return OperationResult.ValidationError("PIN must be exactly 4 digits.")
+        }
+
+        var createdUser: UserAccountEntity? = null
+        var createdVehicle: VehicleEntity? = null
+
+        val result = db.withTransaction {
+            val existingUsers = userDao.getAllUsersOnce()
+            val existingVehicles = vehicleDao.getAllVehiclesOnce()
+            if (existingVehicles.any { it.name.equals(cleanVehicle, ignoreCase = true) }) {
+                return@withTransaction OperationResult.ValidationError("Vehicle '$cleanVehicle' already exists.")
+            }
+
+            val baseSlug = cleanStaff.lowercase(Locale.US)
+                .replace(Regex("[^a-z0-9]+"), "_")
+                .trim('_')
+                .ifEmpty { "staff" }
+                .take(40)
+            var candidateUsername = baseSlug
+            var suffix = 2
+            while (existingUsers.any { it.username.equals(candidateUsername, ignoreCase = true) }) {
+                candidateUsername = "${baseSlug}_$suffix"
+                suffix++
+            }
+
+            val newUserDraft = UserAccountEntity(
+                username = candidateUsername,
+                displayName = cleanStaff,
+                role = UserRole.STAFF,
+                pin = cleanPin,
+                isActive = true
+            )
+            val newUserId = userDao.insert(newUserDraft)
+            val savedUser = newUserDraft.copy(id = newUserId)
+
+            val newVehicleDraft = VehicleEntity(
+                name = cleanVehicle,
+                staffUserId = newUserId,
+                isActive = true
+            )
+            val newVehicleId = vehicleDao.insert(newVehicleDraft)
+            val savedVehicle = newVehicleDraft.copy(id = newVehicleId)
+
+            createdUser = savedUser
+            createdVehicle = savedVehicle
+            OperationResult.Success("Added staff '$cleanStaff' with vehicle '$cleanVehicle' (PIN: $cleanPin).")
+        }
+
+        if (result is OperationResult.Success && cloudSync != null) {
+            createdUser?.let { cloudSync.pushStaffAccount(it) }
+            createdVehicle?.let { cloudSync.pushVehicle(it) }
         }
         return result
     }
@@ -272,7 +367,8 @@ class InventoryRepository(
         actor: UserAccountEntity,
         quantity: Int,
         notes: String,
-        purchaseCompanyName: String = ""
+        purchaseCompanyName: String = "",
+        customerName: String = ""
     ): OperationResult {
         if (quantity <= 0 || quantity > 100000) {
             return OperationResult.ValidationError("Quantity must be between 1 and 100,000.")
@@ -378,6 +474,7 @@ class InventoryRepository(
                 staffName = actor.displayName,
                 quantity = quantity,
                 purchaseCompanyName = purchaseCompanyName.trim().take(120),
+                customerName = customerName.trim().take(120),
                 notes = notes.trim().take(300),
                 remoteId = remoteId
             )
@@ -396,6 +493,55 @@ class InventoryRepository(
             }
         }
         return localResult
+    }
+
+    /**
+     * Records Customer Sale and optional immediate Customer Empty Return atomically.
+     */
+    suspend fun recordCustomerSaleWithEmpty(
+        businessDate: String,
+        productId: Long,
+        vehicleId: Long,
+        actor: UserAccountEntity,
+        saleQty: Int,
+        emptyCollectedNow: Int,
+        customerName: String,
+        notes: String
+    ): OperationResult {
+        val saleRes = recordTransaction(
+            businessDate = businessDate,
+            type = TransactionType.VEHICLE_CUSTOMER_SALE,
+            productId = productId,
+            vehicleId = vehicleId,
+            actor = actor,
+            quantity = saleQty,
+            notes = notes,
+            customerName = customerName
+        )
+        if (saleRes !is OperationResult.Success || emptyCollectedNow <= 0) {
+            return saleRes
+        }
+        val emptyRes = recordTransaction(
+            businessDate = businessDate,
+            type = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
+            productId = productId,
+            vehicleId = vehicleId,
+            actor = actor,
+            quantity = emptyCollectedNow,
+            notes = notes,
+            customerName = customerName
+        )
+        return if (emptyRes is OperationResult.Success) {
+            val pendingDelta = saleQty - emptyCollectedNow
+            val pendingSuffix = when {
+                pendingDelta > 0 -> " • Pending +$pendingDelta empty"
+                pendingDelta < 0 -> " • Extra ${-pendingDelta} empty settled"
+                else -> " • Settled"
+            }
+            OperationResult.Success("Recorded Sale $saleQty & Empty Collected $emptyCollectedNow$pendingSuffix.")
+        } else {
+            emptyRes
+        }
     }
 
     /**
@@ -525,6 +671,159 @@ class InventoryRepository(
         }
         return localResult
     }
+
+    /**
+     * Admin-only: edits an existing transaction (product, quantity, supplier company, customer name, notes)
+     * while strictly enforcing the negative-stock guard across all subsequent transactions.
+     */
+    suspend fun updateTransaction(
+        transactionId: Long,
+        newProductId: Long,
+        newQuantity: Int,
+        newPurchaseCompanyName: String,
+        newCustomerName: String,
+        newNotes: String,
+        admin: UserAccountEntity
+    ): OperationResult {
+        if (admin.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can edit transactions.")
+        }
+        if (newQuantity <= 0 || newQuantity > 100000) {
+            return OperationResult.ValidationError("Quantity must be between 1 and 100,000.")
+        }
+
+        var updatedEntity: StockTransactionEntity? = null
+        val localResult = db.withTransaction {
+            val existing = txDao.getTransactionById(transactionId)
+                ?: return@withTransaction OperationResult.ValidationError("Transaction not found.")
+            productDao.getProductById(newProductId)
+                ?: return@withTransaction OperationResult.ValidationError("Selected product not found.")
+
+            val candidate = existing.copy(
+                productId = newProductId,
+                quantity = newQuantity,
+                purchaseCompanyName = newPurchaseCompanyName.trim().take(120),
+                customerName = newCustomerName.trim().take(120),
+                notes = newNotes.trim().take(300)
+            )
+
+            val openings = openingDao.getAllOpeningsOnce()
+            val simulatedTxs = txDao.getAllTransactionsOnce().map { tx ->
+                if (tx.id == transactionId) candidate else tx
+            }
+
+            val affectedProductIds = setOf(existing.productId, newProductId)
+            for (pId in affectedProductIds) {
+                val (storeFull, storeEmpty) = StockCalculator.currentStoreBalance(
+                    productId = pId,
+                    openings = openings,
+                    transactions = simulatedTxs
+                )
+                if (storeFull < 0 || storeEmpty < 0) {
+                    return@withTransaction OperationResult.InsufficientStock(
+                        title = "Invalid Edit (Negative Store Stock)",
+                        message = "Editing this entry would cause negative Store balance (Full=$storeFull, Empty=$storeEmpty)."
+                    )
+                }
+                if (candidate.vehicleId != null) {
+                    val (vFull, vEmpty) = StockCalculator.currentVehicleBalance(
+                        vehicleId = candidate.vehicleId,
+                        productId = pId,
+                        openings = openings,
+                        transactions = simulatedTxs
+                    )
+                    if (vFull < 0 || vEmpty < 0) {
+                        return@withTransaction OperationResult.InsufficientStock(
+                            title = "Invalid Edit (Negative Vehicle Stock)",
+                            message = "Editing this entry would cause negative stock on ${candidate.vehicleName ?: "vehicle"} (Full=$vFull, Empty=$vEmpty)."
+                        )
+                    }
+                }
+            }
+
+            txDao.update(candidate)
+            updatedEntity = candidate
+            OperationResult.Success("Transaction updated successfully.")
+        }
+
+        val toPush = updatedEntity
+        if (localResult is OperationResult.Success && toPush != null && cloudSync != null) {
+            val cloudRes = cloudSync.pushTransactionUpdate(toPush)
+            if (cloudRes.isFailure) {
+                return OperationResult.Success("Updated locally (will sync when online).")
+            }
+        }
+        return localResult
+    }
+
+    fun observeCustomerPendingBalances(vehicleIdFilter: Long? = null): Flow<List<CustomerPendingRow>> =
+        combine(transactionsFlow, allProductsFlow, vehiclesFlow) { txs, products, vehicles ->
+            val productMap = products.associateBy { it.id }
+            val vehicleMap = vehicles.associateBy { it.id }
+
+            val relevantTypes = setOf(
+                TransactionType.VEHICLE_CUSTOMER_SALE,
+                TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
+                TransactionType.CUSTOMER_EMPTY_PENDING_ADD,
+                TransactionType.STORE_FULL_DISPATCH_DIRECT,
+                TransactionType.STORE_EMPTY_INWARD
+            )
+
+            val grouped = linkedMapOf<String, MutableList<StockTransactionEntity>>()
+            for (tx in txs) {
+                if (tx.type !in relevantTypes) continue
+                if (vehicleIdFilter != null && tx.vehicleId != vehicleIdFilter) continue
+                val cleanCustomer = tx.customerName.trim()
+                if (cleanCustomer.isEmpty()) continue
+                grouped.getOrPut(cleanCustomer.lowercase(Locale.US)) { mutableListOf() }.add(tx)
+            }
+
+            grouped.values.map { list ->
+                val sorted = list.sortedWith(
+                    compareBy<StockTransactionEntity> { it.businessDate }
+                        .thenBy { it.timestamp }
+                        .thenBy { it.id }
+                )
+                val latest = sorted.last()
+                val displayName = latest.customerName.trim()
+                val fullSold = sorted.filter {
+                    it.type == TransactionType.VEHICLE_CUSTOMER_SALE ||
+                        it.type == TransactionType.STORE_FULL_DISPATCH_DIRECT
+                }.sumOf { it.quantity }
+                val emptyCollected = sorted.filter {
+                    it.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ||
+                        it.type == TransactionType.STORE_EMPTY_INWARD
+                }.sumOf { it.quantity }
+                val manualPending = sorted.filter {
+                    it.type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD
+                }.sumOf { it.quantity }
+
+                val pendingBalance = fullSold + manualPending - emptyCollected
+                val latestVehicleId = latest.vehicleId
+                val latestVehicleName = latest.vehicleName
+                    ?: latestVehicleId?.let { vehicleMap[it]?.name }
+                    ?: "Store"
+                val latestProd = productMap[latest.productId]
+
+                CustomerPendingRow(
+                    customerName = displayName,
+                    primaryVehicleId = latestVehicleId,
+                    primaryVehicleName = latestVehicleName,
+                    fullSold = fullSold,
+                    emptyCollected = emptyCollected,
+                    manualPendingAdded = manualPending,
+                    pendingEmptyBalance = pendingBalance,
+                    lastActivityDate = latest.businessDate,
+                    lastProductId = latest.productId,
+                    lastProductName = latestProd?.let { "${it.category.shortCode} - ${it.name}" } ?: ""
+                )
+            }.sortedWith(
+                compareByDescending<CustomerPendingRow> { it.pendingEmptyBalance > 0 }
+                    .thenByDescending { it.pendingEmptyBalance }
+                    .thenByDescending { it.lastActivityDate }
+                    .thenBy { it.customerName.lowercase(Locale.US) }
+            )
+        }
 
     // --- Report Queries ---
 

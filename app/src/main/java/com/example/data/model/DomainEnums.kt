@@ -41,7 +41,9 @@ enum class TransactionType(
     VEHICLE_ADJUST_FULL_IN("Vehicle Full Adjustment (+)", false, true),
     VEHICLE_ADJUST_FULL_OUT("Vehicle Full Adjustment (-)", false, true),
     VEHICLE_ADJUST_EMPTY_IN("Vehicle Empty Adjustment (+)", false, true),
-    VEHICLE_ADJUST_EMPTY_OUT("Vehicle Empty Adjustment (-)", false, true)
+    VEHICLE_ADJUST_EMPTY_OUT("Vehicle Empty Adjustment (-)", false, true),
+
+    CUSTOMER_EMPTY_PENDING_ADD("Customer Pending Empty (+)", false, false)
 }
 
 enum class ReportType(val title: String, val subtitle: String) {
@@ -51,5 +53,6 @@ enum class ReportType(val title: String, val subtitle: String) {
     PRODUCT_WISE_SALES("Product-Wise Sales", "Sales breakdown by gas category & cylinder"),
     STAFF_WISE_SALES("Staff-Wise Sales", "Performance & balances by staff/vehicle"),
     FULL_EMPTY_STOCK("Full & Empty Stock", "Combined Store + Vehicles inventory balance"),
-    PURCHASE_REGISTER("Purchase Register", "Supplier company-wise cylinder purchases")
+    PURCHASE_REGISTER("Purchase Register", "Supplier company-wise cylinder purchases"),
+    CUSTOMER_PENDING("Customer Pending Empty", "Customer-wise full sold, empty collected & pending balance")
 }

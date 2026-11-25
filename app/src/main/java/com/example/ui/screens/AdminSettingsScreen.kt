@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -68,6 +69,7 @@ import com.example.data.local.VehicleEntity
 import com.example.data.model.ProductCategory
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
+import com.example.ui.components.AddStaffVehicleDialog
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
@@ -88,6 +90,7 @@ fun AdminSettingsScreen(
     workspaceState: WorkspaceConnectionState = WorkspaceConnectionState.Checking,
     onSyncNow: () -> Unit = {},
     onGoogleSignOut: () -> Unit = {},
+    onAddStaffAndVehicle: (staffName: String, vehicleName: String, pin: String) -> Unit = { _, _, _ -> },
     onUpdateStaffName: (userId: Long, newDisplayName: String, newVehicleName: String?) -> Unit = { _, _, _ -> },
     onUpdatePin: (userId: Long, newPin: String) -> Unit,
     onAddProduct: (ProductCategory, String) -> Unit,
@@ -102,6 +105,7 @@ fun AdminSettingsScreen(
     var activeTab by remember { mutableIntStateOf(0) }
     var editingPinUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var editingNameUser by remember { mutableStateOf<UserAccountEntity?>(null) }
+    var showAddStaffDialog by remember { mutableStateOf(false) }
     var showAddProductDialog by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
 
@@ -176,7 +180,7 @@ fun AdminSettingsScreen(
                                 Icon(Icons.Default.CloudSync, contentDescription = null, tint = BrandGreenOnContainer)
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = "Online Cloud Sync (7 Staff)",
+                                    text = "Online Cloud Sync (${vehicles.size} Vehicles)",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = BrandGreenOnContainer,
                                     fontWeight = FontWeight.Bold
@@ -191,7 +195,7 @@ fun AdminSettingsScreen(
                             }
                             if (workspaceState is WorkspaceConnectionState.Connected) {
                                 Text(
-                                    text = "7-Staff Invite Code: ${workspaceState.inviteCode}  •  Connected devices: ${workspaceState.memberCount}",
+                                    text = "Staff Invite Code: ${workspaceState.inviteCode}  •  Connected devices: ${workspaceState.memberCount}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontFamily = JetBrainsMono,
                                     fontWeight = FontWeight.Bold,
@@ -225,10 +229,26 @@ fun AdminSettingsScreen(
                 }
 
                 item {
-                    Text(
-                        text = "Admin & Staff Name / PIN Management",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Admin & Staff Name / PIN (${users.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = { showAddStaffDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                            modifier = Modifier.testTag("settings_add_staff_button")
+                        ) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add Staff")
+                        }
+                    }
                 }
 
                 items(users, key = { it.id }) { user ->
@@ -461,6 +481,14 @@ fun AdminSettingsScreen(
                 onUpdateStaffName(user.id, newName, newVehicleName)
                 editingNameUser = null
             }
+        )
+    }
+
+    if (showAddStaffDialog) {
+        AddStaffVehicleDialog(
+            nextVehicleNumber = vehicles.size + 1,
+            onDismiss = { showAddStaffDialog = false },
+            onConfirm = onAddStaffAndVehicle
         )
     }
 

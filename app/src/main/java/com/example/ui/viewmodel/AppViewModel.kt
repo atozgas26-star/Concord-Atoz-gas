@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.ProductEntity
+import com.example.data.local.SessionPreferences
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.AuthSession
 import com.example.data.model.CompanyStockRow
+import com.example.data.model.CustomerPendingRow
 import com.example.data.model.DashboardSummary
 import com.example.data.model.MonthlyDailySaleRow
 import com.example.data.model.OperationResult
@@ -46,7 +48,8 @@ data class WarningAlert(
 class AppViewModel(
     private val repository: InventoryRepository,
     private val backupManager: BackupManager,
-    private val cloudSync: CloudSyncRepository? = null
+    private val cloudSync: CloudSyncRepository? = null,
+    private val sessionPreferences: SessionPreferences? = null
 ) : ViewModel() {
 
     private val _isInitialized = MutableStateFlow(false)
@@ -129,6 +132,25 @@ class AppViewModel(
     val recentPurchaseCompanies: StateFlow<List<String>> = repository.recentPurchaseCompaniesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val recentCustomerNames: StateFlow<List<String>> = repository.recentCustomerNamesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allCustomerPendingRows: StateFlow<List<CustomerPendingRow>> = repository.observeCustomerPendingBalances(null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val selectedVehiclePendingRows: StateFlow<List<CustomerPendingRow>> = _selectedVehicleId
+        .flatMapLatest { vId ->
+            if (vId == null) flowOf(emptyList()) else repository.observeCustomerPendingBalances(vId)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val staffVehiclePendingRows: StateFlow<List<CustomerPendingRow>> = _authSession
+        .flatMapLatest { session ->
+            val vId = session?.assignedVehicle?.id
+            if (vId == null) flowOf(emptyList()) else repository.observeCustomerPendingBalances(vId)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val monthlySalesReport: StateFlow<List<MonthlyDailySaleRow>> = _selectedYearMonth
         .flatMapLatest { ym -> repository.observeMonthlySalesReport(ym) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -150,6 +172,18 @@ class AppViewModel(
     init {
         viewModelScope.launch {
             repository.initializeDatabase()
+            val savedUserId = sessionPreferences?.getLoggedInUserId()
+            if (savedUserId != null) {
+                val restored = repository.getSessionForUserId(savedUserId)
+                if (restored != null) {
+                    _authSession.value = restored
+                    if (restored.assignedVehicle != null) {
+                        _selectedVehicleId.value = restored.assignedVehicle.id
+                    }
+                } else {
+                    sessionPreferences.clearLoggedInUserId()
+                }
+            }
             _isInitialized.value = true
             cloudSync?.connectForSignedInUser()
         }
@@ -213,6 +247,7 @@ class AppViewModel(
 
     fun stopCloudSyncBeforeSignOut() {
         _authSession.value = null
+        viewModelScope.launch { sessionPreferences?.clearLoggedInUserId() }
         cloudSync?.stopSync()
     }
 
@@ -225,6 +260,7 @@ class AppViewModel(
         viewModelScope.launch {
             val session = repository.authenticate(userId, pin)
             if (session != null) {
+                sessionPreferences?.saveLoggedInUserId(session.user.id)
                 _authSession.value = session
                 _loginError.value = null
                 _selectedDate.value = InventoryRepository.todayIsoDate()
@@ -244,6 +280,9 @@ class AppViewModel(
     fun logout() {
         _authSession.value = null
         _loginError.value = null
+        viewModelScope.launch {
+            sessionPreferences?.clearLoggedInUserId()
+        }
     }
 
     fun setSelectedDate(date: String) {
@@ -275,7 +314,9 @@ class AppViewModel(
         vehicleId: Long?,
         quantity: Int,
         notes: String = "",
-        purchaseCompanyName: String = ""
+        purchaseCompanyName: String = "",
+        customerName: String = "",
+        emptyCollectedNow: Int = 0
     ) {
         val session = _authSession.value ?: return
         // Enforce strict staff permissions
@@ -284,7 +325,8 @@ class AppViewModel(
                 TransactionType.VEHICLE_FULL_RECEIVED,
                 TransactionType.VEHICLE_CUSTOMER_SALE,
                 TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
-                TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
+                TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+                TransactionType.CUSTOMER_EMPTY_PENDING_ADD
             )
             if (type !in allowedStaffTypes || vehicleId != session.assignedVehicle?.id) {
                 _warningAlert.value = WarningAlert(
@@ -296,16 +338,30 @@ class AppViewModel(
         }
 
         viewModelScope.launch {
-            val result = repository.recordTransaction(
-                businessDate = _selectedDate.value,
-                type = type,
-                productId = productId,
-                vehicleId = vehicleId,
-                actor = session.user,
-                quantity = quantity,
-                notes = notes,
-                purchaseCompanyName = purchaseCompanyName
-            )
+            val result = if (type == TransactionType.VEHICLE_CUSTOMER_SALE && emptyCollectedNow > 0 && vehicleId != null) {
+                repository.recordCustomerSaleWithEmpty(
+                    businessDate = _selectedDate.value,
+                    productId = productId,
+                    vehicleId = vehicleId,
+                    actor = session.user,
+                    saleQty = quantity,
+                    emptyCollectedNow = emptyCollectedNow,
+                    customerName = customerName,
+                    notes = notes
+                )
+            } else {
+                repository.recordTransaction(
+                    businessDate = _selectedDate.value,
+                    type = type,
+                    productId = productId,
+                    vehicleId = vehicleId,
+                    actor = session.user,
+                    quantity = quantity,
+                    notes = notes,
+                    purchaseCompanyName = purchaseCompanyName,
+                    customerName = customerName
+                )
+            }
             handleOperationResult(result)
         }
     }
@@ -348,6 +404,33 @@ class AppViewModel(
         }
     }
 
+    fun updateTransaction(
+        transactionId: Long,
+        newProductId: Long,
+        newQuantity: Int,
+        newPurchaseCompanyName: String,
+        newCustomerName: String,
+        newNotes: String
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can edit recorded transactions.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.updateTransaction(
+                transactionId = transactionId,
+                newProductId = newProductId,
+                newQuantity = newQuantity,
+                newPurchaseCompanyName = newPurchaseCompanyName,
+                newCustomerName = newCustomerName,
+                newNotes = newNotes,
+                admin = session.user
+            )
+            handleOperationResult(result)
+        }
+    }
+
     fun updateUserPin(targetUserId: Long, newPin: String) {
         val session = _authSession.value ?: return
         if (session.user.role != UserRole.ADMIN) return
@@ -371,6 +454,22 @@ class AppViewModel(
                     user = session.user.copy(displayName = newDisplayName.trim().take(100))
                 )
             }
+            handleOperationResult(result)
+        }
+    }
+
+    fun addStaffAndVehicle(
+        staffName: String,
+        vehicleName: String,
+        pin: String
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can add new staff logins or vehicles.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.addStaffAndVehicle(staffName, vehicleName, pin)
             handleOperationResult(result)
         }
     }
@@ -708,17 +807,54 @@ class AppViewModel(
                     )
                 )
             }
+
+            ReportType.CUSTOMER_PENDING -> {
+                val pendingRows = allCustomerPendingRows.value.let { list ->
+                    if (vehicleFilterId != null) {
+                        list.filter { it.primaryVehicleId == vehicleFilterId }
+                    } else {
+                        list
+                    }
+                }
+                ReportTable(
+                    reportTitle = "Customer Empty Pending Balance",
+                    subtitle = "As of: $date • Total Pending Empty: ${pendingRows.sumOf { it.pendingEmptyBalance }}",
+                    generatedBy = actorName,
+                    headers = listOf("Customer Name", "Vehicle", "Full Sold", "+Added", "Emp Recd", "Pending Bal", "Last Date"),
+                    rows = pendingRows.map { r ->
+                        listOf(
+                            r.customerName,
+                            r.primaryVehicleName,
+                            r.fullSold.toString(),
+                            r.manualPendingAdded.toString(),
+                            r.emptyCollected.toString(),
+                            r.pendingEmptyBalance.toString(),
+                            r.lastActivityDate
+                        )
+                    },
+                    footerTotals = listOf(
+                        "TOTAL",
+                        "${pendingRows.size} Cust",
+                        pendingRows.sumOf { it.fullSold }.toString(),
+                        pendingRows.sumOf { it.manualPendingAdded }.toString(),
+                        pendingRows.sumOf { it.emptyCollected }.toString(),
+                        pendingRows.sumOf { it.pendingEmptyBalance }.toString(),
+                        ""
+                    )
+                )
+            }
         }
     }
 
     class Factory(
         private val repository: InventoryRepository,
         private val backupManager: BackupManager,
-        private val cloudSync: CloudSyncRepository? = null
+        private val cloudSync: CloudSyncRepository? = null,
+        private val sessionPreferences: SessionPreferences? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return AppViewModel(repository, backupManager, cloudSync) as T
+            return AppViewModel(repository, backupManager, cloudSync, sessionPreferences) as T
         }
     }
 }

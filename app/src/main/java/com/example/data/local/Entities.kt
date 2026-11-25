@@ -79,6 +79,7 @@ data class StockTransactionEntity(
     val staffName: String,
     val quantity: Int,
     val purchaseCompanyName: String = "",
+    val customerName: String = "",
     val notes: String = "",
     val remoteId: String? = null
 )
