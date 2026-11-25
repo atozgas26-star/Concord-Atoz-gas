@@ -83,6 +83,7 @@ import com.example.ui.theme.ConcordGasTheme
 import com.example.ui.viewmodel.AppViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.launch
 
 private enum class AdminNavTab(
     val label: String,
@@ -104,18 +105,38 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themePreset by app.container.sessionPreferences.themePresetFlow
                 .collectAsStateWithLifecycle(initialValue = ThemePreset.EMERALD_CORPORATE)
+            val darkModeEnabled by app.container.sessionPreferences.darkModeEnabledFlow
+                .collectAsStateWithLifecycle(initialValue = false)
             val soundEnabled by app.container.sessionPreferences.soundEnabledFlow
                 .collectAsStateWithLifecycle(initialValue = true)
+            val rootScope = rememberCoroutineScope()
+            val effectiveDarkMode = darkModeEnabled || themePreset == ThemePreset.MIDNIGHT_DARK
             var showSplash by rememberSaveable { mutableStateOf(true) }
 
-            ConcordGasTheme(themePreset = themePreset) {
+            ConcordGasTheme(
+                themePreset = themePreset,
+                darkTheme = effectiveDarkMode
+            ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     val auth = remember { Firebase.auth }
                     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
                     val user = currentUser
 
                     if (user == null) {
-                        GoogleAuthScreen(onAuthSuccess = { /* authStateFlow emits updated user */ })
+                        GoogleAuthScreen(
+                            onAuthSuccess = { /* authStateFlow emits updated user */ },
+                            darkModeEnabled = effectiveDarkMode,
+                            onToggleDarkMode = {
+                                SoundEffectsManager.playTapTick(soundEnabled)
+                                val nextDark = !effectiveDarkMode
+                                rootScope.launch {
+                                    app.container.sessionPreferences.setDarkModeEnabled(nextDark)
+                                    if (!nextDark && themePreset == ThemePreset.MIDNIGHT_DARK) {
+                                        app.container.sessionPreferences.setThemePreset(ThemePreset.EMERALD_CORPORATE)
+                                    }
+                                }
+                            }
+                        )
                     } else {
                         val uid = user.uid
                         key(uid) {
@@ -127,7 +148,8 @@ class MainActivity : ComponentActivity() {
                                     cloudSync = app.container.cloudSyncRepository,
                                     sessionPreferences = app.container.sessionPreferences,
                                     driveBackupManager = app.container.driveBackupManager,
-                                    appContext = app.applicationContext
+                                    appContext = app.applicationContext,
+                                    gmailVerificationManager = app.container.gmailVerificationManager
                                 )
                             )
                             ConcordGasRootApp(
@@ -172,6 +194,8 @@ fun ConcordGasRootApp(
     val isAuthenticating by viewModel.isAuthenticating.collectAsStateWithLifecycle()
     val loginError by viewModel.loginError.collectAsStateWithLifecycle()
     val themePreset by viewModel.themePreset.collectAsStateWithLifecycle()
+    val darkModeEnabled by viewModel.darkModeEnabled.collectAsStateWithLifecycle()
+    val effectiveDarkMode = darkModeEnabled || themePreset == ThemePreset.MIDNIGHT_DARK
     val soundEnabled by viewModel.soundEnabled.collectAsStateWithLifecycle()
     val autoLoginEnabled by viewModel.autoLoginEnabled.collectAsStateWithLifecycle()
     val autoLogoutMode by viewModel.autoLogoutMode.collectAsStateWithLifecycle()
@@ -199,6 +223,9 @@ fun ConcordGasRootApp(
     val pendingDriveRestoreJson by viewModel.pendingDriveRestoreJson.collectAsStateWithLifecycle()
     val permissionsStatus by viewModel.permissionsStatus.collectAsStateWithLifecycle()
     val lowStockAlert by viewModel.lowStockAlertState.collectAsStateWithLifecycle()
+    val adminCredentials by viewModel.adminCredentialsState.collectAsStateWithLifecycle()
+    val adminRecoveryState by viewModel.adminRecoveryState.collectAsStateWithLifecycle()
+    val gmailConsentRequest by viewModel.gmailConsentRequest.collectAsStateWithLifecycle()
 
     // Subscribe to report flows so report tables stay live
     viewModel.monthlySalesReport.collectAsStateWithLifecycle()
@@ -214,12 +241,28 @@ fun ConcordGasRootApp(
         viewModel.handleDriveConsentResult(res.resultCode, res.data)
     }
 
+    val gmailConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { res ->
+        viewModel.handleGmailConsentResult(res.resultCode, res.data)
+    }
+
     LaunchedEffect(driveConsentRequest) {
         driveConsentRequest?.let { pending ->
             try {
                 driveConsentLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
             } catch (_: Exception) {
                 viewModel.dismissDriveConsentRequest()
+            }
+        }
+    }
+
+    LaunchedEffect(gmailConsentRequest) {
+        gmailConsentRequest?.let { pending ->
+            try {
+                gmailConsentLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+            } catch (_: Exception) {
+                viewModel.dismissGmailConsentRequest()
             }
         }
     }
@@ -311,12 +354,19 @@ fun ConcordGasRootApp(
                     linkedStaffUsername = cloudLoginMetadata.linkedStaffUsername,
                     linkedStaffRole = cloudLoginMetadata.linkedStaffRole,
                     themePreset = themePreset,
+                    darkModeEnabled = effectiveDarkMode,
                     soundEnabled = soundEnabled,
                     autoLoginEnabled = autoLoginEnabled,
+                    adminCredentials = adminCredentials,
+                    adminRecoveryState = adminRecoveryState,
                     onThemeCycle = {
                         SoundEffectsManager.playTapTick(soundEnabled)
                         val next = ThemePreset.entries[(themePreset.ordinal + 1) % ThemePreset.entries.size]
                         viewModel.setThemePreset(next)
+                    },
+                    onToggleDarkMode = {
+                        SoundEffectsManager.playTapTick(soundEnabled)
+                        viewModel.toggleDarkMode()
                     },
                     onToggleSound = {
                         val next = !soundEnabled
@@ -329,6 +379,15 @@ fun ConcordGasRootApp(
                     onRetryCloud = viewModel::retryCloudConnect,
                     onGoogleSignOut = handleGoogleSignOut,
                     onLogin = viewModel::login,
+                    onSetupAdminCredentials = viewModel::setupInitialAdminCredentials,
+                    onLoginAdminWithPassword = viewModel::loginAdminWithPassword,
+                    onOpenAdminRecovery = { purpose -> viewModel.openAdminRecovery(purpose, googleEmail) },
+                    onSendRecoveryCode = { email -> viewModel.sendAdminRecoveryCode(email) },
+                    onVerifyPasswordReset = viewModel::verifyCodeAndResetAdminPassword,
+                    onVerifyUsernameRecovery = viewModel::verifyCodeAndRecoverAdminUsername,
+                    onUpdateRecoveredUsername = viewModel::updateAdminUsernameAfterRecovery,
+                    onClearRecoveryError = viewModel::clearAdminRecoveryError,
+                    onDismissRecovery = viewModel::dismissAdminRecovery,
                     onClearError = viewModel::clearLoginError
                 )
             }
@@ -356,6 +415,11 @@ fun ConcordGasRootApp(
                     isOnlineSynced = workspaceState is WorkspaceConnectionState.Connected,
                     autoLoginEnabled = autoLoginEnabled,
                     autoLogoutMode = autoLogoutMode,
+                    darkModeEnabled = effectiveDarkMode,
+                    onToggleDarkMode = {
+                        SoundEffectsManager.playTapTick(soundEnabled)
+                        viewModel.toggleDarkMode()
+                    },
                     onAutoLoginChanged = viewModel::setAutoLoginEnabled,
                     onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
                     onDateSelected = viewModel::setSelectedDate,
@@ -503,6 +567,11 @@ fun ConcordGasRootApp(
                                     pendingCustomerCount = allCustomerPendingRows.count { it.pendingEmptyBalance > 0 },
                                     totalPendingEmptyCount = allCustomerPendingRows.sumOf { it.pendingEmptyBalance.coerceAtLeast(0) },
                                     lowStockAlert = lowStockAlert,
+                                    darkModeEnabled = effectiveDarkMode,
+                                    onToggleDarkMode = {
+                                        SoundEffectsManager.playTapTick(soundEnabled)
+                                        viewModel.toggleDarkMode()
+                                    },
                                     onDateSelected = viewModel::setSelectedDate,
                                     onOpenInventory = { viewingCompanyInventory = true },
                                     onOpenStore = { currentTab = AdminNavTab.STORE },
@@ -588,12 +657,18 @@ fun ConcordGasRootApp(
                                     permissionsStatus = permissionsStatus,
                                     pendingDriveRestoreJson = pendingDriveRestoreJson,
                                     themePreset = themePreset,
+                                    darkModeEnabled = effectiveDarkMode,
                                     soundEnabled = soundEnabled,
                                     autoLoginEnabled = autoLoginEnabled,
                                     autoLogoutMode = autoLogoutMode,
+                                    adminCredentials = adminCredentials,
                                     onThemePresetChanged = { preset ->
                                         SoundEffectsManager.playTapTick(soundEnabled)
                                         viewModel.setThemePreset(preset)
+                                    },
+                                    onDarkModeChanged = { enabled ->
+                                        SoundEffectsManager.playTapTick(soundEnabled)
+                                        viewModel.setDarkModeEnabled(enabled)
                                     },
                                     onSoundEnabledChanged = { enabled ->
                                         viewModel.setSoundEnabled(enabled)
@@ -601,6 +676,7 @@ fun ConcordGasRootApp(
                                     },
                                     onAutoLoginChanged = viewModel::setAutoLoginEnabled,
                                     onAutoLogoutModeChanged = viewModel::setAutoLogoutMode,
+                                    onUpdateAdminCredentials = viewModel::updateAdminCredentialsFromSettings,
                                     onPreviewStartupSplash = onPreviewStartupSplash,
                                     onSyncNow = viewModel::syncNow,
                                     onGoogleSignOut = handleGoogleSignOut,

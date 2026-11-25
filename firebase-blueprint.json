@@ -212,6 +212,9 @@
         "driveAccountEmail": { "type": "string" },
         "themePreset": { "type": "string" },
         "autoLogoutMode": { "type": "string" },
+        "adminLoginUsername": { "type": "string" },
+        "adminPasswordHash": { "type": "string" },
+        "adminRecoveryEmail": { "type": "string" },
         "updatedByUid": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }

@@ -33,11 +33,13 @@ import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
@@ -84,9 +86,12 @@ import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.StoreStockRow
 import com.example.ui.components.BrandHeaderBanner
+import com.example.ui.components.CurrentInventoryTotalsCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.PendingDeliveriesSummaryCard
+import com.example.ui.components.RecentStoreActivityCard
 import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.StockPill
 import com.example.ui.theme.AmberContainer
@@ -116,6 +121,8 @@ fun AdminDashboardScreen(
     pendingCustomerCount: Int = 0,
     totalPendingEmptyCount: Int = 0,
     lowStockAlert: LowStockAlertState = LowStockAlertState(),
+    darkModeEnabled: Boolean = false,
+    onToggleDarkMode: () -> Unit = {},
     onDateSelected: (String) -> Unit,
     onOpenInventory: () -> Unit,
     onOpenStore: () -> Unit,
@@ -136,15 +143,27 @@ fun AdminDashboardScreen(
             title = "CONCORD & A TO Z GAS",
             subtitle = "Admin Dashboard • Welcome, $adminName",
             trailingContent = {
-                IconButton(
-                    onClick = onLogout,
-                    modifier = Modifier.testTag("admin_logout_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = "Logout",
-                        tint = Color.White
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onToggleDarkMode,
+                        modifier = Modifier.testTag("admin_dark_mode_toggle")
+                    ) {
+                        Icon(
+                            imageVector = if (darkModeEnabled) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = if (darkModeEnabled) "Switch to Light Mode" else "Switch to Warehouse Dark Mode",
+                            tint = Color.White
+                        )
+                    }
+                    IconButton(
+                        onClick = onLogout,
+                        modifier = Modifier.testTag("admin_logout_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Logout",
+                            tint = Color.White
+                        )
+                    }
                 }
             }
         )
@@ -228,53 +247,38 @@ fun AdminDashboardScreen(
                 }
             }
 
-            if (pendingCustomerCount > 0 || totalPendingEmptyCount > 0) {
-                item {
-                    Card(
-                        onClick = onOpenReports,
-                        colors = CardDefaults.cardColors(containerColor = BrandRedContainer),
-                        border = BorderStroke(1.dp, BrandRedSecondary)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(
-                                    imageVector = Icons.Default.Recycling,
-                                    contentDescription = "Customer Pending Empty",
-                                    tint = BrandRedOnContainer
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "Customer Pending Empty Balance",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = BrandRedOnContainer,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "$pendingCustomerCount customers owe $totalPendingEmptyCount empty cylinders",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = BrandRedOnContainer
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "View",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = BrandRedSecondary
-                            )
-                        }
-                    }
-                }
-            }
-
             if (summary != null) {
+                // Summary Card 1: Current Inventory Totals
+                item {
+                    CurrentInventoryTotalsCard(
+                        summary = summary,
+                        onOpenInventory = onOpenInventory
+                    )
+                }
+
+                // Summary Card 2: Pending Deliveries (Vehicles on Route + Pending Empty Pickups)
+                item {
+                    PendingDeliveriesSummaryCard(
+                        summary = summary,
+                        pendingCustomerCount = pendingCustomerCount,
+                        totalPendingEmptyCount = totalPendingEmptyCount,
+                        onOpenVehicles = onOpenVehicles,
+                        onOpenVehicleDetail = onOpenVehicleDetail,
+                        onOpenReports = onOpenReports
+                    )
+                }
+
+                // Summary Card 3: Recent Store Activity
+                item {
+                    RecentStoreActivityCard(
+                        summary = summary,
+                        selectedDate = selectedDate,
+                        canEdit = products.isNotEmpty(),
+                        onOpenStore = onOpenStore,
+                        onEditTransaction = { tx -> editingTransaction = tx }
+                    )
+                }
+
                 // Hero KPIs: Total Full & Total Empty
                 item {
                     Row(

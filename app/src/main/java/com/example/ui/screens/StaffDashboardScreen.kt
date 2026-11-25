@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.PersonAddAlt1
@@ -103,6 +105,8 @@ fun StaffDashboardScreen(
     isOnlineSynced: Boolean = true,
     autoLoginEnabled: Boolean = true,
     autoLogoutMode: AutoLogoutMode = AutoLogoutMode.OFF,
+    darkModeEnabled: Boolean = false,
+    onToggleDarkMode: () -> Unit = {},
     onAutoLoginChanged: (Boolean) -> Unit = {},
     onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
     onDateSelected: (String) -> Unit,
@@ -179,6 +183,16 @@ fun StaffDashboardScreen(
                             }
                         }
                         Spacer(Modifier.width(4.dp))
+                    }
+                    IconButton(
+                        onClick = onToggleDarkMode,
+                        modifier = Modifier.testTag("staff_dark_mode_toggle")
+                    ) {
+                        Icon(
+                            imageVector = if (darkModeEnabled) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = if (darkModeEnabled) "Switch to Light Mode" else "Switch to Warehouse Dark Mode",
+                            tint = Color.White
+                        )
                     }
                     IconButton(
                         onClick = { showAutoSessionDialog = true },

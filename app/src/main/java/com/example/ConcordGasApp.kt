@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import com.example.auth.GmailVerificationManager
 import com.example.data.local.ConcordDatabase
 import com.example.data.remote.CloudSyncRepository
 import com.example.data.repository.InventoryRepository
@@ -24,6 +25,7 @@ class AppContainer(application: Application) {
     }
     val backupManager: BackupManager by lazy { BackupManager(database) }
     val driveBackupManager: GoogleDriveBackupManager by lazy { GoogleDriveBackupManager(application) }
+    val gmailVerificationManager: GmailVerificationManager by lazy { GmailVerificationManager(application) }
 }
 
 class ConcordGasApp : Application() {

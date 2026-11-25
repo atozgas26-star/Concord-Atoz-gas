@@ -1,9 +1,14 @@
 package com.example
 
 import android.content.Context
+import android.util.Base64
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.audio.SoundEffectsManager
+import com.example.auth.AdminCredentialCrypto
+import com.example.auth.GmailVerificationManager
+import com.example.auth.RecoveryPurpose
+import com.example.auth.RecoveryStep
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.SessionPreferences
 import com.example.data.model.AutoLogoutMode
@@ -824,5 +829,333 @@ class ExampleRobolectricTest {
         vm.checkLowStockLevels(stockRows = outOfStockRows, threshold = 0)
         assertFalse(vm.lowStockAlertState.value.isAlertVisible)
         assertFalse(vm.lowStockAlertState.value.shouldShowBanner)
+    }
+
+    @Test
+    fun `dashboard summary computes current inventory totals, pending deliveries, and recent store activity accurately`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val nadeemVehicle = repository.vehiclesFlow.first().first { it.staffUserId == nadeem.id }
+        val sivanVehicle = repository.vehiclesFlow.first().first { it.name == "SIVAN" }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        val day = "2026-11-25"
+
+        // Purchase 25 Full cylinders into Store
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = day,
+                type = TransactionType.STORE_PURCHASE_FULL,
+                productId = oxygen.id,
+                vehicleId = null,
+                actor = admin,
+                quantity = 25,
+                notes = "Morning arrival",
+                purchaseCompanyName = "Emirates Gas"
+            ) is OperationResult.Success
+        )
+
+        // Dispatch 10 to NADEEM and 6 to SIVAN -> Store Full = 9, Vehicles Full = 16
+        assertTrue(
+            repository.recordTransaction(day, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, nadeemVehicle.id, admin, 10, "")
+                is OperationResult.Success
+        )
+        assertTrue(
+            repository.recordTransaction(day, TransactionType.VEHICLE_FULL_RECEIVED, oxygen.id, sivanVehicle.id, admin, 6, "")
+                is OperationResult.Success
+        )
+
+        // NADEEM delivers 4 to customer -> NADEEM pending = 6, SIVAN pending = 6 -> Total pending deliveries = 12
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = day,
+                type = TransactionType.VEHICLE_CUSTOMER_SALE,
+                productId = oxygen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 4,
+                notes = "",
+                customerName = "Al Noor Hotel"
+            ) is OperationResult.Success
+        )
+
+        val summary = repository.observeDashboardSummary(day).first()
+
+        // Current Inventory Totals: Store 9 Full + Fleet 12 Full = 21 Full; 0 Empty
+        assertEquals(21, summary.totalFullCylinders)
+        assertEquals(0, summary.totalEmptyCylinders)
+        assertEquals(9, summary.storeFullBalance)
+        assertEquals(12, summary.allVehiclesFullBalance)
+
+        // Pending Deliveries: 12 cylinders remaining across 2 active vehicles
+        assertEquals(12, summary.pendingDeliveryCylinders)
+        assertEquals(2, summary.activeDeliveryVehiclesCount)
+        assertEquals(4, summary.todaySales)
+
+        // Recent Store Activity includes purchase + 2 dispatches (3 store-level entries), excluding pure vehicle sale
+        assertEquals(3, summary.todayStoreActivityCount)
+        assertEquals(3, summary.recentStoreActivity.size)
+        assertTrue(summary.recentStoreActivity.all { it.transaction.type.isStoreLevel })
+    }
+
+    @Test
+    fun `warehouse dark mode toggle persists across preferences, syncs with midnight preset, and new app logo resource loads`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.setDarkModeEnabled(false)
+        prefs.setThemePreset(com.example.data.model.ThemePreset.EMERALD_CORPORATE)
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            appContext = context
+        )
+        val initDeadline = System.currentTimeMillis() + 5000L
+        while (!vm.isInitialized.value && System.currentTimeMillis() < initDeadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+
+        assertFalse(prefs.darkModeEnabledFlow.first())
+
+        // Toggle dark mode ON
+        vm.toggleDarkMode()
+        val onDeadline = System.currentTimeMillis() + 5000L
+        while (!vm.darkModeEnabled.value && System.currentTimeMillis() < onDeadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        assertTrue(vm.darkModeEnabled.value)
+        assertTrue(prefs.darkModeEnabledFlow.first())
+
+        // Selecting MIDNIGHT_DARK keeps dark mode ON; toggling OFF resets preset out of MIDNIGHT_DARK cleanly
+        vm.setThemePreset(com.example.data.model.ThemePreset.MIDNIGHT_DARK)
+        val midnightDeadline = System.currentTimeMillis() + 5000L
+        while (vm.themePreset.value != com.example.data.model.ThemePreset.MIDNIGHT_DARK && System.currentTimeMillis() < midnightDeadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        assertEquals(com.example.data.model.ThemePreset.MIDNIGHT_DARK, vm.themePreset.value)
+
+        vm.toggleDarkMode()
+        val offDeadline = System.currentTimeMillis() + 5000L
+        while ((vm.darkModeEnabled.value || vm.themePreset.value == com.example.data.model.ThemePreset.MIDNIGHT_DARK) &&
+            System.currentTimeMillis() < offDeadline
+        ) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        assertFalse(vm.darkModeEnabled.value)
+        assertEquals(com.example.data.model.ThemePreset.EMERALD_CORPORATE, vm.themePreset.value)
+
+        // Verify new app logo drawable and adaptive launcher icon resources resolve cleanly
+        assertNotNull(context.resources.getDrawable(R.drawable.ic_concord_logo_v2, context.theme))
+        assertNotNull(context.resources.getDrawable(R.mipmap.ic_launcher, context.theme))
+    }
+
+    @Test
+    fun `admin credential crypto hashes passwords with salted PBKDF2, isolates OTP purpose, and strips header injection`() {
+        val hash1 = AdminCredentialCrypto.hashPassword("Concord@2026")
+        val hash2 = AdminCredentialCrypto.hashPassword("Concord@2026")
+        assertTrue(hash1.startsWith("pbkdf2\$"))
+        assertFalse(hash1 == hash2) // Unique random salt per hash
+        assertFalse(hash1.contains("Concord@2026"))
+
+        assertTrue(AdminCredentialCrypto.verifyPassword("Concord@2026", hash1))
+        assertTrue(AdminCredentialCrypto.verifyPassword("Concord@2026", hash2))
+        assertFalse(AdminCredentialCrypto.verifyPassword("WrongPass!", hash1))
+        assertFalse(AdminCredentialCrypto.verifyPassword("", hash1))
+        assertFalse(AdminCredentialCrypto.verifyPassword("Concord@2026", "plaintext"))
+
+        val otp = AdminCredentialCrypto.generateSixDigitCode()
+        assertEquals(6, otp.length)
+        assertTrue(otp.all { it.isDigit() })
+
+        val salt = AdminCredentialCrypto.generateRandomSalt()
+        val pwdHash = AdminCredentialCrypto.hashVerificationCode(
+            code = otp,
+            salt = salt,
+            purpose = RecoveryPurpose.FORGOT_PASSWORD.name,
+            email = "atozgas26@gmail.com"
+        )
+        assertTrue(
+            AdminCredentialCrypto.verifyVerificationCode(
+                inputCode = otp,
+                expectedHash = pwdHash,
+                salt = salt,
+                purpose = RecoveryPurpose.FORGOT_PASSWORD.name,
+                email = "ATOZGAS26@GMAIL.COM"
+            )
+        )
+        // Cross-purpose replay must be rejected
+        assertFalse(
+            AdminCredentialCrypto.verifyVerificationCode(
+                inputCode = otp,
+                expectedHash = pwdHash,
+                salt = salt,
+                purpose = RecoveryPurpose.FORGOT_USERNAME.name,
+                email = "atozgas26@gmail.com"
+            )
+        )
+        assertFalse(
+            AdminCredentialCrypto.verifyVerificationCode(
+                inputCode = "000000",
+                expectedHash = pwdHash,
+                salt = salt,
+                purpose = RecoveryPurpose.FORGOT_PASSWORD.name,
+                email = "atozgas26@gmail.com"
+            )
+        )
+
+        // Header injection CR/LF neutralization
+        assertEquals("atozgas26@gmail.comBcc:evil@x.com", AdminCredentialCrypto.sanitizeEmailHeader("atozgas26@gmail.com\r\nBcc:evil@x.com"))
+        assertFalse(AdminCredentialCrypto.isValidEmail("atozgas26@gmail.com\r\nBcc:evil@x.com"))
+        assertTrue(AdminCredentialCrypto.isValidEmail("atozgas26@gmail.com"))
+        assertEquals("at***6@gmail.com", AdminCredentialCrypto.maskEmail("atozgas26@gmail.com"))
+    }
+
+    @Test
+    fun `admin username password login and gmail verification code forgot password and forgot username flows work end to end`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        prefs.clearAdminCredentials()
+
+        val sentMimePayloads = mutableListOf<String>()
+        val gmailInterceptor = Interceptor { chain ->
+            val req = chain.request()
+            assertTrue(req.url.toString().contains("/gmail/v1/users/me/messages/send"))
+            assertEquals("Bearer test-gmail-oauth-token", req.header("Authorization"))
+            val buf = Buffer()
+            req.body?.writeTo(buf)
+            val bodyJson = org.json.JSONObject(buf.readUtf8())
+            val rawB64 = bodyJson.getString("raw")
+            val decodedMime = String(
+                Base64.decode(rawB64, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING),
+                Charsets.UTF_8
+            )
+            sentMimePayloads.add(decodedMime)
+            Response.Builder()
+                .request(req)
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body("""{"id":"gmail_msg_${sentMimePayloads.size}"}""".toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+        val mockGmailClient = OkHttpClient.Builder().addInterceptor(gmailInterceptor).build()
+        val gmailMgr = GmailVerificationManager(context, mockGmailClient)
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = gmailMgr,
+            appContext = context
+        )
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+
+        waitUntil { vm.isInitialized.value }
+        assertFalse(vm.adminCredentialsState.value.isConfigured)
+
+        // 1. First-run Admin Username & Password setup
+        vm.setupInitialAdminCredentials(
+            username = "concord_admin",
+            password = "OldPassword123",
+            confirmPassword = "OldPassword123",
+            recoveryEmail = "atozgas26@gmail.com"
+        )
+        waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN && vm.adminCredentialsState.value.isConfigured }
+        assertEquals(UserRole.ADMIN, vm.authSession.value?.user?.role)
+        val savedCreds = prefs.adminCredentialsFlow.first()
+        assertEquals("concord_admin", savedCreds.username)
+        assertEquals("atozgas26@gmail.com", savedCreds.recoveryEmail)
+        assertTrue(savedCreds.passwordHash.startsWith("pbkdf2\$"))
+        assertFalse(savedCreds.passwordHash.contains("OldPassword123"))
+
+        // 2. Logout & verify username/password login rejects wrong password and accepts right password
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+
+        vm.loginAdminWithPassword("concord_admin", "WrongPass999")
+        waitUntil { vm.loginError.value != null }
+        assertNull(vm.authSession.value)
+
+        vm.loginAdminWithPassword("concord_admin", "OldPassword123")
+        waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
+        assertEquals(UserRole.ADMIN, vm.authSession.value?.user?.role)
+
+        // 3. Logout & test Forgot Password via real Gmail API verification code
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+
+        vm.openAdminRecovery(RecoveryPurpose.FORGOT_PASSWORD, "atozgas26@gmail.com")
+        // Unregistered Gmail must be rejected
+        vm.sendAdminRecoveryCode("unauthorized@gmail.com", accessTokenOverride = "test-gmail-oauth-token")
+        waitUntil { vm.adminRecoveryState.value.errorMessage != null }
+        assertEquals(0, sentMimePayloads.size)
+
+        // Registered Gmail sends 6-digit verification code via Gmail API
+        vm.clearAdminRecoveryError()
+        vm.sendAdminRecoveryCode("atozgas26@gmail.com", accessTokenOverride = "test-gmail-oauth-token")
+        waitUntil { vm.adminRecoveryState.value.step == RecoveryStep.VERIFY_CODE }
+        assertEquals(1, sentMimePayloads.size)
+        val pwdCodeMatch = Regex("VERIFICATION CODE:\\s*(\\d{6})").find(sentMimePayloads.last())
+        assertNotNull(pwdCodeMatch)
+        val pwdOtp = pwdCodeMatch!!.groupValues[1]
+
+        // Wrong OTP fails cleanly
+        vm.verifyCodeAndResetAdminPassword("000000", "NewSecure2026", "NewSecure2026")
+        waitUntil { vm.adminRecoveryState.value.errorMessage != null }
+        assertNotNull(vm.adminRecoveryState.value.activePurpose)
+
+        // Correct OTP resets password and closes dialog
+        vm.verifyCodeAndResetAdminPassword(pwdOtp, "NewSecure2026", "NewSecure2026")
+        waitUntil { vm.adminRecoveryState.value.activePurpose == null }
+
+        // Old password now fails; new password signs in Admin
+        vm.loginAdminWithPassword("concord_admin", "OldPassword123")
+        waitUntil { vm.loginError.value != null }
+        assertNull(vm.authSession.value)
+
+        vm.loginAdminWithPassword("concord_admin", "NewSecure2026")
+        waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
+        assertEquals(UserRole.ADMIN, vm.authSession.value?.user?.role)
+
+        // 4. Logout & test Forgot Username via real Gmail API verification code
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+
+        vm.openAdminRecovery(RecoveryPurpose.FORGOT_USERNAME, "atozgas26@gmail.com")
+        vm.sendAdminRecoveryCode("atozgas26@gmail.com", accessTokenOverride = "test-gmail-oauth-token")
+        waitUntil { vm.adminRecoveryState.value.step == RecoveryStep.VERIFY_CODE }
+        assertEquals(2, sentMimePayloads.size)
+        val userCodeMatch = Regex("VERIFICATION CODE:\\s*(\\d{6})").find(sentMimePayloads.last())
+        assertNotNull(userCodeMatch)
+        val userOtp = userCodeMatch!!.groupValues[1]
+
+        vm.verifyCodeAndRecoverAdminUsername(userOtp)
+        waitUntil { vm.adminRecoveryState.value.step == RecoveryStep.USERNAME_REVEALED }
+        assertEquals("concord_admin", vm.adminRecoveryState.value.revealedUsername)
+
+        // Update username inline after recovery and sign in with updated username
+        vm.updateAdminUsernameAfterRecovery("concord_boss")
+        waitUntil { vm.adminRecoveryState.value.revealedUsername == "concord_boss" }
+        vm.dismissAdminRecovery()
+
+        vm.loginAdminWithPassword("concord_boss", "NewSecure2026")
+        waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
+        assertEquals(UserRole.ADMIN, vm.authSession.value?.user?.role)
     }
 }

@@ -7,6 +7,13 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.auth.AdminCredentialCrypto
+import com.example.auth.AdminRecoveryUiState
+import com.example.auth.GmailAuthResult
+import com.example.auth.GmailVerificationManager
+import com.example.auth.RecoveryPurpose
+import com.example.auth.RecoveryStep
+import com.example.data.local.AdminCredentialsState
 import com.example.data.local.ProductEntity
 import com.example.data.local.SessionPreferences
 import com.example.data.local.UserAccountEntity
@@ -74,6 +81,20 @@ private enum class PendingDriveConsentAction {
     RESTORE_NOW
 }
 
+private data class ActiveRecoveryChallenge(
+    val purpose: RecoveryPurpose,
+    val email: String,
+    val codeSalt: String,
+    val codeHash: String,
+    val expiresAtMs: Long,
+    val attemptsUsed: Int = 0
+)
+
+private data class PendingGmailConsentAction(
+    val purpose: RecoveryPurpose,
+    val email: String
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(
     private val repository: InventoryRepository,
@@ -81,7 +102,8 @@ class AppViewModel(
     private val cloudSync: CloudSyncRepository? = null,
     private val sessionPreferences: SessionPreferences? = null,
     private val driveBackupManager: GoogleDriveBackupManager? = null,
-    private val appContext: Context? = null
+    private val appContext: Context? = null,
+    private val gmailVerificationManager: GmailVerificationManager? = null
 ) : ViewModel() {
 
     private val _isInitialized = MutableStateFlow(false)
@@ -124,6 +146,10 @@ class AppViewModel(
         (sessionPreferences?.themePresetFlow ?: flowOf(ThemePreset.EMERALD_CORPORATE))
             .stateIn(viewModelScope, SharingStarted.Eagerly, ThemePreset.EMERALD_CORPORATE)
 
+    val darkModeEnabled: StateFlow<Boolean> =
+        (sessionPreferences?.darkModeEnabledFlow ?: flowOf(false))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val soundEnabled: StateFlow<Boolean> =
         (sessionPreferences?.soundEnabledFlow ?: flowOf(true))
             .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -153,6 +179,21 @@ class AppViewModel(
 
     private val _lowStockAlertState = MutableStateFlow(LowStockAlertState())
     val lowStockAlertState: StateFlow<LowStockAlertState> = _lowStockAlertState.asStateFlow()
+
+    val adminCredentialsState: StateFlow<AdminCredentialsState> =
+        (sessionPreferences?.adminCredentialsFlow ?: flowOf(AdminCredentialsState()))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, AdminCredentialsState())
+
+    private val _adminRecoveryState = MutableStateFlow(AdminRecoveryUiState())
+    val adminRecoveryState: StateFlow<AdminRecoveryUiState> = _adminRecoveryState.asStateFlow()
+
+    private val _gmailConsentRequest = MutableStateFlow<PendingIntent?>(null)
+    val gmailConsentRequest: StateFlow<PendingIntent?> = _gmailConsentRequest.asStateFlow()
+
+    private var activeRecoveryChallenge: ActiveRecoveryChallenge? = null
+    private var pendingGmailConsentAction: PendingGmailConsentAction? = null
+    private var failedAdminLoginAttempts: Int = 0
+    private var adminLoginLockoutUntilMs: Long = 0L
 
     private var lastAlertSignature: List<Pair<Long, Int>> = emptyList()
     private var latestCompanyStockRows: List<CompanyStockRow> = emptyList()
@@ -277,6 +318,30 @@ class AppViewModel(
             viewModelScope.launch {
                 sessionPreferences.lowStockThresholdFlow.collect { savedThreshold ->
                     _lowStockThreshold.value = savedThreshold
+                }
+            }
+            if (cloudSync != null) {
+                viewModelScope.launch {
+                    cloudSync.adminSettings.collect { cloudSettings ->
+                        if (cloudSettings != null &&
+                            cloudSettings.adminLoginUsername.isNotBlank() &&
+                            cloudSettings.adminPasswordHash.isNotBlank()
+                        ) {
+                            val localCreds = sessionPreferences.adminCredentialsFlow.first()
+                            if (localCreds.username != cloudSettings.adminLoginUsername ||
+                                localCreds.passwordHash != cloudSettings.adminPasswordHash ||
+                                localCreds.recoveryEmail != cloudSettings.adminRecoveryEmail
+                            ) {
+                                sessionPreferences.saveAdminCredentials(
+                                    username = cloudSettings.adminLoginUsername,
+                                    passwordHash = cloudSettings.adminPasswordHash,
+                                    recoveryEmail = cloudSettings.adminRecoveryEmail.ifBlank {
+                                        CloudSyncRepository.ADMIN_EMAIL
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -774,7 +839,26 @@ class AppViewModel(
     }
 
     fun setThemePreset(preset: ThemePreset) {
-        viewModelScope.launch { sessionPreferences?.setThemePreset(preset) }
+        viewModelScope.launch {
+            sessionPreferences?.setThemePreset(preset)
+            if (preset == ThemePreset.MIDNIGHT_DARK) {
+                sessionPreferences?.setDarkModeEnabled(true)
+            }
+        }
+    }
+
+    fun setDarkModeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            sessionPreferences?.setDarkModeEnabled(enabled)
+            if (!enabled && themePreset.value == ThemePreset.MIDNIGHT_DARK) {
+                sessionPreferences?.setThemePreset(ThemePreset.EMERALD_CORPORATE)
+            }
+        }
+    }
+
+    fun toggleDarkMode() {
+        val currentlyDark = darkModeEnabled.value || themePreset.value == ThemePreset.MIDNIGHT_DARK
+        setDarkModeEnabled(!currentlyDark)
     }
 
     fun setSoundEnabled(enabled: Boolean) {
@@ -928,6 +1012,557 @@ class AppViewModel(
 
     fun clearLoginError() {
         _loginError.value = null
+    }
+
+    private fun isStaffRestrictedDevice(): Boolean {
+        val conn = workspaceConnectionState.value
+        return conn is WorkspaceConnectionState.Connected &&
+            !conn.isOwnerOrAdmin &&
+            cloudLoginMetadata.value.linkedStaffRole != UserRole.ADMIN
+    }
+
+    fun setupInitialAdminCredentials(
+        username: String,
+        password: String,
+        confirmPassword: String,
+        recoveryEmail: String
+    ) {
+        if (_isAuthenticating.value) return
+        if (isStaffRestrictedDevice()) {
+            _loginError.value = "Admin setup is restricted to the Admin Google account."
+            return
+        }
+        val cleanUser = username.trim()
+        val cleanEmail = recoveryEmail.trim().lowercase()
+        when {
+            !AdminCredentialCrypto.isValidUsername(cleanUser) -> {
+                _loginError.value = "Username must be 3–40 characters (letters, numbers, ., _, -)."
+                return
+            }
+            !AdminCredentialCrypto.isValidPassword(password) -> {
+                _loginError.value = "Password must be 6–64 characters."
+                return
+            }
+            password != confirmPassword -> {
+                _loginError.value = "Passwords do not match."
+                return
+            }
+            !AdminCredentialCrypto.isValidEmail(cleanEmail) -> {
+                _loginError.value = "Enter a valid Recovery Gmail address."
+                return
+            }
+        }
+
+        viewModelScope.launch {
+            _isAuthenticating.value = true
+            try {
+                val adminUser = repository.usersFlow.first().firstOrNull { it.role == UserRole.ADMIN && it.isActive }
+                if (adminUser == null) {
+                    _loginError.value = "Admin account was not found."
+                    return@launch
+                }
+                val hash = AdminCredentialCrypto.hashPassword(password)
+                sessionPreferences?.saveAdminCredentials(
+                    username = cleanUser,
+                    passwordHash = hash,
+                    recoveryEmail = cleanEmail
+                )
+                cloudSync?.saveAdminCredentialsToCloud(
+                    adminLoginUsername = cleanUser,
+                    adminPasswordHash = hash,
+                    adminRecoveryEmail = cleanEmail
+                )
+                val session = repository.getSessionForUserId(adminUser.id)
+                if (session != null) {
+                    if (autoLoginEnabled.value) {
+                        sessionPreferences?.saveLoggedInUserId(session.user.id)
+                    } else {
+                        sessionPreferences?.clearLoggedInUserId()
+                    }
+                    _authSession.value = session
+                    _loginError.value = null
+                    _selectedDate.value = InventoryRepository.todayIsoDate()
+                    _snackbarMessage.value = "Admin username & password saved with Gmail recovery."
+                }
+            } finally {
+                _isAuthenticating.value = false
+            }
+        }
+    }
+
+    fun loginAdminWithPassword(username: String, password: String) {
+        if (_isAuthenticating.value) return
+        if (isStaffRestrictedDevice()) {
+            _loginError.value = "Admin login is restricted to the authorized Admin Google account."
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now < adminLoginLockoutUntilMs) {
+            val remainingSec = ((adminLoginLockoutUntilMs - now) / 1000L).coerceAtLeast(1L)
+            _loginError.value = "Too many failed attempts. Wait ${remainingSec}s or use Forgot Password via Gmail."
+            return
+        }
+
+        val cleanUser = username.trim()
+        if (cleanUser.isEmpty() || password.isEmpty()) {
+            _loginError.value = "Enter both Admin username and password."
+            return
+        }
+
+        viewModelScope.launch {
+            _isAuthenticating.value = true
+            try {
+                val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
+                if (!creds.isConfigured) {
+                    _loginError.value = "Set up your Admin username and password first."
+                    return@launch
+                }
+
+                val usernameMatches = creds.username.equals(cleanUser, ignoreCase = true)
+                val passwordMatches = AdminCredentialCrypto.verifyPassword(password, creds.passwordHash)
+                if (!usernameMatches || !passwordMatches) {
+                    failedAdminLoginAttempts += 1
+                    if (failedAdminLoginAttempts >= 5) {
+                        adminLoginLockoutUntilMs = System.currentTimeMillis() + 30_000L
+                        failedAdminLoginAttempts = 0
+                        _loginError.value = "5 failed attempts. Locked for 30s — use Forgot Password or Forgot Username via Gmail."
+                    } else {
+                        _loginError.value = "Invalid Admin username or password."
+                    }
+                    return@launch
+                }
+
+                val adminUser = repository.usersFlow.first().firstOrNull { it.role == UserRole.ADMIN && it.isActive }
+                if (adminUser == null) {
+                    _loginError.value = "Admin account is unavailable."
+                    return@launch
+                }
+
+                failedAdminLoginAttempts = 0
+                adminLoginLockoutUntilMs = 0L
+
+                val session = repository.getSessionForUserId(adminUser.id)
+                if (session != null) {
+                    if (autoLoginEnabled.value) {
+                        sessionPreferences?.saveLoggedInUserId(session.user.id)
+                    } else {
+                        sessionPreferences?.clearLoggedInUserId()
+                    }
+                    _authSession.value = session
+                    _loginError.value = null
+                    _selectedDate.value = InventoryRepository.todayIsoDate()
+                }
+            } finally {
+                _isAuthenticating.value = false
+            }
+        }
+    }
+
+    fun openAdminRecovery(purpose: RecoveryPurpose, defaultGoogleEmail: String = "") {
+        val creds = adminCredentialsState.value
+        val suggestedEmail = creds.recoveryEmail
+            .ifBlank { defaultGoogleEmail }
+            .ifBlank { CloudSyncRepository.ADMIN_EMAIL }
+        _adminRecoveryState.value = AdminRecoveryUiState(
+            activePurpose = purpose,
+            step = RecoveryStep.REQUEST_CODE,
+            targetEmail = suggestedEmail,
+            maskedEmail = AdminCredentialCrypto.maskEmail(suggestedEmail)
+        )
+    }
+
+    fun dismissAdminRecovery() {
+        activeRecoveryChallenge = null
+        pendingGmailConsentAction = null
+        _adminRecoveryState.value = AdminRecoveryUiState()
+    }
+
+    fun clearAdminRecoveryError() {
+        _adminRecoveryState.value = _adminRecoveryState.value.copy(errorMessage = null)
+    }
+
+    fun sendAdminRecoveryCode(
+        emailInput: String,
+        accessTokenOverride: String? = null
+    ) {
+        val current = _adminRecoveryState.value
+        val purpose = current.activePurpose ?: return
+        if (current.isSending) return
+        if (isStaffRestrictedDevice()) {
+            _adminRecoveryState.value = current.copy(
+                errorMessage = "Admin recovery is restricted to the Admin Google account."
+            )
+            return
+        }
+
+        val cleanEmail = emailInput.trim().lowercase()
+        if (!AdminCredentialCrypto.isValidEmail(cleanEmail)) {
+            _adminRecoveryState.value = current.copy(errorMessage = "Enter a valid Gmail address.")
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (accessTokenOverride == null && current.resendAvailableAtMs > now) {
+            val waitSec = ((current.resendAvailableAtMs - now) / 1000L).coerceAtLeast(1L)
+            _adminRecoveryState.value = current.copy(
+                errorMessage = "Please wait ${waitSec}s before requesting another Gmail code."
+            )
+            return
+        }
+
+        val mgr = gmailVerificationManager
+        if (mgr == null) {
+            _adminRecoveryState.value = current.copy(errorMessage = "Gmail verification service is unavailable.")
+            return
+        }
+
+        viewModelScope.launch {
+            val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
+            val registeredEmail = creds.recoveryEmail.trim().lowercase()
+                .ifBlank { CloudSyncRepository.ADMIN_EMAIL.lowercase() }
+            if (cleanEmail != registeredEmail && !cleanEmail.equals(CloudSyncRepository.ADMIN_EMAIL, ignoreCase = true)) {
+                _adminRecoveryState.value = current.copy(
+                    errorMessage = "Gmail address does not match the registered Admin recovery Gmail (${AdminCredentialCrypto.maskEmail(registeredEmail)})."
+                )
+                return@launch
+            }
+
+            _adminRecoveryState.value = current.copy(
+                targetEmail = cleanEmail,
+                maskedEmail = AdminCredentialCrypto.maskEmail(cleanEmail),
+                isSending = true,
+                errorMessage = null
+            )
+
+            try {
+                val token = accessTokenOverride ?: when (val authRes = mgr.authorizeGmailSend(allowConsentPrompt = true)) {
+                    is GmailAuthResult.Authorized -> authRes.accessToken
+                    is GmailAuthResult.NeedsConsent -> {
+                        pendingGmailConsentAction = PendingGmailConsentAction(purpose, cleanEmail)
+                        _gmailConsentRequest.value = authRes.pendingIntent
+                        _adminRecoveryState.value = _adminRecoveryState.value.copy(
+                            isSending = false,
+                            statusMessage = "Waiting for Gmail permission to send verification code..."
+                        )
+                        return@launch
+                    }
+                    is GmailAuthResult.Error -> {
+                        _adminRecoveryState.value = _adminRecoveryState.value.copy(
+                            isSending = false,
+                            errorMessage = authRes.message
+                        )
+                        return@launch
+                    }
+                }
+
+                val code = AdminCredentialCrypto.generateSixDigitCode()
+                val salt = AdminCredentialCrypto.generateRandomSalt()
+                val codeHash = AdminCredentialCrypto.hashVerificationCode(
+                    code = code,
+                    salt = salt,
+                    purpose = purpose.name,
+                    email = cleanEmail
+                )
+                val sendRes = mgr.sendVerificationCodeEmail(
+                    recipientEmail = cleanEmail,
+                    verificationCode = code,
+                    purpose = purpose,
+                    accessTokenOverride = token
+                )
+                sendRes.onSuccess { receipt ->
+                    val sentNow = receipt.sentAtMs
+                    val expiresAt = sentNow + OTP_EXPIRY_MS
+                    activeRecoveryChallenge = ActiveRecoveryChallenge(
+                        purpose = purpose,
+                        email = cleanEmail,
+                        codeSalt = salt,
+                        codeHash = codeHash,
+                        expiresAtMs = expiresAt,
+                        attemptsUsed = 0
+                    )
+                    _adminRecoveryState.value = _adminRecoveryState.value.copy(
+                        step = RecoveryStep.VERIFY_CODE,
+                        targetEmail = cleanEmail,
+                        maskedEmail = AdminCredentialCrypto.maskEmail(cleanEmail),
+                        isSending = false,
+                        errorMessage = null,
+                        statusMessage = "6-digit verification code sent to ${AdminCredentialCrypto.maskEmail(cleanEmail)}",
+                        codeExpiresAtMs = expiresAt,
+                        resendAvailableAtMs = sentNow + OTP_RESEND_COOLDOWN_MS
+                    )
+                }.onFailure { err ->
+                    _adminRecoveryState.value = _adminRecoveryState.value.copy(
+                        isSending = false,
+                        errorMessage = err.localizedMessage ?: "Failed to send verification code via Gmail."
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } finally {
+                if (_adminRecoveryState.value.isSending) {
+                    _adminRecoveryState.value = _adminRecoveryState.value.copy(isSending = false)
+                }
+            }
+        }
+    }
+
+    fun handleGmailConsentResult(resultCode: Int, data: Intent?) {
+        _gmailConsentRequest.value = null
+        val pending = pendingGmailConsentAction
+        pendingGmailConsentAction = null
+
+        val mgr = gmailVerificationManager ?: return
+        if (resultCode != Activity.RESULT_OK) {
+            _adminRecoveryState.value = _adminRecoveryState.value.copy(
+                isSending = false,
+                errorMessage = "Gmail send permission was cancelled."
+            )
+            return
+        }
+        val token = mgr.extractTokenFromConsentResult(data)
+        if (token.isNullOrBlank()) {
+            _adminRecoveryState.value = _adminRecoveryState.value.copy(
+                isSending = false,
+                errorMessage = "Gmail authorization did not return an access token."
+            )
+            return
+        }
+        if (pending != null) {
+            sendAdminRecoveryCode(emailInput = pending.email, accessTokenOverride = token)
+        }
+    }
+
+    fun dismissGmailConsentRequest() {
+        _gmailConsentRequest.value = null
+        pendingGmailConsentAction = null
+    }
+
+    fun verifyCodeAndResetAdminPassword(
+        codeInput: String,
+        newPassword: String,
+        confirmPassword: String
+    ) {
+        val current = _adminRecoveryState.value
+        if (current.activePurpose != RecoveryPurpose.FORGOT_PASSWORD || current.isVerifying) return
+
+        val challenge = activeRecoveryChallenge
+        if (challenge == null || challenge.purpose != RecoveryPurpose.FORGOT_PASSWORD) {
+            _adminRecoveryState.value = current.copy(errorMessage = "Request a Gmail verification code first.")
+            return
+        }
+        if (System.currentTimeMillis() > challenge.expiresAtMs) {
+            activeRecoveryChallenge = null
+            _adminRecoveryState.value = current.copy(
+                errorMessage = "Verification code expired. Tap Resend Gmail Code."
+            )
+            return
+        }
+        if (!AdminCredentialCrypto.isValidPassword(newPassword)) {
+            _adminRecoveryState.value = current.copy(errorMessage = "New password must be 6–64 characters.")
+            return
+        }
+        if (newPassword != confirmPassword) {
+            _adminRecoveryState.value = current.copy(errorMessage = "New passwords do not match.")
+            return
+        }
+
+        val matches = AdminCredentialCrypto.verifyVerificationCode(
+            inputCode = codeInput,
+            expectedHash = challenge.codeHash,
+            salt = challenge.codeSalt,
+            purpose = challenge.purpose.name,
+            email = challenge.email
+        )
+        if (!matches) {
+            val attempts = challenge.attemptsUsed + 1
+            if (attempts >= OTP_MAX_ATTEMPTS) {
+                activeRecoveryChallenge = null
+                _adminRecoveryState.value = current.copy(
+                    errorMessage = "Too many wrong codes. Please request a new Gmail verification code."
+                )
+            } else {
+                activeRecoveryChallenge = challenge.copy(attemptsUsed = attempts)
+                _adminRecoveryState.value = current.copy(
+                    errorMessage = "Invalid verification code (${OTP_MAX_ATTEMPTS - attempts} attempts left)."
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _adminRecoveryState.value = current.copy(isVerifying = true, errorMessage = null)
+            try {
+                val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
+                val newHash = AdminCredentialCrypto.hashPassword(newPassword)
+                val finalUsername = creds.username.ifBlank { "admin_ragavan" }
+                val finalEmail = creds.recoveryEmail.ifBlank { challenge.email }
+                sessionPreferences?.saveAdminCredentials(
+                    username = finalUsername,
+                    passwordHash = newHash,
+                    recoveryEmail = finalEmail
+                )
+                cloudSync?.saveAdminCredentialsToCloud(
+                    adminLoginUsername = finalUsername,
+                    adminPasswordHash = newHash,
+                    adminRecoveryEmail = finalEmail
+                )
+                activeRecoveryChallenge = null
+                failedAdminLoginAttempts = 0
+                adminLoginLockoutUntilMs = 0L
+                _adminRecoveryState.value = AdminRecoveryUiState()
+                _snackbarMessage.value = "Admin password reset successfully! Sign in with your new password."
+            } finally {
+                if (_adminRecoveryState.value.isVerifying) {
+                    _adminRecoveryState.value = _adminRecoveryState.value.copy(isVerifying = false)
+                }
+            }
+        }
+    }
+
+    fun verifyCodeAndRecoverAdminUsername(codeInput: String) {
+        val current = _adminRecoveryState.value
+        if (current.activePurpose != RecoveryPurpose.FORGOT_USERNAME || current.isVerifying) return
+
+        val challenge = activeRecoveryChallenge
+        if (challenge == null || challenge.purpose != RecoveryPurpose.FORGOT_USERNAME) {
+            _adminRecoveryState.value = current.copy(errorMessage = "Request a Gmail verification code first.")
+            return
+        }
+        if (System.currentTimeMillis() > challenge.expiresAtMs) {
+            activeRecoveryChallenge = null
+            _adminRecoveryState.value = current.copy(
+                errorMessage = "Verification code expired. Tap Resend Gmail Code."
+            )
+            return
+        }
+
+        val matches = AdminCredentialCrypto.verifyVerificationCode(
+            inputCode = codeInput,
+            expectedHash = challenge.codeHash,
+            salt = challenge.codeSalt,
+            purpose = challenge.purpose.name,
+            email = challenge.email
+        )
+        if (!matches) {
+            val attempts = challenge.attemptsUsed + 1
+            if (attempts >= OTP_MAX_ATTEMPTS) {
+                activeRecoveryChallenge = null
+                _adminRecoveryState.value = current.copy(
+                    errorMessage = "Too many wrong codes. Please request a new Gmail verification code."
+                )
+            } else {
+                activeRecoveryChallenge = challenge.copy(attemptsUsed = attempts)
+                _adminRecoveryState.value = current.copy(
+                    errorMessage = "Invalid verification code (${OTP_MAX_ATTEMPTS - attempts} attempts left)."
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _adminRecoveryState.value = current.copy(isVerifying = true, errorMessage = null)
+            try {
+                val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
+                val recoveredUsername = creds.username.ifBlank { "admin_ragavan" }
+                activeRecoveryChallenge = null
+                _adminRecoveryState.value = current.copy(
+                    step = RecoveryStep.USERNAME_REVEALED,
+                    isVerifying = false,
+                    errorMessage = null,
+                    revealedUsername = recoveredUsername,
+                    statusMessage = "Gmail verified! Your Admin username is shown below."
+                )
+            } finally {
+                if (_adminRecoveryState.value.isVerifying) {
+                    _adminRecoveryState.value = _adminRecoveryState.value.copy(isVerifying = false)
+                }
+            }
+        }
+    }
+
+    fun updateAdminUsernameAfterRecovery(newUsername: String) {
+        val current = _adminRecoveryState.value
+        if (current.step != RecoveryStep.USERNAME_REVEALED) return
+        val cleanUser = newUsername.trim()
+        if (!AdminCredentialCrypto.isValidUsername(cleanUser)) {
+            _adminRecoveryState.value = current.copy(
+                errorMessage = "Username must be 3–40 characters (letters, numbers, ., _, -)."
+            )
+            return
+        }
+        viewModelScope.launch {
+            val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
+            sessionPreferences?.updateAdminUsername(cleanUser)
+            if (creds.passwordHash.isNotBlank()) {
+                cloudSync?.saveAdminCredentialsToCloud(
+                    adminLoginUsername = cleanUser,
+                    adminPasswordHash = creds.passwordHash,
+                    adminRecoveryEmail = creds.recoveryEmail.ifBlank { current.targetEmail }
+                )
+            }
+            _adminRecoveryState.value = current.copy(
+                revealedUsername = cleanUser,
+                errorMessage = null,
+                statusMessage = "Admin username updated to $cleanUser."
+            )
+            _snackbarMessage.value = "Admin username updated to $cleanUser."
+        }
+    }
+
+    fun updateAdminCredentialsFromSettings(
+        currentPassword: String,
+        newUsername: String,
+        newPassword: String,
+        newRecoveryEmail: String
+    ) {
+        val session = _authSession.value
+        if (session == null || session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can update Admin login credentials.")
+            return
+        }
+        val cleanUser = newUsername.trim()
+        val cleanEmail = newRecoveryEmail.trim().lowercase()
+        when {
+            !AdminCredentialCrypto.isValidUsername(cleanUser) -> {
+                _warningAlert.value = WarningAlert("Invalid Username", "Username must be 3–40 characters (letters, numbers, ., _, -).")
+                return
+            }
+            !AdminCredentialCrypto.isValidEmail(cleanEmail) -> {
+                _warningAlert.value = WarningAlert("Invalid Gmail", "Enter a valid Recovery Gmail address.")
+                return
+            }
+            newPassword.isNotEmpty() && !AdminCredentialCrypto.isValidPassword(newPassword) -> {
+                _warningAlert.value = WarningAlert("Invalid Password", "New password must be 6–64 characters.")
+                return
+            }
+        }
+
+        viewModelScope.launch {
+            val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
+            if (creds.isConfigured && !AdminCredentialCrypto.verifyPassword(currentPassword, creds.passwordHash)) {
+                _warningAlert.value = WarningAlert("Wrong Current Password", "Enter your current Admin password to confirm changes.")
+                return@launch
+            }
+            val finalHash = if (newPassword.isNotEmpty()) {
+                AdminCredentialCrypto.hashPassword(newPassword)
+            } else if (creds.passwordHash.isNotBlank()) {
+                creds.passwordHash
+            } else {
+                _warningAlert.value = WarningAlert("Password Required", "Enter a new Admin password (min 6 characters).")
+                return@launch
+            }
+            sessionPreferences?.saveAdminCredentials(
+                username = cleanUser,
+                passwordHash = finalHash,
+                recoveryEmail = cleanEmail
+            )
+            cloudSync?.saveAdminCredentialsToCloud(
+                adminLoginUsername = cleanUser,
+                adminPasswordHash = finalHash,
+                adminRecoveryEmail = cleanEmail
+            )
+            _snackbarMessage.value = "Admin username, password & recovery Gmail updated."
+        }
     }
 
     fun logout() {
@@ -1529,13 +2164,20 @@ class AppViewModel(
         }
     }
 
+    companion object {
+        private const val OTP_EXPIRY_MS = 10 * 60 * 1000L
+        private const val OTP_RESEND_COOLDOWN_MS = 30 * 1000L
+        private const val OTP_MAX_ATTEMPTS = 5
+    }
+
     class Factory(
         private val repository: InventoryRepository,
         private val backupManager: BackupManager,
         private val cloudSync: CloudSyncRepository? = null,
         private val sessionPreferences: SessionPreferences? = null,
         private val driveBackupManager: GoogleDriveBackupManager? = null,
-        private val appContext: Context? = null
+        private val appContext: Context? = null,
+        private val gmailVerificationManager: GmailVerificationManager? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1545,7 +2187,8 @@ class AppViewModel(
                 cloudSync = cloudSync,
                 sessionPreferences = sessionPreferences,
                 driveBackupManager = driveBackupManager,
-                appContext = appContext
+                appContext = appContext,
+                gmailVerificationManager = gmailVerificationManager
             ) as T
         }
     }

@@ -85,6 +85,13 @@ import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.viewmodel.WarningAlert
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.example.R
+import com.example.ui.theme.DarkHeaderEnd
+import com.example.ui.theme.DarkHeaderStart
+import com.example.ui.theme.LocalIsDarkTheme
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.LocalShipping
@@ -103,9 +110,11 @@ fun BrandHeaderBanner(
     subtitle: String,
     trailingContent: @Composable () -> Unit = {}
 ) {
-    val startColor = MaterialTheme.colorScheme.primary
-    val endColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-    val accentLine = MaterialTheme.colorScheme.secondary
+    val isDark = LocalIsDarkTheme.current
+    val startColor = if (isDark) DarkHeaderStart else MaterialTheme.colorScheme.primary
+    val endColor = if (isDark) DarkHeaderEnd else MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    val contentColor = Color.White
+    val accentLine = if (isDark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
@@ -116,28 +125,47 @@ fun BrandHeaderBanner(
                         listOf(startColor, endColor)
                     )
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF0B2E21),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_concord_logo_v2),
+                            contentDescription = "Concord A to Z Gas Logo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = contentColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentColor.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 trailingContent()

@@ -366,9 +366,8 @@ class InventoryRepository(
             val allVehiclesEmpty = vehicleOverviews.sumOf { it.totalEmptyBalance }
             val todaySales = vehicleOverviews.sumOf { it.totalCustomerSales }
 
-            val recentTxs = txs
+            val dayTxs = txs
                 .filter { it.businessDate == date }
-                .take(30)
                 .mapNotNull { tx ->
                     val product = productMap[tx.productId] ?: return@mapNotNull null
                     TransactionDisplayItem(
@@ -377,6 +376,8 @@ class InventoryRepository(
                         productCategory = product.category
                     )
                 }
+            val recentTxs = dayTxs.take(30)
+            val storeActivityTxs = dayTxs.filter { it.transaction.type.isStoreLevel }
 
             DashboardSummary(
                 selectedDate = date,
@@ -392,7 +393,11 @@ class InventoryRepository(
                 todayEmptyDispatch = todayEmptyDispatch,
                 todaySales = todaySales,
                 vehicleOverviews = vehicleOverviews,
-                recentTransactions = recentTxs
+                recentTransactions = recentTxs,
+                pendingDeliveryCylinders = allVehiclesFull,
+                activeDeliveryVehiclesCount = vehicleOverviews.count { it.totalFullBalance > 0 },
+                todayStoreActivityCount = storeActivityTxs.size,
+                recentStoreActivity = storeActivityTxs.take(6)
             )
         }
 

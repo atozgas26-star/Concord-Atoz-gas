@@ -460,9 +460,28 @@ test("Restricted Admin Settings and Admin Reports block Staff reads and writes",
         lastDriveFileId: "1abcDriveFileId",
         lastDriveBackupStatus: "Backed up to Google Drive",
         driveAccountEmail: "atozgas26@gmail.com",
+        adminLoginUsername: "admin_ragavan",
+        adminPasswordHash: "pbkdf2$120000$c2FsdA==$aGFzaA==",
+        adminRecoveryEmail: "atozgas26@gmail.com",
         updatedByUid: ADMIN_UID,
         createdAt: ts,
         updatedAt: ts,
+      })
+  );
+
+  // Admin updates password hash & username
+  await assertSucceeds(
+    adminDb
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("admin_settings")
+      .doc("drive_backup")
+      .update({
+        adminLoginUsername: "ragavan_admin",
+        adminPasswordHash: "pbkdf2$120000$bmV3c2FsdA==$bmV3aGFzaA==",
+        adminRecoveryEmail: "atozgas26@gmail.com",
+        updatedByUid: ADMIN_UID,
+        updatedAt: pastDate(400),
       })
   );
 
@@ -471,7 +490,7 @@ test("Restricted Admin Settings and Admin Reports block Staff reads and writes",
     adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_settings").doc("drive_backup").get()
   );
 
-  // Staff CANNOT read, list, create, update, or delete admin_settings
+  // Staff CANNOT read, list, create, update, or delete admin_settings (including admin credentials)
   await assertFails(
     staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_settings").doc("drive_backup").get()
   );
@@ -485,9 +504,9 @@ test("Restricted Admin Settings and Admin Reports block Staff reads and writes",
       .collection("admin_settings")
       .doc("drive_backup")
       .update({
-        autoDriveBackupEnabled: false,
+        adminPasswordHash: "pbkdf2$120000$aGFjaw==$aGFjaw==",
         updatedByUid: STAFF_NADEEM_UID,
-        updatedAt: pastDate(500),
+        updatedAt: pastDate(300),
       })
   );
 

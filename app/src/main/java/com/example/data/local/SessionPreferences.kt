@@ -16,6 +16,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
+data class AdminCredentialsState(
+    val username: String = "",
+    val passwordHash: String = "",
+    val recoveryEmail: String = ""
+) {
+    val isConfigured: Boolean
+        get() = username.isNotBlank() && passwordHash.isNotBlank()
+}
+
 private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "concord_session_prefs")
 
 class SessionPreferences(private val context: Context) {
@@ -29,6 +38,10 @@ class SessionPreferences(private val context: Context) {
     private val keyLastDriveBackupAtMs = longPreferencesKey("last_drive_backup_at_ms")
     private val keyLastDriveFileId = stringPreferencesKey("last_drive_file_id")
     private val keyLowStockThreshold = intPreferencesKey("low_stock_threshold")
+    private val keyDarkModeEnabled = booleanPreferencesKey("dark_mode_enabled")
+    private val keyAdminUsername = stringPreferencesKey("admin_login_username")
+    private val keyAdminPasswordHash = stringPreferencesKey("admin_password_hash")
+    private val keyAdminRecoveryEmail = stringPreferencesKey("admin_recovery_email")
 
     val autoLoginEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
         .map { prefs -> prefs[keyAutoLoginEnabled] ?: true }
@@ -59,6 +72,18 @@ class SessionPreferences(private val context: Context) {
 
     val lowStockThresholdFlow: Flow<Int> = context.sessionDataStore.data
         .map { prefs -> prefs[keyLowStockThreshold] ?: LowStockAlertState.DEFAULT_LOW_STOCK_THRESHOLD }
+
+    val darkModeEnabledFlow: Flow<Boolean> = context.sessionDataStore.data
+        .map { prefs -> prefs[keyDarkModeEnabled] ?: false }
+
+    val adminCredentialsFlow: Flow<AdminCredentialsState> = context.sessionDataStore.data
+        .map { prefs ->
+            AdminCredentialsState(
+                username = prefs[keyAdminUsername].orEmpty(),
+                passwordHash = prefs[keyAdminPasswordHash].orEmpty(),
+                recoveryEmail = prefs[keyAdminRecoveryEmail].orEmpty()
+            )
+        }
 
     suspend fun getLoggedInUserId(): Long? {
         return context.sessionDataStore.data
@@ -119,6 +144,50 @@ class SessionPreferences(private val context: Context) {
         val safeValue = threshold.coerceIn(0, 999)
         context.sessionDataStore.edit { prefs ->
             prefs[keyLowStockThreshold] = safeValue
+        }
+    }
+
+    suspend fun setDarkModeEnabled(enabled: Boolean) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyDarkModeEnabled] = enabled
+        }
+    }
+
+    suspend fun saveAdminCredentials(
+        username: String,
+        passwordHash: String,
+        recoveryEmail: String
+    ) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyAdminUsername] = username.trim()
+            prefs[keyAdminPasswordHash] = passwordHash
+            prefs[keyAdminRecoveryEmail] = recoveryEmail.trim().lowercase()
+        }
+    }
+
+    suspend fun updateAdminPasswordHash(passwordHash: String) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyAdminPasswordHash] = passwordHash
+        }
+    }
+
+    suspend fun updateAdminUsername(username: String) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyAdminUsername] = username.trim()
+        }
+    }
+
+    suspend fun updateAdminRecoveryEmail(recoveryEmail: String) {
+        context.sessionDataStore.edit { prefs ->
+            prefs[keyAdminRecoveryEmail] = recoveryEmail.trim().lowercase()
+        }
+    }
+
+    suspend fun clearAdminCredentials() {
+        context.sessionDataStore.edit { prefs ->
+            prefs.remove(keyAdminUsername)
+            prefs.remove(keyAdminPasswordHash)
+            prefs.remove(keyAdminRecoveryEmail)
         }
     }
 }

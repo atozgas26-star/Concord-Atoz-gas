@@ -1162,6 +1162,60 @@ class CloudSyncRepository(
         }
     }
 
+    suspend fun saveAdminCredentialsToCloud(
+        adminLoginUsername: String,
+        adminPasswordHash: String,
+        adminRecoveryEmail: String
+    ): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val conn = _connectionState.value
+        if (conn is WorkspaceConnectionState.Connected && !conn.isOwnerOrAdmin) {
+            return Result.failure(SecurityException("Restricted: Only Admin can update Admin login credentials."))
+        }
+        val docPath = "workspaces/$wsId/admin_settings/drive_backup"
+        return try {
+            val uid = requireUserId()
+            val email = auth.currentUser?.email.orEmpty().take(200)
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("admin_settings").document("drive_backup")
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "adminLoginUsername" to adminLoginUsername.trim().take(64),
+                        "adminPasswordHash" to adminPasswordHash.take(256),
+                        "adminRecoveryEmail" to adminRecoveryEmail.trim().lowercase().take(200),
+                        "updatedByUid" to uid,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(
+                    mapOf(
+                        "settingId" to "drive_backup",
+                        "autoDriveBackupEnabled" to false,
+                        "lastDriveBackupAtMs" to 0L,
+                        "lastDriveFileId" to "",
+                        "lastDriveBackupStatus" to "Google Drive backup ready to connect",
+                        "driveAccountEmail" to email,
+                        "adminLoginUsername" to adminLoginUsername.trim().take(64),
+                        "adminPasswordHash" to adminPasswordHash.take(256),
+                        "adminRecoveryEmail" to adminRecoveryEmail.trim().lowercase().take(200),
+                        "updatedByUid" to uid,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
     suspend fun saveAdminReportSnapshot(
         reportId: String,
         reportType: String,

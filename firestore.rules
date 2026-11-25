@@ -225,6 +225,9 @@ service cloud.firestore {
              (!('driveAccountEmail' in data) || (data.driveAccountEmail is string && data.driveAccountEmail.size() <= 200)) &&
              (!('themePreset' in data) || (data.themePreset is string && data.themePreset.size() <= 64)) &&
              (!('autoLogoutMode' in data) || (data.autoLogoutMode is string && data.autoLogoutMode.size() <= 64)) &&
+             (!('adminLoginUsername' in data) || (data.adminLoginUsername is string && data.adminLoginUsername.size() <= 64)) &&
+             (!('adminPasswordHash' in data) || (data.adminPasswordHash is string && data.adminPasswordHash.size() <= 256)) &&
+             (!('adminRecoveryEmail' in data) || (data.adminRecoveryEmail is string && data.adminRecoveryEmail.size() <= 200)) &&
              data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
@@ -547,7 +550,7 @@ service cloud.firestore {
                          isValidId(settingId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          incoming().keys().hasAll(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['settingId', 'autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'adminLoginUsername', 'adminPasswordHash', 'adminRecoveryEmail', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          isValidAdminSettings(incoming(), settingId);
 
         allow update: if isWorkspaceAdmin(workspaceId) &&
@@ -556,7 +559,7 @@ service cloud.firestore {
                          incoming().updatedByUid == request.auth.uid &&
                          incoming().createdAt == existing().createdAt &&
                          incoming().settingId == existing().settingId &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'updatedByUid', 'updatedAt']) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['autoDriveBackupEnabled', 'lastDriveBackupAtMs', 'lastDriveFileId', 'lastDriveBackupStatus', 'driveAccountEmail', 'themePreset', 'autoLogoutMode', 'adminLoginUsername', 'adminPasswordHash', 'adminRecoveryEmail', 'updatedByUid', 'updatedAt']) &&
                          isValidAdminSettings(incoming(), settingId);
 
         allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(settingId);

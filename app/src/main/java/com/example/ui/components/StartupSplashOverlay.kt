@@ -484,14 +484,14 @@ fun StartupSplashOverlay(
                                 .clip(CircleShape)
                         ) {
                             Image(
-                                painter = painterResource(id = R.drawable.img_concord_logo),
+                                painter = painterResource(id = R.drawable.ic_concord_logo_v2),
                                 contentDescription = "Concord & A to Z Gas Animated Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer {
-                                        scaleX = 1.24f
-                                        scaleY = 1.24f
+                                        scaleX = 1.18f
+                                        scaleY = 1.18f
                                     }
                             )
 

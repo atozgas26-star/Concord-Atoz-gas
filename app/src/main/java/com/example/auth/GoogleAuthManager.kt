@@ -25,7 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +35,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -274,7 +277,9 @@ fun GoogleSignInButton(
 
 @Composable
 fun GoogleAuthScreen(
-    onAuthSuccess: () -> Unit
+    onAuthSuccess: () -> Unit,
+    darkModeEnabled: Boolean = false,
+    onToggleDarkMode: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -336,47 +341,85 @@ fun GoogleAuthScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(20.dp),
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = BrandRedSecondary,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "INDUSTRIAL & LPG",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Surface(
+                                color = Color.White.copy(alpha = 0.16f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "ONLINE CLOUD SYNC",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                        if (onToggleDarkMode != null) {
+                            IconButton(
+                                onClick = onToggleDarkMode,
+                                modifier = Modifier.testTag("google_auth_dark_mode_toggle")
+                            ) {
+                                Icon(
+                                    imageVector = if (darkModeEnabled) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = if (darkModeEnabled) "Switch to Light Mode" else "Switch to Warehouse Dark Mode",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         Surface(
-                            color = BrandRedSecondary,
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White.copy(alpha = 0.12f),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
+                            modifier = Modifier.size(52.dp)
                         ) {
-                            Text(
-                                text = "INDUSTRIAL & LPG",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_concord_logo_v2),
+                                contentDescription = "Concord & A to Z Gas Logo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Surface(
-                            color = Color.White.copy(alpha = 0.16f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "ONLINE CLOUD SYNC",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "CONCORD & A TO Z GAS",
+                                style = MaterialTheme.typography.headlineSmall,
                                 color = Color.White,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Fleet Online Entry, Store & Vehicle Cloud Sync",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.88f)
                             )
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "CONCORD & A TO Z GAS",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Fleet Online Entry, Store & Vehicle Cloud Sync",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.88f)
-                    )
                 }
             }
             Box(

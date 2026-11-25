@@ -24,25 +24,33 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddToDrive
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -83,7 +91,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.data.local.AdminCredentialsState
 import com.example.data.local.ProductEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
@@ -118,13 +129,17 @@ fun AdminSettingsScreen(
     permissionsStatus: AppPermissionsStatus = AppPermissionsStatus(),
     pendingDriveRestoreJson: String? = null,
     themePreset: ThemePreset = ThemePreset.EMERALD_CORPORATE,
+    darkModeEnabled: Boolean = false,
     soundEnabled: Boolean = true,
     autoLoginEnabled: Boolean = true,
     autoLogoutMode: AutoLogoutMode = AutoLogoutMode.OFF,
+    adminCredentials: AdminCredentialsState = AdminCredentialsState(),
     onThemePresetChanged: (ThemePreset) -> Unit = {},
+    onDarkModeChanged: (Boolean) -> Unit = {},
     onSoundEnabledChanged: (Boolean) -> Unit = {},
     onAutoLoginChanged: (Boolean) -> Unit = {},
     onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
+    onUpdateAdminCredentials: (currentPassword: String, newUsername: String, newPassword: String, newRecoveryEmail: String) -> Unit = { _, _, _, _ -> },
     onPreviewStartupSplash: () -> Unit = {},
     onSyncNow: () -> Unit = {},
     onGoogleSignOut: () -> Unit = {},
@@ -152,6 +167,7 @@ fun AdminSettingsScreen(
     var editingNameUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
     var showAddProductDialog by remember { mutableStateOf(false) }
+    var showEditAdminCredentialsDialog by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -517,6 +533,51 @@ fun AdminSettingsScreen(
                     }
                 }
 
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.Lock, contentDescription = null, tint = BrandGreenPrimary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "Admin Username, Password & Gmail Recovery",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = if (adminCredentials.isConfigured) {
+                                                "Username: ${adminCredentials.username}  •  Gmail: ${adminCredentials.recoveryEmail}"
+                                            } else {
+                                                "Not configured yet — set Admin username & password"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { showEditAdminCredentialsDialog = true },
+                                    modifier = Modifier.testTag("edit_admin_credentials_button")
+                                ) {
+                                    Text("Update")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 items(users, key = { it.id }) { user ->
                     val isAdmin = user.role == UserRole.ADMIN
                     val linkedVehicle = if (isAdmin) null else vehicles.firstOrNull { it.staffUserId == user.id }
@@ -655,6 +716,34 @@ fun AdminSettingsScreen(
                                     text = "Appearance, Sound & Auto-Login",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        imageVector = if (darkModeEnabled) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text("Warehouse Dark Mode", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            "High-contrast dark theme for dim storage & loading bays",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = darkModeEnabled,
+                                    onCheckedChange = onDarkModeChanged,
+                                    modifier = Modifier.testTag("settings_dark_mode_switch")
                                 )
                             }
 
@@ -894,6 +983,18 @@ fun AdminSettingsScreen(
         )
     }
 
+    if (showEditAdminCredentialsDialog) {
+        EditAdminCredentialsDialog(
+            adminCredentials = adminCredentials,
+            fallbackEmail = googleEmail.ifBlank { "atozgas26@gmail.com" },
+            onDismiss = { showEditAdminCredentialsDialog = false },
+            onConfirm = { currentPwd, newUser, newPwd, recoveryGmail ->
+                onUpdateAdminCredentials(currentPwd, newUser, newPwd, recoveryGmail)
+                showEditAdminCredentialsDialog = false
+            }
+        )
+    }
+
     pendingRestoreJson?.let { json ->
         AlertDialog(
             onDismissRequest = { pendingRestoreJson = null },
@@ -930,6 +1031,218 @@ fun AdminSettingsScreen(
             }
         )
     }
+}
+
+@Composable
+private fun EditAdminCredentialsDialog(
+    adminCredentials: AdminCredentialsState,
+    fallbackEmail: String,
+    onDismiss: () -> Unit,
+    onConfirm: (currentPassword: String, newUsername: String, newPassword: String, newRecoveryEmail: String) -> Unit
+) {
+    var currentPassword by remember { mutableStateOf("") }
+    var username by remember(adminCredentials.username) {
+        mutableStateOf(adminCredentials.username.ifBlank { "admin_ragavan" })
+    }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmNewPassword by remember { mutableStateOf("") }
+    var recoveryEmail by remember(adminCredentials.recoveryEmail, fallbackEmail) {
+        mutableStateOf(adminCredentials.recoveryEmail.ifBlank { fallbackEmail })
+    }
+    var showPasswords by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = BrandGreenPrimary)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (adminCredentials.isConfigured) {
+                        "Update Admin Credentials"
+                    } else {
+                        "Set Up Admin Credentials"
+                    }
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Manage your Admin login username, password, and Gmail address used for 6-digit recovery verification codes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (adminCredentials.isConfigured) {
+                    OutlinedTextField(
+                        value = currentPassword,
+                        onValueChange = {
+                            currentPassword = it
+                            error = null
+                        },
+                        label = { Text("Current Password") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { showPasswords = !showPasswords }) {
+                                Icon(
+                                    imageVector = if (showPasswords) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showPasswords) "Hide passwords" else "Show passwords"
+                                )
+                            }
+                        },
+                        visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_admin_current_password_input")
+                    )
+                }
+
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = {
+                        username = it
+                        error = null
+                    },
+                    label = { Text("Admin Username") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_admin_username_input")
+                )
+
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = {
+                        newPassword = it
+                        error = null
+                    },
+                    label = {
+                        Text(
+                            if (adminCredentials.isConfigured) {
+                                "New Password (optional)"
+                            } else {
+                                "New Password (min 6 chars)"
+                            }
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                    trailingIcon = if (!adminCredentials.isConfigured) {
+                        {
+                            IconButton(onClick = { showPasswords = !showPasswords }) {
+                                Icon(
+                                    imageVector = if (showPasswords) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showPasswords) "Hide passwords" else "Show passwords"
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                    visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_admin_new_password_input")
+                )
+
+                if (newPassword.isNotEmpty() || !adminCredentials.isConfigured) {
+                    OutlinedTextField(
+                        value = confirmNewPassword,
+                        onValueChange = {
+                            confirmNewPassword = it
+                            error = null
+                        },
+                        label = { Text("Confirm New Password") },
+                        leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                        visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_admin_confirm_password_input")
+                    )
+                }
+
+                OutlinedTextField(
+                    value = recoveryEmail,
+                    onValueChange = {
+                        recoveryEmail = it
+                        error = null
+                    },
+                    label = { Text("Recovery Gmail Address") },
+                    leadingIcon = { Icon(Icons.Default.AlternateEmail, contentDescription = null) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_admin_recovery_email_input")
+                )
+
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val trimmedUser = username.trim()
+                    val trimmedEmail = recoveryEmail.trim()
+                    if (adminCredentials.isConfigured && currentPassword.isEmpty()) {
+                        error = "Enter your current Admin password to confirm changes."
+                        return@Button
+                    }
+                    if (trimmedUser.length < 3) {
+                        error = "Username must be at least 3 characters."
+                        return@Button
+                    }
+                    if (!adminCredentials.isConfigured && newPassword.length < 6) {
+                        error = "Password must be at least 6 characters."
+                        return@Button
+                    }
+                    if (newPassword.isNotEmpty()) {
+                        if (newPassword.length < 6) {
+                            error = "New password must be at least 6 characters."
+                            return@Button
+                        }
+                        if (newPassword != confirmNewPassword) {
+                            error = "New password and confirmation do not match."
+                            return@Button
+                        }
+                    }
+                    if (!trimmedEmail.contains("@") || !trimmedEmail.contains(".")) {
+                        error = "Enter a valid Gmail address for recovery codes."
+                        return@Button
+                    }
+                    onConfirm(currentPassword, trimmedUser, newPassword, trimmedEmail)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                modifier = Modifier.testTag("settings_admin_credentials_save_button")
+            ) {
+                Text("Save Changes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

@@ -62,7 +62,11 @@ data class DashboardSummary(
     val todayEmptyDispatch: Int,
     val todaySales: Int,
     val vehicleOverviews: List<VehicleOverview>,
-    val recentTransactions: List<TransactionDisplayItem>
+    val recentTransactions: List<TransactionDisplayItem>,
+    val pendingDeliveryCylinders: Int = allVehiclesFullBalance,
+    val activeDeliveryVehiclesCount: Int = vehicleOverviews.count { it.totalFullBalance > 0 },
+    val todayStoreActivityCount: Int = 0,
+    val recentStoreActivity: List<TransactionDisplayItem> = emptyList()
 )
 
 data class TransactionDisplayItem(

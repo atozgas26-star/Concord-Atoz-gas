@@ -312,6 +312,9 @@ data class CloudAdminSettings(
     val driveAccountEmail: String = "",
     val themePreset: String = "",
     val autoLogoutMode: String = "",
+    val adminLoginUsername: String = "",
+    val adminPasswordHash: String = "",
+    val adminRecoveryEmail: String = "",
     val updatedByUid: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
