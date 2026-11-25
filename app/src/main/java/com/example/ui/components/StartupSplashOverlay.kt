@@ -484,7 +484,7 @@ fun StartupSplashOverlay(
                                 .clip(CircleShape)
                         ) {
                             Image(
-                                painter = painterResource(id = R.drawable.ic_concord_logo_v2),
+                                painter = painterResource(id = R.drawable.ic_ca_red_logo),
                                 contentDescription = "C&A Gas Animated Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier

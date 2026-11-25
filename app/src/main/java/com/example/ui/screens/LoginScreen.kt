@@ -97,7 +97,12 @@ import com.example.data.local.UserAccountEntity
 import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
+import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Keyboard
 import com.example.ui.components.AdminRecoveryDialog
+import com.example.ui.components.IphonePasscodePad
+import com.example.ui.components.StaffListPickerSheet
+import com.example.ui.components.StaffOneClickSelectorCard
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenDark
 import com.example.ui.theme.BrandGreenOnContainer
@@ -162,12 +167,14 @@ fun LoginScreen(
     val adminUser = remember(users) { users.firstOrNull { it.role == UserRole.ADMIN } }
     val staffUsers = remember(users) { users.filter { it.role == UserRole.STAFF } }
     var selectedStaffId by remember(staffUsers) { mutableStateOf(staffUsers.firstOrNull()?.id) }
+    var showStaffListSheet by remember { mutableStateOf(false) }
     var pinInput by remember { mutableStateOf("") }
 
     // Admin Username & Password inputs
     var adminUsernameInput by remember { mutableStateOf("") }
     var adminPasswordInput by remember { mutableStateOf("") }
     var showAdminPassword by remember { mutableStateOf(false) }
+    var useAdminIphonePad by remember { mutableStateOf(false) }
 
     // First-run Admin Setup inputs
     var setupUsernameInput by remember { mutableStateOf("admin_ragavan") }
@@ -182,6 +189,7 @@ fun LoginScreen(
     var ownerPasswordInput by remember { mutableStateOf("") }
     var ownerConfirmPasswordInput by remember { mutableStateOf("") }
     var showOwnerPassword by remember { mutableStateOf(false) }
+    var useOwnerIphonePad by remember { mutableStateOf(false) }
 
     LaunchedEffect(isStaffRestrictedCloud, linkedStaffRole, linkedStaffUsername, users) {
         if (isStaffRestrictedCloud && selectedRole == UserRole.ADMIN) {
@@ -307,12 +315,12 @@ fun LoginScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color.White.copy(alpha = 0.12f),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
+                            color = Color(0xFFB31B1A),
+                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.45f)),
                             modifier = Modifier.size(50.dp)
                         ) {
                             Image(
-                                painter = painterResource(id = R.drawable.ic_concord_logo_v2),
+                                painter = painterResource(id = R.drawable.ic_ca_red_logo),
                                 contentDescription = "C&A Gas Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -550,16 +558,19 @@ fun LoginScreen(
                         )
                         RolePortalCard(
                             title = "Staff",
-                            subtitle = "${staffUsers.size} Vehicles",
+                            subtitle = "${staffUsers.size} Staff • List",
                             icon = Icons.Default.LocalShipping,
-                            accentColor = BrandRedSecondary,
+                            accentColor = Color(0xFFB31B1A),
                             badgeContainer = BrandRedContainer,
-                            badgeTint = BrandRedSecondary,
+                            badgeTint = Color(0xFFB31B1A),
                             selected = selectedRole == UserRole.STAFF,
                             enabled = true,
                             onClick = {
                                 userTouchedRole = true
                                 selectedRole = UserRole.STAFF
+                                if (staffUsers.isNotEmpty()) {
+                                    showStaffListSheet = true
+                                }
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -569,133 +580,83 @@ fun LoginScreen(
                 }
 
                 // Account Selection
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        if (selectedRole == UserRole.ADMIN) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(BrandGreenContainer),
-                                    contentAlignment = Alignment.Center
+                if (selectedRole == UserRole.STAFF) {
+                    StaffOneClickSelectorCard(
+                        selectedStaff = targetUser,
+                        totalStaffCount = staffUsers.size,
+                        onOpenStaffList = { showStaffListSheet = true }
+                    )
+                } else {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            if (selectedRole == UserRole.ADMIN) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(
-                                        Icons.Default.AdminPanelSettings,
-                                        contentDescription = "Admin Portal",
-                                        tint = BrandGreenOnContainer,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape)
+                                            .background(BrandGreenContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.AdminPanelSettings,
+                                            contentDescription = "Admin Portal",
+                                            tint = BrandGreenOnContainer,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = "Admin Portal • ${adminUser?.displayName ?: "Ragavan"}",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Full Store, Vehicle, Reports & PIN Control",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
-                                Spacer(Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "Admin Portal • ${adminUser?.displayName ?: "Ragavan"}",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Full Store, Vehicle, Reports & PIN Control",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        } else if (selectedRole == UserRole.OWNER_VIEW) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFFEF3C7)),
-                                    contentAlignment = Alignment.Center
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(
-                                        Icons.Default.VerifiedUser,
-                                        contentDescription = "Owner View Portal",
-                                        tint = Color(0xFF78350F),
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Owner View Portal (Read-Only)",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "View live stock, vehicles, staff logins & reports — no entry or modification allowed",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        } else {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(BrandRedContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Default.LocalShipping,
-                                        contentDescription = "Staff Vehicle Portal",
-                                        tint = BrandRedSecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    text = "Select Staff / Vehicle Account",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                staffUsers.forEach { staff ->
-                                    val isSelected = staff.id == targetUser?.id
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { selectedStaffId = staff.id },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = if (isSelected) Icons.Default.Check else Icons.Default.Badge,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        },
-                                        label = {
-                                            Text(
-                                                text = staff.displayName,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = BrandGreenPrimary,
-                                            selectedLabelColor = Color.White,
-                                            selectedLeadingIconColor = Color.White
-                                        ),
-                                        modifier = Modifier.testTag("staff_chip_${staff.username}")
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFFEF3C7)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.VerifiedUser,
+                                            contentDescription = "Owner View Portal",
+                                            tint = Color(0xFF78350F),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Owner View Portal (Read-Only)",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "View live stock, vehicles, staff logins & reports — no entry or modification allowed",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -909,81 +870,130 @@ fun LoginScreen(
                                         .testTag("admin_username_input")
                                 )
 
-                                OutlinedTextField(
-                                    value = adminPasswordInput,
-                                    onValueChange = {
-                                        adminPasswordInput = it
-                                        onClearError()
-                                    },
-                                    label = { Text("Password") },
-                                    placeholder = { Text("Enter admin password") },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Lock, contentDescription = null)
-                                    },
-                                    trailingIcon = {
-                                        IconButton(onClick = { showAdminPassword = !showAdminPassword }) {
-                                            Icon(
-                                                imageVector = if (showAdminPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                                contentDescription = if (showAdminPassword) "Hide password" else "Show password"
-                                            )
-                                        }
-                                    },
-                                    visualTransformation = if (showAdminPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("admin_password_input")
-                                )
-
-                                if (loginError != null) {
-                                    Surface(
-                                        color = BrandRedContainer,
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = loginError,
-                                            color = BrandRedBright,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(8.dp)
-                                        )
-                                    }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    FilterChip(
+                                        selected = !useAdminIphonePad,
+                                        onClick = { useAdminIphonePad = false },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                        label = { Text("Keyboard", fontSize = 12.sp) },
+                                        modifier = Modifier.testTag("admin_keyboard_mode_chip")
+                                    )
+                                    FilterChip(
+                                        selected = useAdminIphonePad,
+                                        onClick = { useAdminIphonePad = true },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Dialpad, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                        label = { Text("iPhone Number Pad", fontSize = 12.sp) },
+                                        modifier = Modifier.testTag("admin_iphone_pad_mode_chip")
+                                    )
                                 }
 
-                                Button(
-                                    onClick = {
-                                        onLoginAdminWithPassword(
-                                            adminUsernameInput.trim(),
-                                            adminPasswordInput
-                                        )
-                                    },
-                                    enabled = !isAuthenticating &&
-                                        adminUsernameInput.isNotBlank() &&
-                                        adminPasswordInput.isNotEmpty(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(50.dp)
-                                        .testTag("admin_password_login_button")
-                                ) {
-                                    if (isAuthenticating) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            color = Color.White,
-                                            strokeWidth = 2.dp
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        Text(
-                                            text = "Verifying Admin Credentials...",
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "Sign In as Admin",
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
+                                if (useAdminIphonePad) {
+                                    IphonePasscodePad(
+                                        title = "Admin Numeric Passcode",
+                                        subtitle = "Enter your numeric Admin passcode using the iPhone keypad",
+                                        pinInput = adminPasswordInput,
+                                        maxLength = 12,
+                                        minSubmitLength = 6,
+                                        autoSubmitAtMaxLength = false,
+                                        isAuthenticating = isAuthenticating,
+                                        errorMessage = loginError,
+                                        submitButtonLabel = "Sign In as Admin",
+                                        submitEnabled = adminUsernameInput.isNotBlank(),
+                                        showBiometricShortcut = biometricUnlockState.isReadyForBiometric &&
+                                            biometricAvailability == BiometricAvailability.AVAILABLE,
+                                        onBiometricShortcutClick = onRequestBiometricUnlock,
+                                        onPinChange = {
+                                            adminPasswordInput = it
+                                            onClearError()
+                                        },
+                                        onSubmit = { passcode ->
+                                            onLoginAdminWithPassword(adminUsernameInput.trim(), passcode)
+                                        }
+                                    )
+                                } else {
+                                    OutlinedTextField(
+                                        value = adminPasswordInput,
+                                        onValueChange = {
+                                            adminPasswordInput = it
+                                            onClearError()
+                                        },
+                                        label = { Text("Password") },
+                                        placeholder = { Text("Enter admin password") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Lock, contentDescription = null)
+                                        },
+                                        trailingIcon = {
+                                            IconButton(onClick = { showAdminPassword = !showAdminPassword }) {
+                                                Icon(
+                                                    imageVector = if (showAdminPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                    contentDescription = if (showAdminPassword) "Hide password" else "Show password"
+                                                )
+                                            }
+                                        },
+                                        visualTransformation = if (showAdminPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("admin_password_input")
+                                    )
+
+                                    if (loginError != null) {
+                                        Surface(
+                                            color = BrandRedContainer,
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = loginError,
+                                                color = BrandRedBright,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(8.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            onLoginAdminWithPassword(
+                                                adminUsernameInput.trim(),
+                                                adminPasswordInput
+                                            )
+                                        },
+                                        enabled = !isAuthenticating &&
+                                            adminUsernameInput.isNotBlank() &&
+                                            adminPasswordInput.isNotEmpty(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(50.dp)
+                                            .testTag("admin_password_login_button")
+                                    ) {
+                                        if (isAuthenticating) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                color = Color.White,
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Text(
+                                                text = "Verifying Admin Credentials...",
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "Sign In as Admin",
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                        }
                                     }
                                 }
 
@@ -1199,236 +1209,162 @@ fun LoginScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
 
-                                OutlinedTextField(
-                                    value = ownerPasswordInput,
-                                    onValueChange = {
-                                        ownerPasswordInput = it
-                                        onClearError()
-                                    },
-                                    label = { Text("Owner View Password") },
-                                    placeholder = { Text("Enter Owner View password") },
-                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                                    trailingIcon = {
-                                        IconButton(onClick = { showOwnerPassword = !showOwnerPassword }) {
-                                            Icon(
-                                                imageVector = if (showOwnerPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                                contentDescription = if (showOwnerPassword) "Hide password" else "Show password"
-                                            )
-                                        }
-                                    },
-                                    visualTransformation = if (showOwnerPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("owner_login_password_input")
-                                )
-
-                                if (loginError != null) {
-                                    Surface(
-                                        color = BrandRedContainer,
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = loginError,
-                                            color = BrandRedBright,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(8.dp)
-                                        )
-                                    }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    FilterChip(
+                                        selected = !useOwnerIphonePad,
+                                        onClick = { useOwnerIphonePad = false },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                        label = { Text("Keyboard", fontSize = 12.sp) },
+                                        modifier = Modifier.testTag("owner_keyboard_mode_chip")
+                                    )
+                                    FilterChip(
+                                        selected = useOwnerIphonePad,
+                                        onClick = { useOwnerIphonePad = true },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Dialpad, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                        label = { Text("iPhone Number Pad", fontSize = 12.sp) },
+                                        modifier = Modifier.testTag("owner_iphone_pad_mode_chip")
+                                    )
                                 }
 
-                                Button(
-                                    onClick = { onLoginOwnerViewWithPassword(ownerPasswordInput) },
-                                    enabled = !isAuthenticating && ownerPasswordInput.isNotEmpty(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(50.dp)
-                                        .testTag("owner_login_submit_button")
-                                ) {
-                                    if (isAuthenticating) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            color = Color.White,
-                                            strokeWidth = 2.dp
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        Text("Opening Owner View...")
-                                    } else {
-                                        Text(
-                                            text = "Sign In to Owner View (Read-Only)",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                if (useOwnerIphonePad) {
+                                    IphonePasscodePad(
+                                        title = "Owner View Passcode",
+                                        subtitle = "Enter numeric Owner View passcode (Read-Only)",
+                                        pinInput = ownerPasswordInput,
+                                        maxLength = 12,
+                                        minSubmitLength = 6,
+                                        autoSubmitAtMaxLength = false,
+                                        isAuthenticating = isAuthenticating,
+                                        errorMessage = loginError,
+                                        submitButtonLabel = "Sign In to Owner View (Read-Only)",
+                                        submitEnabled = true,
+                                        showBiometricShortcut = biometricUnlockState.isReadyForBiometric &&
+                                            biometricAvailability == BiometricAvailability.AVAILABLE,
+                                        onBiometricShortcutClick = onRequestBiometricUnlock,
+                                        onPinChange = {
+                                            ownerPasswordInput = it
+                                            onClearError()
+                                        },
+                                        onSubmit = { passcode ->
+                                            onLoginOwnerViewWithPassword(passcode)
+                                        }
+                                    )
+                                } else {
+                                    OutlinedTextField(
+                                        value = ownerPasswordInput,
+                                        onValueChange = {
+                                            ownerPasswordInput = it
+                                            onClearError()
+                                        },
+                                        label = { Text("Owner View Password") },
+                                        placeholder = { Text("Enter Owner View password") },
+                                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                        trailingIcon = {
+                                            IconButton(onClick = { showOwnerPassword = !showOwnerPassword }) {
+                                                Icon(
+                                                    imageVector = if (showOwnerPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                    contentDescription = if (showOwnerPassword) "Hide password" else "Show password"
+                                                )
+                                            }
+                                        },
+                                        visualTransformation = if (showOwnerPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("owner_login_password_input")
+                                    )
+
+                                    if (loginError != null) {
+                                        Surface(
+                                            color = BrandRedContainer,
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = loginError,
+                                                color = BrandRedBright,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(8.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Button(
+                                        onClick = { onLoginOwnerViewWithPassword(ownerPasswordInput) },
+                                        enabled = !isAuthenticating && ownerPasswordInput.isNotEmpty(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(50.dp)
+                                            .testTag("owner_login_submit_button")
+                                    ) {
+                                        if (isAuthenticating) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                color = Color.White,
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Text("Opening Owner View...")
+                                        } else {
+                                            Text(
+                                                text = "Sign In to Owner View (Read-Only)",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 } else {
-                    // Staff 4-Digit Vehicle PIN Pad Card
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Lock,
-                                    contentDescription = "PIN",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Enter Unique 4-Digit ${selectedRole.name} PIN (${targetUser?.displayName ?: ""})",
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = if (workspaceState is WorkspaceConnectionState.Connected) {
-                                    "Firebase Auth active • Validating role & PIN via Firestore"
-                                } else {
-                                    "Firebase Auth active • Local PIN cache ready"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            Spacer(Modifier.height(14.dp))
-
-                            // 4-Digit Masked PIN Dots
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                repeat(4) { index ->
-                                    val filled = index < pinInput.length
-                                    Surface(
-                                        modifier = Modifier.size(width = 48.dp, height = 52.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (filled) BrandGreenContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                        border = BorderStroke(
-                                            1.5.dp,
-                                            if (filled) BrandGreenPrimary else MaterialTheme.colorScheme.outline
-                                        )
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = if (filled) "●" else "",
-                                                fontSize = 22.sp,
-                                                fontFamily = JetBrainsMono,
-                                                color = BrandGreenOnContainer
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (loginError != null) {
-                                Spacer(Modifier.height(10.dp))
-                                Surface(
-                                    color = BrandRedContainer,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = loginError,
-                                        color = BrandRedBright,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(8.dp)
-                                    )
-                                }
-                            }
-
-                            Spacer(Modifier.height(14.dp))
-
-                            // Tactile Numeric Keypad
-                            val rows = listOf(
-                                listOf("1", "2", "3"),
-                                listOf("4", "5", "6"),
-                                listOf("7", "8", "9"),
-                                listOf("CLR", "0", "DEL")
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                rows.forEach { rowKeys ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        rowKeys.forEach { key ->
-                                            KeypadButton(
-                                                label = key,
-                                                enabled = !isAuthenticating,
-                                                onClick = {
-                                                    onClearError()
-                                                    when (key) {
-                                                        "CLR" -> pinInput = ""
-                                                        "DEL" -> if (pinInput.isNotEmpty()) {
-                                                            pinInput = pinInput.dropLast(1)
-                                                        }
-                                                        else -> if (pinInput.length < 4) {
-                                                            val updated = pinInput + key
-                                                            pinInput = updated
-                                                            if (updated.length == 4 && targetUser != null) {
-                                                                onLogin(targetUser.id, updated, selectedRole)
-                                                            }
-                                                        }
-                                                    }
-                                                },
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .testTag("pin_key_$key")
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(Modifier.height(14.dp))
-
-                            Button(
-                                onClick = {
-                                    val user = targetUser ?: return@Button
-                                    onLogin(user.id, pinInput, selectedRole)
-                                },
-                                enabled = !isAuthenticating && pinInput.length == 4 && targetUser != null,
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp)
-                                    .testTag("login_submit_button")
-                            ) {
-                                if (isAuthenticating) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.dp
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        text = "Verifying with Firestore...",
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                } else {
-                                    Text(
-                                        text = "Verify & Sign In (${selectedRole.name})",
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                }
-                            }
+                    // Staff iPhone-Style Numeric Passcode Pad
+                    IphonePasscodePad(
+                        title = if (targetUser != null) {
+                            "${targetUser.displayName} • Enter Passcode"
+                        } else {
+                            "Choose Staff Name First"
+                        },
+                        subtitle = if (workspaceState is WorkspaceConnectionState.Connected) {
+                            "iPhone Style 4-Digit Passcode • Cloud Sync Verified"
+                        } else {
+                            "iPhone Style 4-Digit Passcode • Local Cache Ready"
+                        },
+                        pinInput = pinInput,
+                        maxLength = 4,
+                        minSubmitLength = 4,
+                        autoSubmitAtMaxLength = true,
+                        isAuthenticating = isAuthenticating,
+                        errorMessage = loginError,
+                        submitButtonLabel = if (targetUser != null) {
+                            "Sign In • ${targetUser.displayName}"
+                        } else {
+                            "Choose Staff Name to Sign In"
+                        },
+                        submitEnabled = targetUser != null,
+                        showBiometricShortcut = biometricUnlockState.isReadyForBiometric &&
+                            biometricAvailability == BiometricAvailability.AVAILABLE &&
+                            !(biometricUnlockState.role == UserRole.ADMIN && isStaffRestrictedCloud),
+                        onBiometricShortcutClick = onRequestBiometricUnlock,
+                        onPinChange = { updated ->
+                            onClearError()
+                            pinInput = updated
+                        },
+                        onSubmit = { passcode ->
+                            val user = targetUser ?: return@IphonePasscodePad
+                            onLogin(user.id, passcode, selectedRole)
                         }
-                    }
+                    )
                 }
 
                 // Quick Controls: Auto-Login, Dark Mode, Theme & Sound + Credit
@@ -1486,6 +1422,20 @@ fun LoginScreen(
                 )
             }
         }
+    }
+
+    if (showStaffListSheet) {
+        StaffListPickerSheet(
+            staffUsers = staffUsers,
+            selectedStaffId = targetUser?.id,
+            onSelectStaff = { chosen ->
+                selectedStaffId = chosen.id
+                pinInput = ""
+                onClearError()
+                showStaffListSheet = false
+            },
+            onDismiss = { showStaffListSheet = false }
+        )
     }
 
     if (adminRecoveryState.activePurpose != null) {
@@ -1752,37 +1702,6 @@ private fun CloudSyncStatusBanner(
 
                 WorkspaceConnectionState.Checking -> Unit
             }
-        }
-    }
-}
-
-@Composable
-private fun KeypadButton(
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(52.dp),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        if (label == "DEL") {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Backspace,
-                contentDescription = "Delete digit",
-                modifier = Modifier.size(20.dp)
-            )
-        } else {
-            Text(
-                text = label,
-                fontFamily = JetBrainsMono,
-                fontSize = if (label == "CLR") 13.sp else 20.sp,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }

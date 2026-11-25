@@ -400,7 +400,7 @@ fun GoogleAuthScreen(
                             modifier = Modifier.size(52.dp)
                         ) {
                             Image(
-                                painter = painterResource(id = R.drawable.ic_concord_logo_v2),
+                                painter = painterResource(id = R.drawable.ic_ca_red_logo),
                                 contentDescription = "C&A Gas Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()

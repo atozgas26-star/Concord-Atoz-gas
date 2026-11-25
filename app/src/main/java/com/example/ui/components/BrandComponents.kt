@@ -138,12 +138,12 @@ fun BrandHeaderBanner(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFF0B2E21),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                        color = Color(0xFFB31B1A),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f)),
                         modifier = Modifier.size(38.dp)
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.ic_concord_logo_v2),
+                            painter = painterResource(id = R.drawable.ic_ca_red_logo),
                             contentDescription = "C&A Gas Logo",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.clip(RoundedCornerShape(10.dp))
