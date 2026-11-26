@@ -110,8 +110,11 @@ data class CompanyStockRow(
     val totalFull: Int,
     val storeEmpty: Int,
     val vehiclesEmpty: Int,
-    val totalEmpty: Int
-)
+    val totalEmpty: Int,
+    val newCustomerSoldOut: Int = 0
+) {
+    val overallTotalCylinders: Int get() = totalFull + totalEmpty
+}
 
 data class CustomerPendingRow(
     val customerName: String,

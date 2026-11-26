@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -72,12 +71,13 @@ import com.example.data.model.VehicleOverview
 import com.example.data.model.VehicleStockRow
 import com.example.ui.components.AddStaffVehicleDialog
 import com.example.ui.components.BrandHeaderBanner
-import com.example.ui.components.CategoryFilterRow
+import com.example.ui.components.CategoryFolderGrid
+import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.OpeningStockEditDialog
 import com.example.ui.components.PendingCustomerCard
-import com.example.ui.components.StockCalculatorDialog
+import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.VehicleTransferDialog
@@ -106,8 +106,10 @@ fun VehicleManagementScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = if (isReadOnly) "Vehicles (View Only)" else "Vehicle Management",
-            subtitle = "${vehicleOverviews.size} Fleet Accounts • Tap a vehicle for full ledger" + if (isReadOnly) " • Read-Only" else ""
+            title = if (isReadOnly) "Outside Fleet (View Only)" else "Outside Fleet • Vehicles",
+            subtitle = "${vehicleOverviews.size} Fleet Accounts • Tap a vehicle for category folders" + if (isReadOnly) " • Read-Only" else "",
+            headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.OutsideFleetGradient,
+            accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.OutsideFleetAccent
         )
 
         LazyColumn(
@@ -250,7 +252,6 @@ fun VehicleDetailScreen(
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
-    var showCalculator by remember { mutableStateOf(false) }
     var showVehicleTransferDialog by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<VehicleStockRow?>(null) }
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
@@ -269,11 +270,24 @@ fun VehicleDetailScreen(
     }
 
     val pendingActiveCount = pendingCustomers.count { it.pendingEmptyBalance > 0 }
+    val vehicleFolderStats = remember(rows) {
+        ProductCategory.entries.map { cat ->
+            val catRows = rows.filter { it.product.category == cat }
+            CategoryFolderStat(
+                category = cat,
+                itemCount = catRows.size,
+                fullTotal = catRows.sumOf { it.fullBalance },
+                emptyTotal = catRows.sumOf { it.emptyBalance }
+            )
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = "Vehicle: ${vehicle?.name ?: ""}" + if (isReadOnly) " (View Only)" else "",
+            title = "Outside Vehicle: ${vehicle?.name ?: ""}" + if (isReadOnly) " (View Only)" else "",
             subtitle = "Full Bal: ${rows.sumOf { it.fullBalance }}  •  Empty Bal: ${rows.sumOf { it.emptyBalance }}",
+            headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.OutsideFleetGradient,
+            accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.OutsideFleetAccent,
             trailingContent = {
                 IconButton(onClick = onBack, modifier = Modifier.testTag("vehicle_detail_back")) {
                     Icon(
@@ -337,11 +351,6 @@ fun VehicleDetailScreen(
                         leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = BrandRedSecondary) }
                     )
                     AssistChip(
-                        onClick = { showCalculator = true },
-                        label = { Text("Calculate") },
-                        leadingIcon = { Icon(Icons.Default.Calculate, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-                    )
-                    AssistChip(
                         onClick = {
                             prefillCustomerName = ""
                             prefillQuantity = 1
@@ -400,24 +409,25 @@ fun VehicleDetailScreen(
 
         when (activeTab) {
             0 -> {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    CategoryFilterRow(
-                        selectedCategory = selectedCategory,
-                        onCategorySelected = { selectedCategory = it },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(filteredRows, key = { it.product.id }) { row ->
-                            VehicleProductRowCard(
-                                row = row,
-                                canEditOpening = !isReadOnly,
-                                onEditOpening = if (isReadOnly) null else { { editingRow = row } }
-                            )
-                        }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item(key = "vehicle_category_folders") {
+                        CategoryFolderGrid(
+                            stats = vehicleFolderStats,
+                            selectedCategory = selectedCategory,
+                            onSelectCategory = { selectedCategory = it },
+                            sectionTitle = "Outside Vehicle Category Folders"
+                        )
+                    }
+                    items(filteredRows, key = { it.product.id }) { row ->
+                        VehicleProductRowCard(
+                            row = row,
+                            canEditOpening = !isReadOnly,
+                            onEditOpening = if (isReadOnly) null else { { editingRow = row } }
+                        )
                     }
                 }
             }
@@ -643,18 +653,6 @@ fun VehicleDetailScreen(
             onConfirmTransfer = { targetId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes ->
                 onTransferBetweenVehicles(vehicle.id, targetId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes)
             }
-        )
-    }
-
-    if (showCalculator && vehicle != null) {
-        StockCalculatorDialog(
-            products = products,
-            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
-            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
-            vehicleName = vehicle.name,
-            vehicleFullProvider = { prodId -> rows.firstOrNull { it.product.id == prodId }?.fullBalance ?: 0 },
-            vehicleEmptyProvider = { prodId -> rows.firstOrNull { it.product.id == prodId }?.emptyBalance ?: 0 },
-            onDismiss = { showCalculator = false }
         )
     }
 

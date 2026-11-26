@@ -5,8 +5,11 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +43,8 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
@@ -89,13 +95,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.audio.StartupSoundStyle
 import com.example.data.local.AdminCredentialsState
 import com.example.data.local.ProductEntity
@@ -111,12 +122,17 @@ import com.example.permissions.AppPermissionsStatus
 import com.example.ui.components.AddStaffVehicleDialog
 import com.example.ui.components.AppUpdateSettingsCard
 import com.example.ui.components.BrandHeaderBanner
+import com.example.ui.components.CategoryFolderGrid
+import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.RoleHeaderPalettes
+import com.example.ui.components.categoryVisualStyle
 import com.example.update.AppUpdateUiState
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -175,6 +191,8 @@ fun AdminSettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var activeTab by remember { mutableIntStateOf(0) }
+    var selectedSettingsFolder by remember { mutableStateOf<SettingsFolderSection?>(null) }
+    var selectedProductCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var editingPinUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var editingNameUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
@@ -182,6 +200,18 @@ fun AdminSettingsScreen(
     var showEditAdminCredentialsDialog by remember { mutableStateOf(false) }
     var showEditOwnerViewPasswordDialog by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
+
+    val productFolderStats = remember(products) {
+        ProductCategory.entries.map { cat ->
+            val catProds = products.filter { it.category == cat }
+            CategoryFolderStat(
+                category = cat,
+                itemCount = catProds.size,
+                fullTotal = catProds.count { it.isActive },
+                emptyTotal = catProds.count { !it.isActive }
+            )
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -230,14 +260,16 @@ fun AdminSettingsScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
             title = "Admin Settings",
-            subtitle = "PIN Security, Product Master & Offline Backup"
+            subtitle = "Category Folders • PIN Security, Cloud Backup & Product Master",
+            headerGradient = RoleHeaderPalettes.AdminGradient,
+            accentBarColor = RoleHeaderPalettes.AdminAccent
         )
 
         TabRow(selectedTabIndex = activeTab) {
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                text = { Text("PINs & Backup") }
+                text = { Text("Settings Folders") }
             )
             Tab(
                 selected = activeTab == 1,
@@ -247,18 +279,40 @@ fun AdminSettingsScreen(
         }
 
         if (activeTab == 0) {
+            val showCloudBackup = selectedSettingsFolder == null || selectedSettingsFolder == SettingsFolderSection.CLOUD_BACKUP
+            val showSecurityPins = selectedSettingsFolder == null || selectedSettingsFolder == SettingsFolderSection.SECURITY_PINS
+            val showAppTheme = selectedSettingsFolder == null || selectedSettingsFolder == SettingsFolderSection.APP_THEME
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
-                    AppUpdateSettingsCard(
-                        state = appUpdateState,
-                        onCheckForUpdate = onCheckForAppUpdate,
-                        onOpenUpdateDialog = onOpenAppUpdate
+                item(key = "settings_category_folders") {
+                    SettingsCategoryFolderGrid(
+                        selectedFolder = selectedSettingsFolder,
+                        staffCount = users.count { it.role == UserRole.STAFF },
+                        productCount = products.size,
+                        onSelectFolder = { folder ->
+                            if (folder == SettingsFolderSection.PRODUCT_MASTER) {
+                                activeTab = 1
+                            } else {
+                                selectedSettingsFolder = folder
+                            }
+                        }
                     )
                 }
+
+                if (showAppTheme) {
+                    item {
+                        AppUpdateSettingsCard(
+                            state = appUpdateState,
+                            onCheckForUpdate = onCheckForAppUpdate,
+                            onOpenUpdateDialog = onOpenAppUpdate
+                        )
+                    }
+                }
+                if (showCloudBackup) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),
@@ -529,7 +583,9 @@ fun AdminSettingsScreen(
                         }
                     }
                 }
+                } // end if (showCloudBackup)
 
+                if (showSecurityPins) {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -617,15 +673,15 @@ fun AdminSettingsScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Column {
                                         Text(
-                                            text = "Owner View (Read-Only) Password",
+                                            text = "Owner View (Read-Only) 4-Digit PIN",
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
                                             text = if (ownerViewConfigured) {
-                                                "Active • Single view-only password (no entry or modification)"
+                                                "Active • Single 4-digit view-only PIN (no entry or modification)"
                                             } else {
-                                                "Not created yet — set one view-only password for Owner"
+                                                "Not created yet — set one 4-digit view-only PIN for Owner"
                                             },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -643,9 +699,9 @@ fun AdminSettingsScreen(
                     }
                 }
 
-                items(users, key = { it.id }) { user ->
-                    val isAdmin = user.role == UserRole.ADMIN
-                    val linkedVehicle = if (isAdmin) null else vehicles.firstOrNull { it.staffUserId == user.id }
+                items(users.filter { it.role == UserRole.STAFF }, key = { it.id }) { user ->
+                    val isAdmin = false
+                    val linkedVehicle = vehicles.firstOrNull { it.staffUserId == user.id }
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -710,6 +766,9 @@ fun AdminSettingsScreen(
                     }
                 }
 
+                } // end if (showSecurityPins)
+
+                if (showCloudBackup) {
                 item {
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -764,7 +823,9 @@ fun AdminSettingsScreen(
                         }
                     }
                 }
+                } // end if (showCloudBackup)
 
+                if (showAppTheme) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -838,9 +899,9 @@ fun AdminSettingsScreen(
                                     Icon(Icons.Default.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                     Spacer(Modifier.width(8.dp))
                                     Column {
-                                        Text("App Sounds & Startup Chime", style = MaterialTheme.typography.titleSmall)
+                                        Text("App Alert & Bell Sounds", style = MaterialTheme.typography.titleSmall)
                                         Text(
-                                            "Play 3s launch chord & save feedback",
+                                            "Play notification bell & save feedback tones",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -891,37 +952,6 @@ fun AdminSettingsScreen(
                                 }
                             }
 
-                            Spacer(Modifier.height(4.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MusicNote,
-                                    contentDescription = "Launch Screen Sound Style",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "Launch Screen Sound Style (Tap to Change & Listen)",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                StartupSoundStyle.entries.forEach { style ->
-                                    FilterChip(
-                                        selected = startupSoundStyle == style,
-                                        onClick = { onStartupSoundStyleChanged(style) },
-                                        label = { Text(style.label) },
-                                        modifier = Modifier.testTag("sound_style_chip_${style.name.lowercase()}")
-                                    )
-                                }
-                            }
-
                             OutlinedButton(
                                 onClick = onPreviewStartupSplash,
                                 modifier = Modifier
@@ -935,11 +965,12 @@ fun AdminSettingsScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Preview 7s Launch Screen & Sound")
+                                Text("Preview 6s Launch Screen")
                             }
                         }
                     }
                 }
+                } // end if (showAppTheme)
 
                 item {
                     Button(
@@ -973,13 +1004,32 @@ fun AdminSettingsScreen(
                         )
                     }
                 }
+
+                item(key = "settings_bottom_spacer") {
+                    Spacer(Modifier.height(68.dp))
+                }
             }
         } else {
+            val visibleCategories = if (selectedProductCategory != null) {
+                listOf(selectedProductCategory!!)
+            } else {
+                ProductCategory.entries
+            }
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                item(key = "product_master_folders") {
+                    CategoryFolderGrid(
+                        stats = productFolderStats,
+                        selectedCategory = selectedProductCategory,
+                        onSelectCategory = { selectedProductCategory = it },
+                        sectionTitle = "Product Master Category Folders"
+                    )
+                }
+
                 item {
                     Button(
                         onClick = { showAddProductDialog = true },
@@ -994,13 +1044,14 @@ fun AdminSettingsScreen(
                     }
                 }
 
-                ProductCategory.entries.forEach { category ->
+                visibleCategories.forEach { category ->
+                    val catStyle = categoryVisualStyle(category)
                     val catProducts = products.filter { it.category == category }
                     item(key = "header_${category.name}") {
                         Text(
-                            text = category.displayName,
+                            text = "${category.displayName} (${catProducts.size})",
                             style = MaterialTheme.typography.titleSmall,
-                            color = BrandGreenPrimary,
+                            color = catStyle.primaryColor,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 6.dp)
                         )
@@ -1008,7 +1059,7 @@ fun AdminSettingsScreen(
                     items(catProducts, key = { it.id }) { prod ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1021,7 +1072,7 @@ fun AdminSettingsScreen(
                                     Icon(
                                         Icons.Default.Inventory2,
                                         contentDescription = null,
-                                        tint = if (prod.isActive) BrandGreenPrimary else MaterialTheme.colorScheme.outline,
+                                        tint = if (prod.isActive) catStyle.primaryColor else MaterialTheme.colorScheme.outline,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(Modifier.width(10.dp))
@@ -1037,6 +1088,10 @@ fun AdminSettingsScreen(
                             }
                         }
                     }
+                }
+
+                item(key = "product_master_bottom_spacer") {
+                    Spacer(Modifier.height(68.dp))
                 }
             }
         }
@@ -1379,9 +1434,9 @@ private fun EditOwnerViewPasswordDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Visibility, contentDescription = null, tint = BrandGreenPrimary)
+                Icon(Icons.Default.Visibility, contentDescription = null, tint = Color(0xFF4338CA))
                 Spacer(Modifier.width(8.dp))
-                Text(if (ownerViewConfigured) "Change Owner View Password" else "Create Owner View Password")
+                Text(if (ownerViewConfigured) "Change Owner View 4-Digit PIN" else "Create Owner View 4-Digit PIN")
             }
         },
         text = {
@@ -1392,7 +1447,7 @@ private fun EditOwnerViewPasswordDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Owner View uses one read-only password. Anyone signed into Owner View can see live stock, vehicles, staff login notifications, and reports, with zero entry or modification access.",
+                    text = "Owner View uses one 4-digit read-only numeric PIN. Anyone signed into Owner View can see live stock, vehicles, staff logins, and reports, with zero entry or modification access.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1425,24 +1480,25 @@ private fun EditOwnerViewPasswordDialog(
 
                 OutlinedTextField(
                     value = newOwnerPassword,
-                    onValueChange = {
-                        newOwnerPassword = it
+                    onValueChange = { raw ->
+                        newOwnerPassword = raw.filter { it.isDigit() }.take(4)
                         error = null
                     },
-                    label = { Text("Owner View Password (min 6 chars)") },
+                    label = { Text("Owner View 4-Digit PIN") },
+                    placeholder = { Text("4 digits (e.g. 2468)") },
                     leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
                     trailingIcon = if (!adminCredentialsConfigured) {
                         {
                             IconButton(onClick = { showPasswords = !showPasswords }) {
                                 Icon(
                                     imageVector = if (showPasswords) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (showPasswords) "Hide passwords" else "Show passwords"
+                                    contentDescription = if (showPasswords) "Hide PIN" else "Show PIN"
                                 )
                             }
                         }
                     } else null,
                     visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1451,14 +1507,15 @@ private fun EditOwnerViewPasswordDialog(
 
                 OutlinedTextField(
                     value = confirmOwnerPassword,
-                    onValueChange = {
-                        confirmOwnerPassword = it
+                    onValueChange = { raw ->
+                        confirmOwnerPassword = raw.filter { it.isDigit() }.take(4)
                         error = null
                     },
-                    label = { Text("Confirm Owner View Password") },
+                    label = { Text("Confirm 4-Digit Owner PIN") },
+                    placeholder = { Text("Re-enter 4-digit PIN") },
                     leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
                     visualTransformation = if (showPasswords) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1481,26 +1538,259 @@ private fun EditOwnerViewPasswordDialog(
                         error = "Enter your current Admin password to confirm."
                         return@Button
                     }
-                    if (newOwnerPassword.length < 6) {
-                        error = "Owner View password must be at least 6 characters."
+                    if (newOwnerPassword.length != 4 || !newOwnerPassword.all { it.isDigit() }) {
+                        error = "Owner View PIN must be exactly 4 digits."
                         return@Button
                     }
                     if (newOwnerPassword != confirmOwnerPassword) {
-                        error = "Owner View password and confirmation do not match."
+                        error = "Owner View PIN and confirmation do not match."
                         return@Button
                     }
                     onConfirm(currentAdminPassword, newOwnerPassword, confirmOwnerPassword)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4338CA)),
                 modifier = Modifier.testTag("settings_owner_pwd_save_button")
             ) {
-                Text("Save Password")
+                Text("Save 4-Digit PIN")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+private enum class SettingsFolderSection(
+    val shortCode: String,
+    val title: String,
+    val subtitle: String,
+    val primaryColor: Color,
+    val lightContainer: Color,
+    val darkContainer: Color,
+    val lightOnContainer: Color,
+    val darkOnContainer: Color,
+    val icon: ImageVector
+) {
+    SECURITY_PINS(
+        shortCode = "SEC",
+        title = "Security & PINs",
+        subtitle = "Admin, Owner, Staff",
+        primaryColor = Color(0xFF1D4ED8),
+        lightContainer = Color(0xFFDBEAFE),
+        darkContainer = Color(0xFF172554),
+        lightOnContainer = Color(0xFF1E3A8A),
+        darkOnContainer = Color(0xFFBFDBFE),
+        icon = Icons.Default.Lock
+    ),
+    CLOUD_BACKUP(
+        shortCode = "CLD",
+        title = "Cloud & Backup",
+        subtitle = "Sync, Drive, JSON",
+        primaryColor = Color(0xFF0F766E),
+        lightContainer = Color(0xFFCCFBF1),
+        darkContainer = Color(0xFF134E4A),
+        lightOnContainer = Color(0xFF115E59),
+        darkOnContainer = Color(0xFF99F6E4),
+        icon = Icons.Default.CloudSync
+    ),
+    APP_THEME(
+        shortCode = "APP",
+        title = "App & Theme",
+        subtitle = "Updates, Dark, Lock",
+        primaryColor = Color(0xFFC2410C),
+        lightContainer = Color(0xFFFFEDD5),
+        darkContainer = Color(0xFF431407),
+        lightOnContainer = Color(0xFF7C2D12),
+        darkOnContainer = Color(0xFFFED7AA),
+        icon = Icons.Default.Palette
+    ),
+    PRODUCT_MASTER(
+        shortCode = "GAS",
+        title = "Product Master",
+        subtitle = "Gas Categories",
+        primaryColor = Color(0xFF7E22CE),
+        lightContainer = Color(0xFFF3E8FF),
+        darkContainer = Color(0xFF3B0764),
+        lightOnContainer = Color(0xFF581C87),
+        darkOnContainer = Color(0xFFE9D5FF),
+        icon = Icons.Default.Inventory2
+    )
+}
+
+@Composable
+private fun SettingsCategoryFolderGrid(
+    selectedFolder: SettingsFolderSection?,
+    staffCount: Int,
+    productCount: Int,
+    onSelectFolder: (SettingsFolderSection?) -> Unit
+) {
+    val isDark = LocalIsDarkTheme.current
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FolderOpen,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "Settings Category Folders",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (selectedFolder != null) {
+                TextButton(
+                    onClick = { onSelectFolder(null) },
+                    modifier = Modifier.testTag("settings_folder_show_all_button")
+                ) {
+                    Text("Show All", fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Text(
+                    text = "Tap a folder to open",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        SettingsFolderSection.entries.chunked(2).forEach { rowFolders ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowFolders.forEach { folder ->
+                    val isSelected = selectedFolder == folder
+                    val bgColor = when {
+                        isSelected -> folder.primaryColor
+                        isDark -> folder.darkContainer
+                        else -> folder.lightContainer
+                    }
+                    val textColor = when {
+                        isSelected -> Color.White
+                        isDark -> folder.darkOnContainer
+                        else -> folder.lightOnContainer
+                    }
+                    val badgeText = when (folder) {
+                        SettingsFolderSection.SECURITY_PINS -> "$staffCount Staff"
+                        SettingsFolderSection.PRODUCT_MASTER -> "$productCount Items"
+                        else -> folder.subtitle
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable {
+                                if (folder == SettingsFolderSection.PRODUCT_MASTER) {
+                                    onSelectFolder(folder)
+                                } else {
+                                    onSelectFolder(if (isSelected) null else folder)
+                                }
+                            }
+                            .testTag("settings_folder_${folder.name.lowercase()}")
+                    ) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Box(
+                                modifier = Modifier
+                                    .width(68.dp)
+                                    .height(14.dp)
+                                    .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                                    .background(folder.primaryColor),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Text(
+                                    text = folder.shortCode,
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(
+                                topStart = 0.dp,
+                                topEnd = 14.dp,
+                                bottomStart = 14.dp,
+                                bottomEnd = 14.dp
+                            ),
+                            color = bgColor,
+                            border = BorderStroke(
+                                width = if (isSelected) 2.dp else 1.2.dp,
+                                color = if (isSelected) folder.primaryColor else folder.primaryColor.copy(alpha = 0.45f)
+                            ),
+                            tonalElevation = if (isSelected) 4.dp else 1.dp
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isSelected) Color.White.copy(alpha = 0.22f)
+                                                else folder.primaryColor.copy(alpha = 0.16f)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = folder.icon,
+                                            contentDescription = folder.title,
+                                            tint = if (isSelected) Color.White else folder.primaryColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = if (isSelected) Color.White else folder.primaryColor.copy(alpha = 0.72f),
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                Text(
+                                    text = folder.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = badgeText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = textColor.copy(alpha = 0.85f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

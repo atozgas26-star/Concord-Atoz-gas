@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,28 +16,29 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LockClock
-import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Output
+import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,8 +52,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -83,19 +83,19 @@ import com.example.data.model.TransactionType
 import com.example.data.model.VehicleStockRow
 import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
-import com.example.update.AppUpdateStatus
-import com.example.update.AppUpdateUiState
-import com.example.ui.components.CategoryFilterRow
+import com.example.ui.components.CategoryFolderGrid
+import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.HeaderBellIconButton
 import com.example.ui.components.HeaderChatIconButton
 import com.example.ui.components.HeaderUpdateIconButton
 import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.PendingCustomerCard
+import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StaffDutyAttendanceCard
-import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.VehicleTransferDialog
+import com.example.ui.components.categoryVisualStyle
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -103,9 +103,22 @@ import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
+import com.example.update.AppUpdateStatus
+import com.example.update.AppUpdateUiState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private data class StaffProductSaleSummary(
+    val product: ProductEntity,
+    val fullRecd: Int,
+    val regSales: Int,
+    val newCustSales: Int,
+    val custEmpty: Int,
+    val compRepl: Int
+) {
+    val totalSold: Int get() = regSales + newCustSales
+}
 
 @Composable
 fun StaffDashboardScreen(
@@ -157,12 +170,11 @@ fun StaffDashboardScreen(
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
-    var showCalculator by remember { mutableStateOf(false) }
     var showVehicleTransferDialog by remember { mutableStateOf(false) }
     var showAutoSessionDialog by remember { mutableStateOf(false) }
     var staffSalesDailyMode by remember { mutableStateOf(true) }
 
-    val filteredRows = remember(vehicleRows, selectedCategory, searchQuery) {
+    val filteredVehicleRows = remember(vehicleRows, selectedCategory, searchQuery) {
         vehicleRows.filter { row ->
             (selectedCategory == null || row.product.category == selectedCategory) &&
                 (searchQuery.isBlank() ||
@@ -180,22 +192,67 @@ fun StaffDashboardScreen(
         }
     }
 
-    val closingFull = vehicleRows.sumOf { it.fullBalance }
-    val closingEmpty = vehicleRows.sumOf { it.emptyBalance }
-    val totalReceived = vehicleRows.sumOf { it.fullReceived }
-    val totalSales = vehicleRows.sumOf { it.customerSales }
-    val totalCustEmpty = vehicleRows.sumOf { it.customerEmptyReceived }
-    val totalRetEmpty = vehicleRows.sumOf { it.emptyReturnedToStore }
-    val activePendingCount = pendingCustomers.count { it.pendingEmptyBalance > 0 }
+    val closingFull = remember(vehicleRows) { vehicleRows.sumOf { it.fullBalance } }
+    val closingEmpty = remember(vehicleRows) { vehicleRows.sumOf { it.emptyBalance } }
+    val totalReceived = remember(vehicleRows) { vehicleRows.sumOf { it.fullReceived } }
+    val totalSales = remember(vehicleRows) { vehicleRows.sumOf { it.customerSales } }
+    val totalCustEmpty = remember(vehicleRows) { vehicleRows.sumOf { it.customerEmptyReceived } }
+    val totalRetEmpty = remember(vehicleRows) { vehicleRows.sumOf { it.emptyReturnedToStore } }
+    val activePendingCount = remember(pendingCustomers) { pendingCustomers.count { it.pendingEmptyBalance > 0 } }
+
+    val folderStats = remember(vehicleRows) {
+        ProductCategory.entries.map { cat ->
+            val catRows = vehicleRows.filter { it.product.category == cat }
+            CategoryFolderStat(
+                category = cat,
+                itemCount = catRows.size,
+                fullTotal = catRows.sumOf { it.fullBalance },
+                emptyTotal = catRows.sumOf { it.emptyBalance }
+            )
+        }
+    }
+
+    // Precompute sales summaries for smooth scroll when Sales section is selected
+    val activeYearMonth = selectedDate.take(7)
+    val scopedSalesTxs = remember(allTransactions, assignedVehicle, selectedDate, staffSalesDailyMode) {
+        if (assignedVehicle == null) emptyList()
+        else allTransactions.filter { item ->
+            val t = item.transaction
+            val periodMatch = if (staffSalesDailyMode) {
+                t.businessDate == selectedDate
+            } else {
+                t.businessDate.startsWith(activeYearMonth)
+            }
+            t.vehicleId == assignedVehicle.id && periodMatch
+        }
+    }
+    val productSummaries = remember(products, scopedSalesTxs) {
+        products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.name })).map { p ->
+            val pTxs = scopedSalesTxs.filter { it.transaction.productId == p.id }.map { it.transaction }
+            StaffProductSaleSummary(
+                product = p,
+                fullRecd = pTxs.filter { it.type == TransactionType.VEHICLE_FULL_RECEIVED }.sumOf { it.quantity },
+                regSales = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_SALE }.sumOf { it.quantity },
+                newCustSales = pTxs.filter { it.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE }.sumOf { it.quantity },
+                custEmpty = pTxs.filter { it.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER }.sumOf { it.quantity },
+                compRepl = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE }.sumOf { it.quantity }
+            )
+        }.filter { it.totalSold > 0 || it.fullRecd > 0 || it.custEmpty > 0 || it.compRepl > 0 }
+    }
+
+    val recentRequests = remember(myStoreTransferRequests) { myStoreTransferRequests.take(3) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .navigationBarsPadding()
     ) {
+        // Distinct Staff Deep Teal & Emerald Header stays compactly pinned at top
         BrandHeaderBanner(
             title = "Concord & Atoz Gas Trading LLC",
             subtitle = "Staff: ${staffUser.displayName}  •  Vehicle: ${assignedVehicle?.name ?: "N/A"}",
+            headerGradient = RoleHeaderPalettes.StaffGradient,
+            accentBarColor = RoleHeaderPalettes.StaffAccent,
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isOnlineSynced) {
@@ -204,25 +261,25 @@ fun StaffDashboardScreen(
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.CloudDone,
                                     contentDescription = "Online Sync Active",
                                     tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(13.dp)
                                 )
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(3.dp))
                                 Text(
-                                    text = "ONLINE",
+                                    text = "LIVE",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                         }
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(2.dp))
                     }
                     val hasUpdate = appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE
                     HeaderBellIconButton(
@@ -275,343 +332,363 @@ fun StaffDashboardScreen(
             }
         )
 
-        Column(
+        // Single unified smooth vertical scroll up & down container for entire Staff experience
+        LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .fillMaxSize()
+                .testTag("staff_smooth_scroll_list"),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (appUpdateState.shouldShowBanner) {
-                AppUpdateBanner(
-                    state = appUpdateState,
-                    onOpenUpdateDialog = onOpenAppUpdate,
-                    onDismiss = onDismissAppUpdateBanner
-                )
-            }
-            DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
-
-            // Daily Closing Balance Summary Cards
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                KpiMetricCard(
-                    title = "CLOSING FULL BAL",
-                    value = closingFull.toString(),
-                    subtitle = "Recd $totalReceived • Sold $totalSales",
-                    icon = Icons.Default.PropaneTank,
-                    accentColor = BrandGreenPrimary,
-                    containerColor = BrandGreenContainer,
-                    onContainerColor = BrandGreenOnContainer,
-                    modifier = Modifier.weight(1f)
-                )
-                KpiMetricCard(
-                    title = "CLOSING EMPTY BAL",
-                    value = closingEmpty.toString(),
-                    subtitle = "Cust $totalCustEmpty • Ret $totalRetEmpty",
-                    icon = Icons.Default.Recycling,
-                    accentColor = BrandRedSecondary,
-                    containerColor = BrandRedContainer,
-                    onContainerColor = BrandRedOnContainer,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // 4 Big Easy Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StaffBigActionButton(
-                    label = "Receive Full\nfrom Store",
-                    icon = Icons.AutoMirrored.Filled.Input,
-                    containerColor = BrandGreenPrimary,
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("staff_action_receive_full")
-                )
-                StaffBigActionButton(
-                    label = "Customer\nSale",
-                    icon = Icons.Default.Sell,
-                    containerColor = BrandRedSecondary,
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("staff_action_customer_sale")
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StaffBigActionButton(
-                    label = "Empty Recd\n(Customer)",
-                    icon = Icons.Default.Recycling,
-                    containerColor = BrandGreenPrimary,
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("staff_action_empty_customer")
-                )
-                StaffBigActionButton(
-                    label = "Return Empty\nto Store",
-                    icon = Icons.Default.Output,
-                    containerColor = BrandRedSecondary,
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("staff_action_return_empty")
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StaffBigActionButton(
-                    label = "New Cust\nFull Sale",
-                    icon = Icons.Default.PersonAddAlt1,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("staff_action_new_customer_sale")
-                )
-                StaffBigActionButton(
-                    label = "Complaint\nReplace",
-                    icon = Icons.Default.SwapHoriz,
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                    onClick = {
-                        prefillCustomerName = ""
-                        prefillQuantity = 1
-                        activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("staff_action_complaint_replace")
-                )
-                OutlinedButton(
-                    onClick = { showCalculator = true },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .height(58.dp)
-                        .testTag("staff_action_calculate")
-                ) {
-                    Icon(Icons.Default.Calculate, contentDescription = "Calculate")
-                }
-            }
-            if (assignedVehicle != null && allVehicles.any { it.id != assignedVehicle.id }) {
-                Button(
-                    onClick = { showVehicleTransferDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                        .testTag("staff_action_vehicle_transfer")
-                ) {
-                    Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Vehicle → Vehicle Transfer (Full & Empty)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                item(key = "staff_update_banner") {
+                    AppUpdateBanner(
+                        state = appUpdateState,
+                        onOpenUpdateDialog = onOpenAppUpdate,
+                        onDismiss = onDismissAppUpdateBanner
                     )
                 }
             }
-        }
 
-        TabRow(selectedTabIndex = activeTab) {
-            Tab(
-                selected = activeTab == 0,
-                onClick = { activeTab = 0 },
-                text = { Text("Stock", maxLines = 1) }
-            )
-            Tab(
-                selected = activeTab == 1,
-                onClick = { activeTab = 1 },
-                text = { Text("Sales", maxLines = 1) },
-                modifier = Modifier.testTag("staff_tab_sales")
-            )
-            Tab(
-                selected = activeTab == 2,
-                onClick = { activeTab = 2 },
-                text = { Text("Pending ($activePendingCount)", maxLines = 1) },
-                modifier = Modifier.testTag("staff_tab_pending")
-            )
-            Tab(
-                selected = activeTab == 3,
-                onClick = { activeTab = 3 },
-                text = { Text("Activity (${myVehicleTransactions.size})", maxLines = 1) }
-            )
-        }
+            item(key = "staff_date_selector") {
+                DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+            }
 
-        when (activeTab) {
-            0 -> {
-                Column(modifier = Modifier.fillMaxSize()) {
+            // Live Vehicle Closing Full & Empty KPI Summary
+            item(key = "staff_kpi_row") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    KpiMetricCard(
+                        title = "MY VEHICLE FULL",
+                        value = closingFull.toString(),
+                        subtitle = "Recd $totalReceived • Sold $totalSales",
+                        icon = Icons.Default.PropaneTank,
+                        accentColor = Color(0xFF0F766E),
+                        containerColor = Color(0xFFCCFBF1),
+                        onContainerColor = Color(0xFF115E59),
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiMetricCard(
+                        title = "MY VEHICLE EMPTY",
+                        value = closingEmpty.toString(),
+                        subtitle = "Cust $totalCustEmpty • Ret $totalRetEmpty",
+                        icon = Icons.Default.Recycling,
+                        accentColor = Color(0xFFC2410C),
+                        containerColor = Color(0xFFFFEDD5),
+                        onContainerColor = Color(0xFF9A3412),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            // Quick Entry Actions Card — Compact & Easy to Tap
+            item(key = "staff_quick_actions") {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search gas cylinder...") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                        Text(
+                            text = "Quick Cylinder Entries",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F766E)
                         )
-                        CategoryFilterRow(
-                            selectedCategory = selectedCategory,
-                            onCategorySelected = { selectedCategory = it }
-                        )
-                    }
-
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        item(key = "staff_duty_card") {
-                            StaffDutyAttendanceCard(
-                                attendance = todayAttendance,
-                                selectedDate = selectedDate,
-                                onPunchStage = onPunchDutyStage
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StaffBigActionButton(
+                                label = "Receive Full\nfrom Store",
+                                icon = Icons.AutoMirrored.Filled.Input,
+                                containerColor = Color(0xFF0F766E),
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_receive_full")
+                            )
+                            StaffBigActionButton(
+                                label = "Customer\nSale",
+                                icon = Icons.Default.Sell,
+                                containerColor = Color(0xFFDC2626),
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_customer_sale")
                             )
                         }
-                        val recentRequests = myStoreTransferRequests.take(3)
-                        if (recentRequests.isNotEmpty()) {
-                            item(key = "staff_store_requests") {
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("staff_store_requests_card"),
-                                    shape = RoundedCornerShape(14.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StaffBigActionButton(
+                                label = "Empty Recd\n(Customer)",
+                                icon = Icons.Default.Recycling,
+                                containerColor = Color(0xFF1D4ED8),
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_empty_customer")
+                            )
+                            StaffBigActionButton(
+                                label = "Return Empty\nto Store",
+                                icon = Icons.Default.Output,
+                                containerColor = Color(0xFFC2410C),
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_return_empty")
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StaffBigActionButton(
+                                label = "New Cust\nFull Set",
+                                icon = Icons.Default.PersonAddAlt1,
+                                containerColor = Color(0xFF4338CA),
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_new_customer_sale")
+                            )
+                            StaffBigActionButton(
+                                label = "Complaint\nReplace",
+                                icon = Icons.Default.SwapHoriz,
+                                containerColor = Color(0xFF7E22CE),
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_complaint_replace")
+                            )
+                        }
+                        if (assignedVehicle != null && allVehicles.any { it.id != assignedVehicle.id }) {
+                            Button(
+                                onClick = { showVehicleTransferDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0369A1)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("staff_action_vehicle_transfer")
+                            ) {
+                                Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Vehicle → Vehicle Transfer (Full & Empty)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Staff Duty Attendance 4-Stage Punch Card
+            item(key = "staff_duty_card") {
+                StaffDutyAttendanceCard(
+                    attendance = todayAttendance,
+                    selectedDate = selectedDate,
+                    onPunchStage = onPunchDutyStage
+                )
+            }
+
+            // Store Transfer Admin Approvals Status
+            if (recentRequests.isNotEmpty()) {
+                item(key = "staff_store_requests") {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("staff_store_requests_card"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Store Transfer Admin Approvals",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            recentRequests.forEach { req ->
+                                val isFull = req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name
+                                val label = if (isFull) "Full from Store" else "Empty to Store"
+                                val badgeColor = when (req.status) {
+                                    ApprovalStatus.APPROVED.name -> BrandGreenPrimary
+                                    ApprovalStatus.REJECTED.name -> BrandRedSecondary
+                                    else -> Color(0xFFD97706)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    Text(
+                                        text = "${req.quantity} × ${req.productName} ($label)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = badgeColor.copy(alpha = 0.14f)
                                     ) {
                                         Text(
-                                            text = "Store Transfer Admin Approvals",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold
+                                            text = req.status,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = badgeColor,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
-                                        recentRequests.forEach { req ->
-                                            val isFull = req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name
-                                            val label = if (isFull) "Full from Store" else "Empty to Store"
-                                            val badgeColor = when (req.status) {
-                                                ApprovalStatus.APPROVED.name -> BrandGreenPrimary
-                                                ApprovalStatus.REJECTED.name -> BrandRedSecondary
-                                                else -> Color(0xFFD97706)
-                                            }
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "${req.quantity} × ${req.productName} ($label)",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = badgeColor.copy(alpha = 0.14f)
-                                                ) {
-                                                    Text(
-                                                        text = req.status,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = badgeColor,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
                                     }
                                 }
                             }
                         }
-                        items(filteredRows, key = { it.product.id }) { row ->
-                            // Staff CANNOT change opening stock
-                            VehicleProductRowCard(row = row, canEditOpening = false)
-                        }
                     }
                 }
             }
 
-            1 -> {
-                val activeYearMonth = selectedDate.take(7)
-                val scopedSalesTxs = remember(allTransactions, assignedVehicle, selectedDate, staffSalesDailyMode) {
-                    if (assignedVehicle == null) emptyList()
-                    else allTransactions.filter { item ->
-                        val t = item.transaction
-                        val periodMatch = if (staffSalesDailyMode) {
-                            t.businessDate == selectedDate
-                        } else {
-                            t.businessDate.startsWith(activeYearMonth)
-                        }
-                        t.vehicleId == assignedVehicle.id && periodMatch
+            // Smooth Section Switcher Pills (replaces cramped nested TabRow)
+            item(key = "staff_section_pills") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = activeTab == 0,
+                        onClick = { activeTab = 0 },
+                        leadingIcon = {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        label = { Text("Folders & Stock", fontWeight = FontWeight.SemiBold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF0F766E),
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("staff_tab_stock")
+                    )
+                    FilterChip(
+                        selected = activeTab == 1,
+                        onClick = { activeTab = 1 },
+                        leadingIcon = {
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        label = { Text("Sales", fontWeight = FontWeight.SemiBold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF1D4ED8),
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("staff_tab_sales")
+                    )
+                    FilterChip(
+                        selected = activeTab == 2,
+                        onClick = { activeTab = 2 },
+                        leadingIcon = {
+                            Icon(Icons.Default.PendingActions, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        label = { Text("Pending ($activePendingCount)", fontWeight = FontWeight.SemiBold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFC2410C),
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("staff_tab_pending")
+                    )
+                    FilterChip(
+                        selected = activeTab == 3,
+                        onClick = { activeTab = 3 },
+                        leadingIcon = {
+                            Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        label = { Text("Activity (${myVehicleTransactions.size})", fontWeight = FontWeight.SemiBold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF7E22CE),
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("staff_tab_activity")
+                    )
+                }
+            }
+
+            // Inline Content for Selected Section — all part of the SAME smooth vertical LazyColumn!
+            when (activeTab) {
+                0 -> {
+                    // 4 Color-Coded My Vehicle Category Folders (Staff sees ONLY assigned vehicle)
+                    item(key = "staff_category_folders") {
+                        CategoryFolderGrid(
+                            stats = folderStats,
+                            selectedCategory = selectedCategory,
+                            onSelectCategory = { selectedCategory = it },
+                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Category Folders"
+                        )
+                    }
+
+                    // Search Bar
+                    item(key = "staff_search_box") {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search cylinder in my vehicle...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    items(filteredVehicleRows, key = { "veh_row_${it.product.id}" }) { row ->
+                        VehicleProductRowCard(row = row, canEditOpening = false)
                     }
                 }
-                data class StaffProductSaleSummary(
-                    val product: ProductEntity,
-                    val fullRecd: Int,
-                    val regSales: Int,
-                    val newCustSales: Int,
-                    val custEmpty: Int,
-                    val compRepl: Int
-                ) {
-                    val totalSold: Int get() = regSales + newCustSales
-                }
-                val productSummaries = remember(products, scopedSalesTxs) {
-                    products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.name })).map { p ->
-                        val pTxs = scopedSalesTxs.filter { it.transaction.productId == p.id }.map { it.transaction }
-                        StaffProductSaleSummary(
-                            product = p,
-                            fullRecd = pTxs.filter { it.type == TransactionType.VEHICLE_FULL_RECEIVED }.sumOf { it.quantity },
-                            regSales = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_SALE }.sumOf { it.quantity },
-                            newCustSales = pTxs.filter { it.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE }.sumOf { it.quantity },
-                            custEmpty = pTxs.filter { it.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER }.sumOf { it.quantity },
-                            compRepl = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE }.sumOf { it.quantity }
-                        )
-                    }.filter { it.totalSold > 0 || it.fullRecd > 0 || it.custEmpty > 0 || it.compRepl > 0 }
-                }
-                val totalSoldSum = productSummaries.sumOf { it.totalSold }
-                val regSoldSum = productSummaries.sumOf { it.regSales }
-                val newSoldSum = productSummaries.sumOf { it.newCustSales }
-                val emptyCollSum = productSummaries.sumOf { it.custEmpty }
-                val compReplSum = productSummaries.sumOf { it.compRepl }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    item {
+                1 -> {
+                    val totalSoldSum = productSummaries.sumOf { it.totalSold }
+                    val regSoldSum = productSummaries.sumOf { it.regSales }
+                    val newSoldSum = productSummaries.sumOf { it.newCustSales }
+                    val emptyCollSum = productSummaries.sumOf { it.custEmpty }
+                    val compReplSum = productSummaries.sumOf { it.compRepl }
+
+                    item(key = "staff_sales_period_chips") {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -638,7 +715,7 @@ fun StaffDashboardScreen(
                             )
                         }
                     }
-                    item {
+                    item(key = "staff_sales_summary_banner") {
                         Surface(
                             color = BrandGreenContainer,
                             shape = RoundedCornerShape(14.dp),
@@ -668,7 +745,7 @@ fun StaffDashboardScreen(
                         }
                     }
                     if (productSummaries.isEmpty()) {
-                        item {
+                        item(key = "staff_sales_empty") {
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 shape = RoundedCornerShape(12.dp),
@@ -687,10 +764,11 @@ fun StaffDashboardScreen(
                             }
                         }
                     } else {
-                        items(productSummaries, key = { it.product.id }) { item ->
+                        items(productSummaries, key = { "sale_sum_${it.product.id}" }) { item ->
+                            val catStyle = categoryVisualStyle(item.product.category)
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -712,7 +790,8 @@ fun StaffDashboardScreen(
                                             Text(
                                                 text = item.product.category.displayName,
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                color = catStyle.primaryColor,
+                                                fontWeight = FontWeight.SemiBold
                                             )
                                         }
                                         Surface(
@@ -753,15 +832,9 @@ fun StaffDashboardScreen(
                         }
                     }
                 }
-            }
 
-            2 -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    item {
+                2 -> {
+                    item(key = "staff_add_pending_btn") {
                         Button(
                             onClick = {
                                 prefillCustomerName = ""
@@ -779,7 +852,7 @@ fun StaffDashboardScreen(
                         }
                     }
                     if (pendingCustomers.isEmpty()) {
-                        item {
+                        item(key = "staff_pending_empty") {
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 shape = RoundedCornerShape(12.dp),
@@ -794,7 +867,7 @@ fun StaffDashboardScreen(
                             }
                         }
                     } else {
-                        items(pendingCustomers, key = { it.customerName }) { pendingRow ->
+                        items(pendingCustomers, key = { "pending_${it.customerName}" }) { pendingRow ->
                             PendingCustomerCard(
                                 row = pendingRow,
                                 onCollectEmpty = {
@@ -806,16 +879,10 @@ fun StaffDashboardScreen(
                         }
                     }
                 }
-            }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                else -> {
                     if (myVehicleTransactions.isEmpty()) {
-                        item {
+                        item(key = "staff_activity_empty") {
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 shape = RoundedCornerShape(12.dp),
@@ -830,8 +897,7 @@ fun StaffDashboardScreen(
                             }
                         }
                     } else {
-                        // Staff CANNOT delete transactions (read-only audit log)
-                        items(myVehicleTransactions, key = { it.transaction.id }) { item ->
+                        items(myVehicleTransactions, key = { "tx_${it.transaction.id}" }) { item ->
                             val tx = item.transaction
                             val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
                             Card(
@@ -889,6 +955,11 @@ fun StaffDashboardScreen(
                     }
                 }
             }
+
+            // Comfortable bottom breathing room so floating calculator never overlaps last card
+            item(key = "staff_bottom_spacer") {
+                Spacer(Modifier.height(76.dp))
+            }
         }
     }
 
@@ -915,10 +986,9 @@ fun StaffDashboardScreen(
             showEmptyCollectedNowField = (type == TransactionType.VEHICLE_CUSTOMER_SALE),
             availableStockHint = { prodId, _ ->
                 val vRow = vehicleRows.firstOrNull { it.product.id == prodId }
-                val sRow = storeRows.firstOrNull { it.product.id == prodId }
                 when (type) {
                     TransactionType.VEHICLE_FULL_RECEIVED ->
-                        "Store Full Available: ${sRow?.storeFullBalance ?: 0}  |  Vehicle Full: ${vRow?.fullBalance ?: 0}"
+                        "Request Full from Main Store  |  Current Vehicle Full: ${vRow?.fullBalance ?: 0}"
                     TransactionType.VEHICLE_CUSTOMER_SALE,
                     TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
                     TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ->
@@ -939,7 +1009,7 @@ fun StaffDashboardScreen(
                     TransactionType.VEHICLE_CUSTOMER_SALE ->
                         "Veh Full: ${vRow.fullBalance} -> ${vRow.fullBalance - qty}  |  Veh Empty: ${vRow.emptyBalance} -> ${vRow.emptyBalance + empNow}"
                     TransactionType.VEHICLE_NEW_CUSTOMER_SALE ->
-                        "New Sale: -$qty Full -> Bal ${vRow.fullBalance - qty}  |  Pending Empty: 0"
+                        "New Cust Full Set: Veh Full ${vRow.fullBalance} -> ${vRow.fullBalance - qty}  |  Overall Store/Company -$qty  |  Empty Not Coming (Pending: 0)"
                     TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ->
                         "Complaint Swap: Full ${vRow.fullBalance} -> ${vRow.fullBalance - qty}  |  Empty ${vRow.emptyBalance} -> ${vRow.emptyBalance + qty}"
                     TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ->
@@ -984,18 +1054,6 @@ fun StaffDashboardScreen(
                     notes
                 )
             }
-        )
-    }
-
-    if (showCalculator) {
-        StockCalculatorDialog(
-            products = products,
-            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
-            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
-            vehicleName = assignedVehicle?.name,
-            vehicleFullProvider = { prodId -> vehicleRows.firstOrNull { it.product.id == prodId }?.fullBalance ?: 0 },
-            vehicleEmptyProvider = { prodId -> vehicleRows.firstOrNull { it.product.id == prodId }?.emptyBalance ?: 0 },
-            onDismiss = { showCalculator = false }
         )
     }
 
@@ -1059,11 +1117,11 @@ private fun StaffBigActionButton(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(containerColor = containerColor),
         shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-        modifier = modifier.height(58.dp)
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        modifier = modifier.height(54.dp)
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
+        Icon(icon, contentDescription = null, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(7.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,

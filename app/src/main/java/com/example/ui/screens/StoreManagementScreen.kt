@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.AddBusiness
 import androidx.compose.material.icons.filled.AddShoppingCart
-import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalShipping
@@ -66,13 +65,15 @@ import com.example.data.model.StoreStockRow
 import com.example.data.model.TransactionDisplayItem
 import com.example.data.model.TransactionType
 import com.example.ui.components.BrandHeaderBanner
-import com.example.ui.components.CategoryFilterRow
+import com.example.ui.components.CategoryFolderGrid
+import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.OpeningStockEditDialog
-import com.example.ui.components.StockCalculatorDialog
+import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
+import com.example.ui.components.categoryVisualStyle
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -123,7 +124,6 @@ fun StoreManagementScreen(
     var searchQuery by remember { mutableStateOf("") }
     var activeModal by remember { mutableStateOf<StoreModalAction?>(null) }
     var showAdjustmentPicker by remember { mutableStateOf(false) }
-    var showCalculator by remember { mutableStateOf(false) }
     var editingOpeningRow by remember { mutableStateOf<StoreStockRow?>(null) }
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
@@ -144,10 +144,24 @@ fun StoreManagementScreen(
     val totalFull = storeRows.sumOf { it.storeFullBalance }
     val totalEmpty = storeRows.sumOf { it.storeEmptyBalance }
 
+    val folderStats = remember(storeRows) {
+        ProductCategory.entries.map { cat ->
+            val catRows = storeRows.filter { it.product.category == cat }
+            CategoryFolderStat(
+                category = cat,
+                itemCount = catRows.size,
+                fullTotal = catRows.sumOf { it.storeFullBalance },
+                emptyTotal = catRows.sumOf { it.storeEmptyBalance }
+            )
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
-            title = if (isReadOnly) "Store Stock (View Only)" else "Store Management",
-            subtitle = "Yard Full: $totalFull  •  Yard Empty: $totalEmpty" + if (isReadOnly) " • Read-Only" else ""
+            title = if (isReadOnly) "Inside Store (View Only)" else "Inside Store • Main Yard",
+            subtitle = "Yard Full: $totalFull  •  Yard Empty: $totalEmpty" + if (isReadOnly) " • Read-Only" else "",
+            headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.InsideStoreGradient,
+            accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.InsideStoreAccent
         )
 
         Column(
@@ -174,9 +188,6 @@ fun StoreManagementScreen(
                     }
                     StoreActionChip("Complaint Replace", Icons.Default.SwapHoriz, BrandRedSecondary) {
                         activeModal = StoreModalAction.PURCHASE_COMPLAINT_REPLACE
-                    }
-                    StoreActionChip("Calculate", Icons.Default.Calculate, MaterialTheme.colorScheme.primary) {
-                        showCalculator = true
                     }
                     StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, BrandRedSecondary) {
                         activeModal = StoreModalAction.FULL_DISPATCH_VEHICLE
@@ -217,11 +228,20 @@ fun StoreManagementScreen(
         }
 
         if (activeTab == 0) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item(key = "store_category_folders") {
+                    CategoryFolderGrid(
+                        stats = folderStats,
+                        selectedCategory = selectedCategory,
+                        onSelectCategory = { selectedCategory = it },
+                        sectionTitle = "Inside Store Category Folders"
+                    )
+                }
+                item(key = "store_search_field") {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
@@ -230,24 +250,13 @@ fun StoreManagementScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    CategoryFilterRow(
-                        selectedCategory = selectedCategory,
-                        onCategorySelected = { selectedCategory = it }
-                    )
                 }
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredRows, key = { it.product.id }) { row ->
-                        StoreProductCard(
-                            row = row,
-                            canEditOpening = !isReadOnly,
-                            onEditOpening = { if (!isReadOnly) editingOpeningRow = row }
-                        )
-                    }
+                items(filteredRows, key = { it.product.id }) { row ->
+                    StoreProductCard(
+                        row = row,
+                        canEditOpening = !isReadOnly,
+                        onEditOpening = { if (!isReadOnly) editingOpeningRow = row }
+                    )
                 }
             }
         } else {
@@ -513,15 +522,6 @@ fun StoreManagementScreen(
             }
         )
     }
-
-    if (showCalculator) {
-        StockCalculatorDialog(
-            products = products,
-            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
-            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
-            onDismiss = { showCalculator = false }
-        )
-    }
 }
 
 @Composable
@@ -547,9 +547,10 @@ private fun StoreProductCard(
     canEditOpening: Boolean = true,
     onEditOpening: () -> Unit
 ) {
+    val catStyle = categoryVisualStyle(row.product.category)
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -561,7 +562,7 @@ private fun StoreProductCard(
                     Text(
                         text = row.product.category.displayName,
                         style = MaterialTheme.typography.labelSmall,
-                        color = BrandGreenPrimary,
+                        color = catStyle.primaryColor,
                         fontWeight = FontWeight.Bold
                     )
                     Text(

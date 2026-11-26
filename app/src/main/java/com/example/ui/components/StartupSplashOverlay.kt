@@ -46,14 +46,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -81,18 +82,17 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-const val STARTUP_LAUNCH_DURATION_SECONDS = 7f
+const val STARTUP_LAUNCH_DURATION_SECONDS = 6f
 
 /**
- * Choreographed 7-second cinematic app-open launch screen for Concord & Atoz Gas Trading LLC.
+ * Choreographed 6-second silent cinematic app-open launch screen for Concord & Atoz Gas Trading LLC.
  * Harmonizes with the Red & Blue C&A cylinder emblem with repeating ignition ripples, dual orbital
- * pressure rings, metallic light shimmer sweeps, animated audio equalizer bars, rotating
- * system-ready phases, and smooth exit fade (with instant skip option).
+ * pressure rings, metallic light shimmer sweeps, rotating system-ready phases, and smooth exit fade.
  */
 @Composable
 fun StartupSplashOverlay(
     themePreset: ThemePreset,
-    soundEnabled: Boolean,
+    soundEnabled: Boolean = false,
     startupSoundStyle: StartupSoundStyle = StartupSoundStyle.ROYAL_FANFARE,
     onSplashFinished: () -> Unit
 ) {
@@ -114,7 +114,7 @@ fun StartupSplashOverlay(
     val exitScale = remember { Animatable(1f) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "logo_living_motion")
-    val glowPulse by infiniteTransition.animateFloat(
+    val glowPulseState = infiniteTransition.animateFloat(
         initialValue = 0.86f,
         targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
@@ -123,7 +123,7 @@ fun StartupSplashOverlay(
         ),
         label = "glow_pulse"
     )
-    val counterOrbitAngle by infiniteTransition.animateFloat(
+    val counterOrbitAngleState = infiniteTransition.animateFloat(
         initialValue = 360f,
         targetValue = 0f,
         animationSpec = infiniteRepeatable(
@@ -132,7 +132,7 @@ fun StartupSplashOverlay(
         ),
         label = "counter_orbit"
     )
-    val rippleCycle by infiniteTransition.animateFloat(
+    val rippleCycleState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -140,15 +140,6 @@ fun StartupSplashOverlay(
             repeatMode = RepeatMode.Restart
         ),
         label = "ignition_ripple_cycle"
-    )
-    val wavePhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2.0 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 950, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "audio_wave_phase"
     )
 
     fun triggerSmoothExit() {
@@ -171,6 +162,8 @@ fun StartupSplashOverlay(
     }
 
     LaunchedEffect(Unit) {
+        // Let the first frame commit to SurfaceFlinger before starting choreography
+        withFrameNanos { }
         // Stage 1: Red C&A Emblem spring entrance
         launch {
             emblemAlpha.animateTo(1f, tween(durationMillis = 420))
@@ -226,10 +219,10 @@ fun StartupSplashOverlay(
             footerAlpha.animateTo(1f, tween(durationMillis = 480))
         }
 
-        // Overall 7-second launch progression (6.7s progress + 0.3s smooth exit = 7.0s)
+        // Overall 6-second silent launch progression (5.7s progress + 0.3s smooth exit = 6.0s)
         launchProgress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 6700, easing = LinearEasing)
+            animationSpec = tween(durationMillis = 5700, easing = LinearEasing)
         )
         triggerSmoothExit()
     }
@@ -240,11 +233,16 @@ fun StartupSplashOverlay(
     val goldAccent = Color(0xFFF6C667)
     val warmEmber = Color(0xFFFF8A4C)
 
-    val phaseMessage = when {
-        launchProgress.value < 0.25f -> "Igniting C&A Gas Fleet System..."
-        launchProgress.value < 0.50f -> "Syncing Store, Vehicles & Duty Punches..."
-        launchProgress.value < 0.75f -> "Loading Live Alerts, Chat & Reports..."
-        else -> "Ready • Concord & Atoz Gas Trading LLC"
+    val phaseMessage by remember {
+        derivedStateOf {
+            val progress = launchProgress.value
+            when {
+                progress < 0.25f -> "Igniting C&A Gas Fleet System..."
+                progress < 0.50f -> "Syncing Store, Vehicles & Duty Punches..."
+                progress < 0.75f -> "Loading Live Alerts, Chat & Reports..."
+                else -> "Ready • Concord & Atoz Gas Trading LLC"
+            }
+        }
     }
 
     Box(
@@ -267,18 +265,9 @@ fun StartupSplashOverlay(
             )
             .testTag("startup_splash_overlay")
     ) {
-        // Subtle atmospheric texture layer
-        Image(
-            painter = painterResource(id = R.drawable.img_company_banner),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .alpha(0.14f)
-        )
-
         // Atmospheric radial red-and-blue spotlight behind the animated logo
         Canvas(modifier = Modifier.fillMaxSize()) {
+            val glowPulse = glowPulseState.value
             val center = Offset(size.width * 0.5f, size.height * 0.43f)
             val maxRadius = size.minDimension * 0.62f * glowPulse
             drawCircle(
@@ -309,7 +298,7 @@ fun StartupSplashOverlay(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .alpha(footerAlpha.value),
+                    .graphicsLayer { alpha = footerAlpha.value },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -342,23 +331,12 @@ fun StartupSplashOverlay(
                     shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.35f))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (soundEnabled) Icons.Default.MusicNote else Icons.Default.VolumeOff,
-                            contentDescription = "Launch Sound Style",
-                            tint = if (soundEnabled) goldAccent else Color.White.copy(alpha = 0.7f),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = if (soundEnabled) startupSoundStyle.label else "Muted",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White
-                        )
-                    }
+                    Text(
+                        text = "6s Launch",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
                 }
             }
 
@@ -375,13 +353,17 @@ fun StartupSplashOverlay(
                 ) {
                     // Canvas Layer: Repeating Ignition Ripples, Orbital Gauge Arc, Counter-Rotating Arcs & Spark
                     Canvas(modifier = Modifier.fillMaxSize()) {
+                        val rippleCycle = rippleCycleState.value
+                        val glowPulse = glowPulseState.value
+                        val counterOrbitAngle = counterOrbitAngleState.value
+                        val emblemAlphaValue = emblemAlpha.value
                         val center = Offset(size.width / 2f, size.height / 2f)
                         val baseRadius = size.minDimension * 0.34f
 
                         // Continuous ignition ripple 1 (Gold-Crimson)
                         val r1 = baseRadius + (size.minDimension * 0.21f) * rippleCycle
                         drawCircle(
-                            color = goldAccent.copy(alpha = (1f - rippleCycle) * 0.58f * emblemAlpha.value),
+                            color = goldAccent.copy(alpha = (1f - rippleCycle) * 0.58f * emblemAlphaValue),
                             radius = r1,
                             center = center,
                             style = Stroke(width = 3.dp.toPx() * (1f - rippleCycle * 0.45f))
@@ -391,7 +373,7 @@ fun StartupSplashOverlay(
                         val ripple2 = (rippleCycle + 0.5f) % 1f
                         val r2 = baseRadius + (size.minDimension * 0.22f) * ripple2
                         drawCircle(
-                            color = crimsonBright.copy(alpha = (1f - ripple2) * 0.50f * emblemAlpha.value),
+                            color = crimsonBright.copy(alpha = (1f - ripple2) * 0.50f * emblemAlphaValue),
                             radius = r2,
                             center = center,
                             style = Stroke(width = 2.4.dp.toPx() * (1f - ripple2 * 0.45f))
@@ -402,8 +384,8 @@ fun StartupSplashOverlay(
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    crimsonBright.copy(alpha = 0.28f * emblemAlpha.value),
-                                    goldAccent.copy(alpha = 0.14f * emblemAlpha.value),
+                                    crimsonBright.copy(alpha = 0.28f * emblemAlphaValue),
+                                    goldAccent.copy(alpha = 0.14f * emblemAlphaValue),
                                     Color.Transparent
                                 ),
                                 center = center,
@@ -417,7 +399,7 @@ fun StartupSplashOverlay(
                         val innerArcInset = 24.dp.toPx()
                         val innerArcSize = Size(size.width - innerArcInset * 2f, size.height - innerArcInset * 2f)
                         drawArc(
-                            color = goldAccent.copy(alpha = 0.52f * emblemAlpha.value),
+                            color = goldAccent.copy(alpha = 0.52f * emblemAlphaValue),
                             startAngle = counterOrbitAngle,
                             sweepAngle = 78f,
                             useCenter = false,
@@ -426,7 +408,7 @@ fun StartupSplashOverlay(
                             style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
                         )
                         drawArc(
-                            color = crimsonBright.copy(alpha = 0.65f * emblemAlpha.value),
+                            color = crimsonBright.copy(alpha = 0.65f * emblemAlphaValue),
                             startAngle = counterOrbitAngle + 180f,
                             sweepAngle = 60f,
                             useCenter = false,
@@ -616,36 +598,7 @@ fun StartupSplashOverlay(
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
-
-                // Live audio visualizer bars when launch sound is enabled
-                if (soundEnabled) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .height(22.dp)
-                            .alpha(footerAlpha.value)
-                    ) {
-                        val barCount = 9
-                        for (index in 0 until barCount) {
-                            val amplitude = ((sin(wavePhase + index * 0.75f) + 1f) * 0.5f)
-                            val barHeight = (5f + amplitude * 15f).dp
-                            Box(
-                                modifier = Modifier
-                                    .width(3.5.dp)
-                                    .height(barHeight)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(
-                                        if (index % 2 == 0) goldAccent else crimsonBright
-                                    )
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                } else {
-                    Spacer(Modifier.height(10.dp))
-                }
+                Spacer(Modifier.height(14.dp))
 
                 LinearProgressIndicator(
                     progress = { launchProgress.value },
@@ -657,21 +610,14 @@ fun StartupSplashOverlay(
                         .clip(RoundedCornerShape(4.dp))
                 )
                 Spacer(Modifier.height(8.dp))
-                val secondsLeft = ((1f - launchProgress.value) * STARTUP_LAUNCH_DURATION_SECONDS).coerceAtLeast(0f)
-                Text(
-                    text = String.format(Locale.US, "Launching workspace... %.1fs", secondsLeft),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = JetBrainsMono,
-                    color = Color.White.copy(alpha = 0.82f),
-                    modifier = Modifier.testTag("splash_countdown_label")
-                )
+                SplashCountdownLabel(progressProvider = { launchProgress.value })
             }
 
             // Bottom "Built by Ragavan" Credit + Smooth Skip action
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.alpha(footerAlpha.value)
+                modifier = Modifier.graphicsLayer { alpha = footerAlpha.value }
             ) {
                 Surface(
                     color = Color.White.copy(alpha = 0.14f),
@@ -699,4 +645,22 @@ fun StartupSplashOverlay(
             }
         }
     }
+}
+
+@Composable
+private fun SplashCountdownLabel(progressProvider: () -> Float) {
+    val tenthsRemaining by remember {
+        derivedStateOf {
+            (((1f - progressProvider()) * STARTUP_LAUNCH_DURATION_SECONDS) * 10f)
+                .toInt()
+                .coerceAtLeast(0)
+        }
+    }
+    Text(
+        text = String.format(Locale.US, "Launching workspace... %.1fs", tenthsRemaining / 10f),
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = JetBrainsMono,
+        color = Color.White.copy(alpha = 0.82f),
+        modifier = Modifier.testTag("splash_countdown_label")
+    )
 }

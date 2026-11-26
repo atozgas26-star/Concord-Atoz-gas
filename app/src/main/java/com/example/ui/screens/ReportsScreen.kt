@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,11 +55,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.example.data.local.VehicleEntity
+import com.example.data.model.ProductCategory
 import com.example.data.model.ReportType
 import com.example.export.ReportExporter
 import com.example.export.ReportTable
 import com.example.ui.components.BrandHeaderBanner
+import com.example.ui.components.CategoryFolderGrid
+import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -93,8 +96,32 @@ fun ReportsScreen(
     var vehicleFilterId by remember { mutableStateOf<Long?>(null) }
     var purchaseDailyMode by remember { mutableStateOf(false) }
     var purchaseCompanyFilter by remember { mutableStateOf<String?>(null) }
+    var selectedCategory by remember(selectedReport, vehicleFilterId) { mutableStateOf<ProductCategory?>(null) }
 
-    val table = buildReportTable(selectedReport, vehicleFilterId, purchaseDailyMode, purchaseCompanyFilter)
+    val baseTable = buildReportTable(selectedReport, vehicleFilterId, purchaseDailyMode, purchaseCompanyFilter)
+
+    val supportsCategoryFolders = remember(baseTable) {
+        baseTable.rows.any { detectRowCategory(it) != null }
+    }
+
+    val folderStats = remember(baseTable, supportsCategoryFolders, selectedReport) {
+        if (!supportsCategoryFolders) emptyList()
+        else ProductCategory.entries.map { cat ->
+            val matching = baseTable.rows.filter { detectRowCategory(it) == cat }
+            val (fullTotal, emptyTotal) = computeFolderPreviewTotals(selectedReport, matching)
+            CategoryFolderStat(
+                category = cat,
+                itemCount = matching.size,
+                fullTotal = fullTotal,
+                emptyTotal = emptyTotal
+            )
+        }
+    }
+
+    val table = remember(baseTable, selectedCategory) {
+        if (selectedCategory == null) baseTable
+        else filterReportTableByCategory(baseTable, selectedCategory!!)
+    }
 
     // SAF launchers to save PDF / Excel directly to user's chosen location (Play-policy compliant)
     val savePdfLauncher = rememberLauncherForActivityResult(
@@ -155,37 +182,52 @@ fun ReportsScreen(
     }
 
     val horizontalScrollState = rememberScrollState()
+    val hasWideSecondCol = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+        selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
+        selectedReport == ReportType.PRODUCT_WISE_SALES ||
+        selectedReport == ReportType.FULL_EMPTY_STOCK
+
+    fun colWidth(idx: Int) = when {
+        idx == 0 -> 150.dp
+        idx == 1 && hasWideSecondCol -> 148.dp
+        else -> 86.dp
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Reports (View Only)" else "Reports & Export",
-            subtitle = "Concord & Atoz Gas Trading LLC • PDF & Excel (.xlsx)"
+            subtitle = "Concord & Atoz Gas Trading LLC • Category Folders, PDF & Excel",
+            headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.AdminGradient,
+            accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.AdminAccent
         )
 
-        Column(
+        // Single smooth vertical LazyColumn containing controls, Category Folder Grid, and full report table
+        LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .fillMaxSize()
+                .testTag("reports_smooth_scroll_list"),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // 6 Report Type Chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ReportType.entries.forEach { reportType ->
-                    FilterChip(
-                        selected = selectedReport == reportType,
-                        onClick = { selectedReport = reportType },
-                        label = { Text(reportType.title) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = BrandGreenPrimary,
-                            selectedLabelColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("report_chip_${reportType.name}")
-                    )
+            item(key = "report_type_chips") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ReportType.entries.forEach { reportType ->
+                        FilterChip(
+                            selected = selectedReport == reportType,
+                            onClick = { selectedReport = reportType },
+                            label = { Text(reportType.title) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BrandGreenPrimary,
+                                selectedLabelColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("report_chip_${reportType.name}")
+                        )
+                    }
                 }
             }
 
@@ -196,30 +238,32 @@ fun ReportsScreen(
                 selectedReport == ReportType.STAFF_WISE_SALES
 
             if (supportsDailyMonthlyToggle) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = purchaseDailyMode,
-                        onClick = { purchaseDailyMode = true },
-                        label = { Text("Daily Report") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = BrandRedSecondary,
-                            selectedLabelColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("purchase_report_daily_chip")
-                    )
-                    FilterChip(
-                        selected = !purchaseDailyMode,
-                        onClick = { purchaseDailyMode = false },
-                        label = { Text("Monthly Report") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = BrandGreenPrimary,
-                            selectedLabelColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("purchase_report_monthly_chip")
-                    )
+                item(key = "report_period_toggle") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = purchaseDailyMode,
+                            onClick = { purchaseDailyMode = true },
+                            label = { Text("Daily Report") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BrandRedSecondary,
+                                selectedLabelColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("purchase_report_daily_chip")
+                        )
+                        FilterChip(
+                            selected = !purchaseDailyMode,
+                            onClick = { purchaseDailyMode = false },
+                            label = { Text("Monthly Report") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BrandGreenPrimary,
+                                selectedLabelColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("purchase_report_monthly_chip")
+                        )
+                    }
                 }
             }
 
@@ -227,48 +271,52 @@ fun ReportsScreen(
             if ((selectedReport == ReportType.PURCHASE_REGISTER || selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT) &&
                 recentPurchaseCompanies.isNotEmpty()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = purchaseCompanyFilter == null,
-                        onClick = { purchaseCompanyFilter = null },
-                        label = { Text("All Suppliers") },
-                        modifier = Modifier.testTag("report_supplier_all")
-                    )
-                    recentPurchaseCompanies.forEach { company ->
+                item(key = "report_supplier_chips") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         FilterChip(
-                            selected = purchaseCompanyFilter.equals(company, ignoreCase = true),
-                            onClick = { purchaseCompanyFilter = company },
-                            label = { Text(company) }
+                            selected = purchaseCompanyFilter == null,
+                            onClick = { purchaseCompanyFilter = null },
+                            label = { Text("All Suppliers") },
+                            modifier = Modifier.testTag("report_supplier_all")
                         )
+                        recentPurchaseCompanies.forEach { company ->
+                            FilterChip(
+                                selected = purchaseCompanyFilter.equals(company, ignoreCase = true),
+                                onClick = { purchaseCompanyFilter = company },
+                                label = { Text(company) }
+                            )
+                        }
                     }
                 }
             }
 
-            when {
-                supportsDailyMonthlyToggle -> {
-                    if (purchaseDailyMode) {
-                        DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
-                    } else {
+            item(key = "report_date_or_month") {
+                when {
+                    supportsDailyMonthlyToggle -> {
+                        if (purchaseDailyMode) {
+                            DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                        } else {
+                            MonthSelectorBar(
+                                yearMonth = selectedYearMonth,
+                                onYearMonthChanged = onYearMonthSelected
+                            )
+                        }
+                    }
+                    selectedReport == ReportType.MONTHLY_SALES ||
+                        selectedReport == ReportType.PRODUCT_WISE_SALES -> {
                         MonthSelectorBar(
                             yearMonth = selectedYearMonth,
                             onYearMonthChanged = onYearMonthSelected
                         )
                     }
-                }
-                selectedReport == ReportType.MONTHLY_SALES ||
-                    selectedReport == ReportType.PRODUCT_WISE_SALES -> {
-                    MonthSelectorBar(
-                        yearMonth = selectedYearMonth,
-                        onYearMonthChanged = onYearMonthSelected
-                    )
-                }
-                else -> {
-                    DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                    else -> {
+                        DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                    }
                 }
             }
 
@@ -277,247 +325,330 @@ fun ReportsScreen(
                 selectedReport == ReportType.STAFF_PRODUCT_SALES ||
                 selectedReport == ReportType.CUSTOMER_PENDING
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = vehicleFilterId == null,
-                        onClick = {
-                            vehicleFilterId = null
-                            onSelectVehicle(null)
-                        },
-                        label = {
-                            Text(
-                                if (selectedReport == ReportType.STAFF_PRODUCT_SALES) {
-                                    "All Staff (${vehicles.size})"
-                                } else {
-                                    "All ${vehicles.size} Vehicles"
-                                }
-                            )
-                        },
-                        modifier = Modifier.testTag("report_vehicle_all")
-                    )
-                    vehicles.forEach { v ->
+                item(key = "report_vehicle_chips") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         FilterChip(
-                            selected = vehicleFilterId == v.id,
+                            selected = vehicleFilterId == null,
                             onClick = {
-                                vehicleFilterId = v.id
-                                onSelectVehicle(v.id)
+                                vehicleFilterId = null
+                                onSelectVehicle(null)
                             },
-                            label = { Text(v.name) }
+                            label = {
+                                Text(
+                                    if (selectedReport == ReportType.STAFF_PRODUCT_SALES) {
+                                        "All Staff (${vehicles.size})"
+                                    } else {
+                                        "All ${vehicles.size} Vehicles"
+                                    }
+                                )
+                            },
+                            modifier = Modifier.testTag("report_vehicle_all")
                         )
+                        vehicles.forEach { v ->
+                            FilterChip(
+                                selected = vehicleFilterId == v.id,
+                                onClick = {
+                                    vehicleFilterId = v.id
+                                    onSelectVehicle(v.id)
+                                },
+                                label = { Text(v.name) }
+                            )
+                        }
                     }
+                }
+            }
+
+            // Vibrant 2x2 Category Folders for instant category-wise report view & export
+            if (supportsCategoryFolders) {
+                item(key = "report_category_folders") {
+                    CategoryFolderGrid(
+                        stats = folderStats,
+                        selectedCategory = selectedCategory,
+                        onSelectCategory = { selectedCategory = it },
+                        sectionTitle = "Report Category Folders"
+                    )
                 }
             }
 
             // Export Actions (PDF Save/Share & Excel Save/Share)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { savePdfLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.pdf") },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("export_pdf_save")
-                ) {
-                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Save PDF")
-                }
-                OutlinedButton(
-                    onClick = { shareFile(isPdf = true) },
-                    modifier = Modifier.testTag("export_pdf_share")
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = "Share PDF", modifier = Modifier.size(18.dp))
-                }
-                Button(
-                    onClick = { saveExcelLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.xlsx") },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("export_excel_save")
-                ) {
-                    Icon(Icons.Default.TableView, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Save Excel")
-                }
-                OutlinedButton(
-                    onClick = { shareFile(isPdf = false) },
-                    modifier = Modifier.testTag("export_excel_share")
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = "Share Excel", modifier = Modifier.size(18.dp))
-                }
-            }
-            if (!isReadOnly) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { onSaveReportCloudAndDrive(selectedReport, table, false) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("report_save_cloud_button")
-                    ) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Save Cloud Snapshot")
-                    }
-                    OutlinedButton(
-                        onClick = { onSaveReportCloudAndDrive(selectedReport, table, true) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("report_save_drive_button")
-                    ) {
-                        Icon(Icons.Default.AddToDrive, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Upload PDF to Drive")
-                    }
-                }
-            }
-        }
-
-        // Report Preview Header
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = table.reportTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = table.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // Scrollable Multi-Column Report Table
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 12.dp)
-                .horizontalScroll(horizontalScrollState)
-        ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                item {
-                    val hasWideSecondCol = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
-                        selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
-                        selectedReport == ReportType.PRODUCT_WISE_SALES ||
-                        selectedReport == ReportType.FULL_EMPTY_STOCK
-                    fun colWidth(idx: Int) = when {
-                        idx == 0 -> 150.dp
-                        idx == 1 && hasWideSecondCol -> 148.dp
-                        else -> 86.dp
-                    }
+            item(key = "report_export_actions") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
-                        modifier = Modifier
-                            .background(BrandGreenContainer)
-                            .padding(vertical = 8.dp, horizontal = 8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        table.headers.forEachIndexed { idx, header ->
-                            Text(
-                                text = header,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = BrandGreenOnContainer,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .width(colWidth(idx))
-                                    .padding(horizontal = 4.dp)
-                            )
-                        }
-                    }
-                }
-
-                itemsIndexed(table.rows) { rowIdx, row ->
-                    val hasWideSecondCol = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
-                        selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
-                        selectedReport == ReportType.PRODUCT_WISE_SALES ||
-                        selectedReport == ReportType.FULL_EMPTY_STOCK
-                    val bg = if (rowIdx % 2 == 0) MaterialTheme.colorScheme.surface
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    Row(
-                        modifier = Modifier
-                            .background(bg)
-                            .padding(vertical = 8.dp, horizontal = 8.dp)
-                    ) {
-                        row.forEachIndexed { idx, value ->
-                            val w = when {
-                                idx == 0 -> 150.dp
-                                idx == 1 && hasWideSecondCol -> 148.dp
-                                else -> 86.dp
-                            }
-                            val isNumericCol = idx > if (hasWideSecondCol) 1 else 0
-                            Text(
-                                text = value,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.bodySmall.fontFamily,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .width(w)
-                                    .padding(horizontal = 4.dp)
-                            )
-                        }
-                    }
-                }
-
-                table.footerTotals?.let { totals ->
-                    item {
-                        val hasWideSecondCol = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
-                            selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
-                            selectedReport == ReportType.PRODUCT_WISE_SALES ||
-                            selectedReport == ReportType.FULL_EMPTY_STOCK
-                        Row(
+                        Button(
+                            onClick = { savePdfLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.pdf") },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary),
                             modifier = Modifier
-                                .background(BrandRedContainer)
-                                .padding(vertical = 10.dp, horizontal = 8.dp)
+                                .weight(1f)
+                                .testTag("export_pdf_save")
                         ) {
-                            totals.forEachIndexed { idx, value ->
-                                val w = when {
-                                    idx == 0 -> 150.dp
-                                    idx == 1 && hasWideSecondCol -> 148.dp
-                                    else -> 86.dp
-                                }
-                                val isNumericCol = idx > if (hasWideSecondCol) 1 else 0
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Save PDF")
+                        }
+                        OutlinedButton(
+                            onClick = { shareFile(isPdf = true) },
+                            modifier = Modifier.testTag("export_pdf_share")
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Share PDF", modifier = Modifier.size(18.dp))
+                        }
+                        Button(
+                            onClick = { saveExcelLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.xlsx") },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("export_excel_save")
+                        ) {
+                            Icon(Icons.Default.TableView, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Save Excel")
+                        }
+                        OutlinedButton(
+                            onClick = { shareFile(isPdf = false) },
+                            modifier = Modifier.testTag("export_excel_share")
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Share Excel", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    if (!isReadOnly) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onSaveReportCloudAndDrive(selectedReport, table, false) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("report_save_cloud_button")
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Save Cloud Snapshot")
+                            }
+                            OutlinedButton(
+                                onClick = { onSaveReportCloudAndDrive(selectedReport, table, true) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("report_save_drive_button")
+                            ) {
+                                Icon(Icons.Default.AddToDrive, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Upload PDF to Drive")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Report Preview Header + Horizontally Scrollable Table Card
+            item(key = "report_preview_table") {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = value,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.labelMedium.fontFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BrandRedOnContainer,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .width(w)
-                                        .padding(horizontal = 4.dp)
+                                    text = table.reportTitle,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = table.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(horizontalScrollState)
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier
+                                        .background(BrandGreenContainer)
+                                        .padding(vertical = 8.dp, horizontal = 8.dp)
+                                ) {
+                                    table.headers.forEachIndexed { idx, header ->
+                                        Text(
+                                            text = header,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BrandGreenOnContainer,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .width(colWidth(idx))
+                                                .padding(horizontal = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                if (table.rows.isEmpty()) {
+                                    Text(
+                                        text = "No entries in this category folder for the selected period.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(16.dp)
+                                    )
+                                } else {
+                                    table.rows.forEachIndexed { rowIdx, row ->
+                                        val bg = if (rowIdx % 2 == 0) MaterialTheme.colorScheme.surface
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                        Row(
+                                            modifier = Modifier
+                                                .background(bg)
+                                                .padding(vertical = 8.dp, horizontal = 8.dp)
+                                        ) {
+                                            row.forEachIndexed { idx, value ->
+                                                val isNumericCol = idx > if (hasWideSecondCol) 1 else 0
+                                                Text(
+                                                    text = value,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.bodySmall.fontFamily,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier
+                                                        .width(colWidth(idx))
+                                                        .padding(horizontal = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                table.footerTotals?.let { totals ->
+                                    Row(
+                                        modifier = Modifier
+                                            .background(BrandRedContainer)
+                                            .padding(vertical = 10.dp, horizontal = 8.dp)
+                                    ) {
+                                        totals.forEachIndexed { idx, value ->
+                                            val isNumericCol = idx > if (hasWideSecondCol) 1 else 0
+                                            Text(
+                                                text = value,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.labelMedium.fontFamily,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BrandRedOnContainer,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier
+                                                    .width(colWidth(idx))
+                                                    .padding(horizontal = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
+
+            item(key = "report_bottom_spacer") {
+                Spacer(Modifier.height(72.dp))
+            }
         }
     }
+}
+
+private fun detectRowCategory(row: List<String>): ProductCategory? {
+    for (cell in row.take(4)) {
+        val trimmed = cell.trim()
+        ProductCategory.entries.firstOrNull { cat ->
+            trimmed.equals(cat.displayName, ignoreCase = true) ||
+                trimmed.startsWith("${cat.shortCode} -", ignoreCase = true)
+        }?.let { return it }
+    }
+    return null
+}
+
+private fun computeFolderPreviewTotals(
+    reportType: ReportType,
+    rows: List<List<String>>
+): Pair<Int, Int> {
+    if (rows.isEmpty()) return 0 to 0
+    return when (reportType) {
+        ReportType.DAILY_STORE -> {
+            val fullBal = rows.sumOf { it.getOrNull(5)?.toIntOrNull() ?: 0 }
+            val empBal = rows.sumOf { it.getOrNull(10)?.toIntOrNull() ?: 0 }
+            fullBal to empBal
+        }
+        ReportType.DAILY_VEHICLE -> {
+            val fullBal = rows.sumOf { it.getOrNull(5)?.toIntOrNull() ?: 0 }
+            val empBal = rows.sumOf { it.getOrNull(9)?.toIntOrNull() ?: 0 }
+            fullBal to empBal
+        }
+        ReportType.FULL_EMPTY_STOCK -> {
+            val fullBal = rows.sumOf { it.getOrNull(4)?.toIntOrNull() ?: 0 }
+            val empBal = rows.sumOf { it.getOrNull(7)?.toIntOrNull() ?: 0 }
+            fullBal to empBal
+        }
+        ReportType.PRODUCT_WISE_SALES -> {
+            val sold = rows.sumOf { it.getOrNull(2)?.toIntOrNull() ?: 0 }
+            val emp = rows.sumOf { it.getOrNull(3)?.toIntOrNull() ?: 0 }
+            sold to emp
+        }
+        ReportType.STAFF_PRODUCT_SALES -> {
+            val sold = rows.sumOf { it.getOrNull(5)?.toIntOrNull() ?: 0 }
+            val emp = rows.sumOf { it.getOrNull(6)?.toIntOrNull() ?: 0 }
+            sold to emp
+        }
+        ReportType.PURCHASE_COMPANY_PRODUCT -> {
+            val fullPur = rows.sumOf { it.getOrNull(2)?.toIntOrNull() ?: 0 }
+            val empPur = rows.sumOf { it.getOrNull(3)?.toIntOrNull() ?: 0 }
+            fullPur to empPur
+        }
+        else -> {
+            val qty = rows.sumOf { it.getOrNull(4)?.toIntOrNull() ?: 0 }
+            qty to 0
+        }
+    }
+}
+
+private fun filterReportTableByCategory(
+    base: ReportTable,
+    category: ProductCategory
+): ReportTable {
+    val filteredRows = base.rows.filter { detectRowCategory(it) == category }
+    val recalculatedFooter = base.footerTotals?.mapIndexed { colIdx, origVal ->
+        when {
+            colIdx == 0 -> "${category.shortCode} TOTAL"
+            origVal.toIntOrNull() != null -> {
+                filteredRows.sumOf { row -> row.getOrNull(colIdx)?.toIntOrNull() ?: 0 }.toString()
+            }
+            origVal.contains("Items", ignoreCase = true) ||
+                origVal.contains("Products", ignoreCase = true) ||
+                origVal.contains("Cylinders", ignoreCase = true) ||
+                origVal.contains("Entries", ignoreCase = true) -> {
+                "${filteredRows.size} Items"
+            }
+            else -> origVal
+        }
+    }
+    return base.copy(
+        reportTitle = "${base.reportTitle} • ${category.displayName}",
+        subtitle = "${base.subtitle}  •  Folder: ${category.displayName} (${filteredRows.size} rows)",
+        rows = filteredRows,
+        footerTotals = recalculatedFooter
+    )
 }
 
 @Composable

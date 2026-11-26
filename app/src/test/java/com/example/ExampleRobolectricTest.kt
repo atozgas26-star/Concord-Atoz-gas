@@ -1729,8 +1729,8 @@ class ExampleRobolectricTest {
 
     @Test
     fun `app system update manager compares semver, enforces trusted github release urls, and updates viewmodel state`() = runTest {
-        assertEquals("1.9.0", BuildConfig.VERSION_NAME)
-        assertEquals(9, BuildConfig.VERSION_CODE)
+        assertEquals("1.10.0", BuildConfig.VERSION_NAME)
+        assertEquals(10, BuildConfig.VERSION_CODE)
 
         // 1. Semantic version comparisons
         assertTrue(AppUpdateManager.compareSemVer("v2.0.0", "1.9.0") > 0)
@@ -1855,14 +1855,14 @@ class ExampleRobolectricTest {
         assertFalse(vm.appUpdateState.value.shouldShowBanner)
         assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, vm.appUpdateState.value.status)
 
-        // Case B: Up-to-date release v1.9.0
+        // Case B: Up-to-date release v1.10.0
         mockedBody = """
             {
-              "tag_name": "v1.9.0",
-              "name": "C&A Gas v1.9.0",
+              "tag_name": "v1.10.0",
+              "name": "C&A Gas v1.10.0",
               "body": "Current version.",
               "published_at": "2026-11-26T10:00:00Z",
-              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.9.0",
+              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.10.0",
               "assets": []
             }
         """.trimIndent()
@@ -2232,5 +2232,159 @@ class ExampleRobolectricTest {
         // Verify Bell & Chat sounds are safe in Robolectric
         SoundEffectsManager.playNotificationBell(true)
         SoundEffectsManager.playChatMessageTone(true)
+    }
+
+    @Test
+    fun `launch screen is 6 seconds and category folders plus role headers use distinct visual color palettes`() {
+        assertEquals(6f, com.example.ui.components.STARTUP_LAUNCH_DURATION_SECONDS)
+
+        // All 4 gas category folders have unique vibrant primary colors
+        val categoryColors = ProductCategory.entries.map {
+            com.example.ui.components.categoryVisualStyle(it).primaryColor
+        }.toSet()
+        assertEquals(ProductCategory.entries.size, categoryColors.size)
+
+        // Admin, Owner View, Staff, Inside Store, and Outside Fleet each have distinct header palettes
+        val headerGradients = setOf(
+            com.example.ui.components.RoleHeaderPalettes.AdminGradient,
+            com.example.ui.components.RoleHeaderPalettes.OwnerGradient,
+            com.example.ui.components.RoleHeaderPalettes.StaffGradient,
+            com.example.ui.components.RoleHeaderPalettes.InsideStoreGradient,
+            com.example.ui.components.RoleHeaderPalettes.OutsideFleetGradient
+        )
+        assertEquals(5, headerGradients.size)
+
+        // Inside Store and Outside Fleet zone toggles have distinct accent colors
+        assertFalse(
+            com.example.ui.components.StockZoneScope.INSIDE_STORE.accentColor ==
+                com.example.ui.components.StockZoneScope.OUTSIDE_FLEET.accentColor
+        )
+    }
+
+    @Test
+    fun `owner view accepts 4-digit PIN and rejects shorter PINs while preserving read-only access`() = runTest {
+        repository.initializeDatabase()
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        prefs.clearOwnerViewPasswordHash()
+        prefs.clearBiometricUnlockState()
+
+        assertTrue(com.example.auth.AdminCredentialCrypto.isValidOwnerViewPin("2468"))
+        assertFalse(com.example.auth.AdminCredentialCrypto.isValidOwnerViewPin("123"))
+        assertFalse(com.example.auth.AdminCredentialCrypto.isValidOwnerViewPin("12a4"))
+
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            gmailVerificationManager = null,
+            appContext = context
+        )
+        fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+        waitUntil { vm.isInitialized.value }
+
+        // 3-digit PIN rejected
+        vm.setupOwnerViewPassword("123", "123")
+        assertNotNull(vm.loginError.value)
+        assertNull(vm.authSession.value)
+
+        // 4-digit PIN succeeds and signs into Owner View
+        vm.clearLoginError()
+        vm.setupOwnerViewPassword("2468", "2468")
+        waitUntil { vm.authSession.value?.user?.role == UserRole.OWNER_VIEW }
+        assertEquals(UserRole.OWNER_VIEW, vm.authSession.value?.user?.role)
+
+        // Logout & sign back in with 4-digit PIN
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+        vm.loginOwnerViewWithPassword("9999")
+        waitUntil { vm.loginError.value != null }
+        assertNull(vm.authSession.value)
+
+        vm.clearLoginError()
+        vm.loginOwnerViewWithPassword("2468")
+        waitUntil { vm.authSession.value?.user?.role == UserRole.OWNER_VIEW }
+        assertEquals(UserRole.OWNER_VIEW, vm.authSession.value?.user?.role)
+    }
+
+    @Test
+    fun `staff new customer full set sale leaves zero empty pending and auto-minuses overall company cylinders`() = runTest {
+        repository.initializeDatabase()
+        val products = repository.activeProductsFlow.first()
+        val oxygen = products.first { it.name.contains("Oxygen", ignoreCase = true) }
+        val vehicles = repository.vehiclesFlow.first()
+        val nadeemVehicle = vehicles.first()
+        val users = repository.usersFlow.first()
+        val admin = users.first { it.role == UserRole.ADMIN }
+        val nadeem = users.first { it.role == UserRole.STAFF && it.id == nadeemVehicle.staffUserId }
+        val today = "2026-11-26"
+
+        // Store starts with 100 Full Oxygen purchased -> Overall Company Total = 100
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = today,
+                type = TransactionType.STORE_PURCHASE_FULL,
+                productId = oxygen.id,
+                vehicleId = null,
+                actor = admin,
+                quantity = 100,
+                notes = "Initial yard stock"
+            ) is OperationResult.Success
+        )
+
+        // Dispatch 10 Full from Store to Vehicle -> Store Full 90, Vehicle Full 10, Overall = 100
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = today,
+                type = TransactionType.VEHICLE_FULL_RECEIVED,
+                productId = oxygen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = admin,
+                quantity = 10,
+                notes = "Morning truck load"
+            ) is OperationResult.Success
+        )
+
+        val beforeSale = repository.observeCompanyStockReport(today).first().first { it.product.id == oxygen.id }
+        assertEquals(90, beforeSale.storeFull)
+        assertEquals(10, beforeSale.vehiclesFull)
+        assertEquals(100, beforeSale.totalFull)
+        assertEquals(0, beforeSale.totalEmpty)
+        assertEquals(100, beforeSale.overallTotalCylinders)
+
+        // Staff records New Customer Full Set Sale (3 cylinders, empty NOT coming back)
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = today,
+                type = TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                productId = oxygen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 3,
+                notes = "New customer full set",
+                customerName = "Al Noor Restaurant"
+            ) is OperationResult.Success
+        )
+
+        val afterSale = repository.observeCompanyStockReport(today).first().first { it.product.id == oxygen.id }
+        // Store Full stays 90, Vehicle Full drops 10 -> 7, Overall Total auto-minuses 100 -> 97!
+        assertEquals(90, afterSale.storeFull)
+        assertEquals(7, afterSale.vehiclesFull)
+        assertEquals(97, afterSale.totalFull)
+        assertEquals(0, afterSale.totalEmpty)
+        assertEquals(97, afterSale.overallTotalCylinders)
+        assertEquals(3, afterSale.newCustomerSoldOut)
+
+        // Customer has ZERO pending empty balance ("empty not coming that's balance no problem")
+        val pendingList = repository.observeCustomerPendingBalances(nadeemVehicle.id).first()
+        assertTrue(pendingList.none { it.customerName.equals("Al Noor Restaurant", ignoreCase = true) })
     }
 }

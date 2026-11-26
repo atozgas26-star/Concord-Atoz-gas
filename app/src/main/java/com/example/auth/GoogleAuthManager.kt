@@ -279,27 +279,33 @@ fun GoogleSignInButton(
 fun GoogleAuthScreen(
     onAuthSuccess: () -> Unit,
     darkModeEnabled: Boolean = false,
-    onToggleDarkMode: (() -> Unit)? = null
+    onToggleDarkMode: (() -> Unit)? = null,
+    isSplashVisible: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
     var authError by remember { mutableStateOf<String?>(null) }
-    var checkingAutoSignIn by remember { mutableStateOf(true) }
+    var checkingAutoSignIn by remember { mutableStateOf(!isSplashVisible) }
+    var autoSignInAttempted by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        attemptAutoSignIn(
-            context = context,
-            credentialManager = credentialManager,
-            onAuthSuccess = {
-                checkingAutoSignIn = false
-                onAuthSuccess()
-            },
-            onUnauthenticated = {
-                checkingAutoSignIn = false
-            },
-            scope = scope
-        )
+    LaunchedEffect(isSplashVisible) {
+        if (!isSplashVisible && !autoSignInAttempted) {
+            autoSignInAttempted = true
+            checkingAutoSignIn = true
+            attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = {
+                    checkingAutoSignIn = false
+                    onAuthSuccess()
+                },
+                onUnauthenticated = {
+                    checkingAutoSignIn = false
+                },
+                scope = scope
+            )
+        }
     }
 
     Box(

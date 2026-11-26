@@ -108,22 +108,25 @@ import java.util.TimeZone
 fun BrandHeaderBanner(
     title: String,
     subtitle: String,
+    headerGradient: List<Color>? = null,
+    accentBarColor: Color? = null,
     trailingContent: @Composable () -> Unit = {}
 ) {
     val isDark = LocalIsDarkTheme.current
-    val startColor = if (isDark) DarkHeaderStart else MaterialTheme.colorScheme.primary
-    val endColor = if (isDark) DarkHeaderEnd else MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    val gradientColors = headerGradient ?: listOf(
+        if (isDark) DarkHeaderStart else MaterialTheme.colorScheme.primary,
+        if (isDark) DarkHeaderEnd else MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    )
     val contentColor = Color.White
-    val accentLine = if (isDark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    val accentLine = accentBarColor
+        ?: if (isDark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    Brush.horizontalGradient(
-                        listOf(startColor, endColor)
-                    )
+                    Brush.horizontalGradient(gradientColors)
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {

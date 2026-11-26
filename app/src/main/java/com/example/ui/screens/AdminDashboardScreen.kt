@@ -31,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
@@ -99,7 +98,9 @@ import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
 import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
+import com.example.data.model.CompanyStockRow
 import com.example.ui.components.CurrentInventoryTotalsCard
+import com.example.ui.components.DashboardInsideOutsideFolderCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.HeaderBellIconButton
@@ -109,7 +110,7 @@ import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.PendingDeliveriesSummaryCard
 import com.example.ui.components.PendingStoreTransferCard
 import com.example.ui.components.RecentStoreActivityCard
-import com.example.ui.components.StockCalculatorDialog
+import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberOnContainer
@@ -134,6 +135,7 @@ fun AdminDashboardScreen(
     selectedDate: String,
     summary: DashboardSummary?,
     storeRows: List<StoreStockRow> = emptyList(),
+    companyStockRows: List<CompanyStockRow> = emptyList(),
     products: List<ProductEntity> = emptyList(),
     pendingCustomerCount: Int = 0,
     totalPendingEmptyCount: Int = 0,
@@ -170,7 +172,6 @@ fun AdminDashboardScreen(
     onLogout: () -> Unit
 ) {
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
-    var showCalculator by remember { mutableStateOf(false) }
     var showThresholdDialog by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -181,6 +182,8 @@ fun AdminDashboardScreen(
             } else {
                 "Admin Dashboard • Welcome, $adminName"
             },
+            headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.AdminGradient,
+            accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.AdminAccent,
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val hasUpdate = appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE
@@ -406,6 +409,17 @@ fun AdminDashboardScreen(
                 }
             }
 
+            // Separate Inside (Main Store) & Outside (Fleet/Vehicles) Color-Coded Category Folders
+            if (companyStockRows.isNotEmpty()) {
+                item(key = "inside_outside_category_folders") {
+                    DashboardInsideOutsideFolderCard(
+                        companyStockRows = companyStockRows,
+                        onOpenStore = onOpenStore,
+                        onOpenVehicles = onOpenVehicles
+                    )
+                }
+            }
+
             // Reactive Low Stock Alert Card
             item {
                 AnimatedVisibility(
@@ -583,7 +597,7 @@ fun AdminDashboardScreen(
                     }
                 }
 
-                // Reports + Calculate + Alert Limit Shortcut Row
+                // Reports + Alert Limit Shortcut Row
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -598,14 +612,6 @@ fun AdminDashboardScreen(
                             Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("Reports", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        FilledTonalButton(
-                            onClick = { showCalculator = true },
-                            modifier = Modifier.testTag("dashboard_calculate_button")
-                        ) {
-                            Icon(Icons.Default.Calculate, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Calc", maxLines = 1)
                         }
                         if (!isReadOnly) {
                             FilledTonalButton(
@@ -815,15 +821,6 @@ fun AdminDashboardScreen(
                 }
             }
         }
-    }
-
-    if (showCalculator) {
-        StockCalculatorDialog(
-            products = products.filter { it.isActive }.ifEmpty { products },
-            storeFullProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0 },
-            storeEmptyProvider = { prodId -> storeRows.firstOrNull { it.product.id == prodId }?.storeEmptyBalance ?: 0 },
-            onDismiss = { showCalculator = false }
-        )
     }
 
     if (showThresholdDialog && !isReadOnly) {

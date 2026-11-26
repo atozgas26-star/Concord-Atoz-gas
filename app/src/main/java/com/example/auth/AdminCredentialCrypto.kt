@@ -93,6 +93,9 @@ object AdminCredentialCrypto {
     fun isValidPassword(password: String): Boolean =
         password.length in 6..64
 
+    fun isValidOwnerViewPin(pin: String): Boolean =
+        (pin.length == 4 && pin.all { it.isDigit() }) || isValidPassword(pin)
+
     fun isValidEmail(email: String): Boolean {
         val clean = email.trim()
         if (clean.contains('\r') || clean.contains('\n')) return false

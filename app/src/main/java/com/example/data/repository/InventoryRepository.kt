@@ -28,8 +28,10 @@ import com.example.data.model.UserRole
 import com.example.data.model.VehicleOverview
 import com.example.data.model.VehicleStockRow
 import com.example.data.remote.CloudSyncRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,7 +74,7 @@ class InventoryRepository(
             }
         }
         seen.toList()
-    }
+    }.flowOn(Dispatchers.Default)
 
     val recentCustomerNamesFlow: Flow<List<String>> = transactionsFlow.map { txs ->
         val seen = LinkedHashSet<String>()
@@ -85,7 +87,7 @@ class InventoryRepository(
             }
         }
         seen.toList()
-    }
+    }.flowOn(Dispatchers.Default)
 
     suspend fun initializeDatabase() {
         db.ensureSeeded()
@@ -320,7 +322,7 @@ class InventoryRepository(
     fun observeStoreStock(date: String): Flow<List<StoreStockRow>> =
         combine(activeProductsFlow, openingsFlow, transactionsFlow) { products, openings, txs ->
             StockCalculator.calculateStoreRowsForDate(date, products, openings, txs)
-        }
+        }.flowOn(Dispatchers.Default)
 
     /**
      * Reactive Vehicle Stock rows for a specific vehicle and date.
@@ -329,7 +331,7 @@ class InventoryRepository(
         combine(vehiclesFlow, activeProductsFlow, openingsFlow, transactionsFlow) { vehicles, products, openings, txs ->
             val vehicle = vehicles.firstOrNull { it.id == vehicleId } ?: return@combine emptyList()
             StockCalculator.calculateVehicleRowsForDate(date, vehicle, products, openings, txs)
-        }
+        }.flowOn(Dispatchers.Default)
 
     /**
      * Reactive Admin Dashboard Summary for a selected date.
@@ -413,7 +415,7 @@ class InventoryRepository(
                 todayStoreActivityCount = storeActivityTxs.size,
                 recentStoreActivity = storeActivityTxs.take(6)
             )
-        }
+        }.flowOn(Dispatchers.Default)
 
     /**
      * Records a stock transaction atomically while strictly preventing negative stock.
@@ -1125,7 +1127,7 @@ class InventoryRepository(
                     .thenByDescending { it.lastActivityDate }
                     .thenBy { it.customerName.lowercase(Locale.US) }
             )
-        }
+        }.flowOn(Dispatchers.Default)
 
     // --- Report Queries ---
 
@@ -1156,7 +1158,7 @@ class InventoryRepository(
                         }.sumOf { it.quantity }
                     )
                 }
-        }
+        }.flowOn(Dispatchers.Default)
 
     fun observeProductWiseSales(yearMonth: String): Flow<List<ProductSalesRow>> =
         combine(activeProductsFlow, transactionsFlow) { products, txs ->
@@ -1173,7 +1175,7 @@ class InventoryRepository(
                         .sumOf { it.quantity }
                 )
             }
-        }
+        }.flowOn(Dispatchers.Default)
 
     fun observeStaffWiseSales(yearMonth: String, asOfDate: String): Flow<List<StaffSalesRow>> =
         combine(vehiclesFlow, activeProductsFlow, openingsFlow, transactionsFlow) { vehicles, products, openings, txs ->
@@ -1203,7 +1205,7 @@ class InventoryRepository(
                     closingEmptyBalance = vTodayRows.sumOf { it.emptyBalance }
                 )
             }
-        }
+        }.flowOn(Dispatchers.Default)
 
     fun observeCompanyStockReport(asOfDate: String): Flow<List<CompanyStockRow>> =
         combine(vehiclesFlow, activeProductsFlow, openingsFlow, transactionsFlow) { vehicles, products, openings, txs ->
@@ -1216,6 +1218,14 @@ class InventoryRepository(
                     vehicleRowsByProduct.getOrPut(row.product.id) { mutableListOf() }.add(row)
                 }
             }
+            val newCustOutByProduct = txs
+                .filter {
+                    it.type == TransactionType.VEHICLE_NEW_CUSTOMER_SALE &&
+                        it.businessDate <= asOfDate
+                }
+                .groupBy { it.productId }
+                .mapValues { (_, list) -> list.sumOf { it.quantity } }
+
             products.map { product ->
                 val store = storeRows[product.id]
                 val vRows = vehicleRowsByProduct[product.id].orEmpty()
@@ -1230,10 +1240,11 @@ class InventoryRepository(
                     totalFull = sFull + vFull,
                     storeEmpty = sEmpty,
                     vehiclesEmpty = vEmpty,
-                    totalEmpty = sEmpty + vEmpty
+                    totalEmpty = sEmpty + vEmpty,
+                    newCustomerSoldOut = newCustOutByProduct[product.id] ?: 0
                 )
             }
-        }
+        }.flowOn(Dispatchers.Default)
 
     companion object {
         fun todayIsoDate(): String {

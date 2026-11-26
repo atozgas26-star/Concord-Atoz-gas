@@ -71,6 +71,7 @@ import com.example.update.AppUpdateManager
 import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -82,8 +83,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -253,7 +256,7 @@ class AppViewModel(
             .distinctBy { "${it.staffId}_${it.loginTimestampMs / 2000L}" }
             .sortedByDescending { it.loginTimestampMs }
             .take(30)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var activeRecoveryChallenge: ActiveRecoveryChallenge? = null
     private var pendingGmailConsentAction: PendingGmailConsentAction? = null
@@ -315,7 +318,7 @@ class AppViewModel(
                 productCategory = product.category
             )
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val recentPurchaseCompanies: StateFlow<List<String>> = repository.recentPurchaseCompaniesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -410,7 +413,7 @@ class AppViewModel(
                             (n.targetStaffId == 0L || n.targetStaffId == uid))
             }
         }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val unreadNotificationCount: StateFlow<Int> = combine(
         visibleNotifications,
@@ -420,7 +423,7 @@ class AppViewModel(
         val unreadAlerts = notifs.count { !it.isRead }
         val pendingCount = if (session?.user?.role == UserRole.ADMIN) pendingReqs.size else 0
         if (unreadAlerts == 0 && pendingCount > 0) pendingCount else unreadAlerts
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     // --- Team & Admin-Owner Conversation Chat + Live Typing Indicators ---
     private val _lastSeenChatMs = MutableStateFlow(0L)
@@ -431,7 +434,7 @@ class AppViewModel(
         _authSession
     ) { msgs, _ ->
         msgs.filter { it.channel == ChatChannel.TEAM_CHAT.name }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val adminOwnerChatMessages: StateFlow<List<ChatMessageEntity>> = combine(
         repository.allChatMessagesFlow,
@@ -443,7 +446,7 @@ class AppViewModel(
         } else {
             emptyList()
         }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val unreadChatCount: StateFlow<Int> = combine(
         repository.allChatMessagesFlow,
@@ -457,7 +460,7 @@ class AppViewModel(
                 role == UserRole.ADMIN || role == UserRole.OWNER_VIEW
             allowed && m.createdAtMs > lastSeen && !m.senderName.equals(myName, ignoreCase = true)
         }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     val activeTypingStatuses: StateFlow<List<CloudTypingStatus>> = combine(
         _localTypingStatuses,
@@ -474,47 +477,59 @@ class AppViewModel(
                 (now - st.updatedAtMs) <= 15_000L &&
                 st.typingId != myId
         }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     init {
         viewModelScope.launch {
-            repository.initializeDatabase()
-            val bioAvail = appContext?.let { BiometricAuthManager.checkAvailability(it) }
-                ?: BiometricAvailability.UNAVAILABLE
-            _biometricAvailability.value = bioAvail
+            val startupResult = withContext(Dispatchers.IO) {
+                repository.initializeDatabase()
+                val bioAvail = appContext?.let { BiometricAuthManager.checkAvailability(it) }
+                    ?: BiometricAvailability.UNAVAILABLE
+                val bioState = sessionPreferences?.biometricUnlockStateFlow?.first() ?: BiometricUnlockState()
+                val shouldAutoLogin = sessionPreferences?.autoLoginEnabledFlow?.first() ?: true
+                val logoutMode = sessionPreferences?.autoLogoutModeFlow?.first() ?: AutoLogoutMode.OFF
+                val ownerConfigured = sessionPreferences?.ownerViewConfiguredFlow?.first() == true
 
-            val bioState = sessionPreferences?.biometricUnlockStateFlow?.first() ?: BiometricUnlockState()
-            val shouldAutoLogin = sessionPreferences?.autoLoginEnabledFlow?.first() ?: true
-            val logoutMode = sessionPreferences?.autoLogoutModeFlow?.first() ?: AutoLogoutMode.OFF
-
-            if (bioState.isReadyForBiometric && bioAvail == BiometricAvailability.AVAILABLE) {
-                // Armed after first-time password login: require Fingerprint / Face Unlock on next app open
-                _authSession.value = null
-                _shouldAutoPromptBiometric.value = true
-            } else {
                 val canRestoreWithoutPrompt = shouldAutoLogin &&
                     logoutMode != AutoLogoutMode.ON_MINIMIZE &&
                     !bioState.passwordRequiredAfterLogout
                 val savedRole = if (canRestoreWithoutPrompt) sessionPreferences?.getLoggedInRole() else null
                 val savedUserId = if (canRestoreWithoutPrompt) sessionPreferences?.getLoggedInUserId() else null
+                val restoredSession = if (savedRole != UserRole.OWNER_VIEW && savedUserId != null) {
+                    repository.getSessionForUserId(savedUserId)
+                } else {
+                    null
+                }
+                if (savedRole != UserRole.OWNER_VIEW && savedUserId != null && restoredSession == null) {
+                    sessionPreferences?.clearLoggedInUserId()
+                }
+                Triple(bioAvail, bioState, Triple(savedRole, ownerConfigured, restoredSession))
+            }
 
-                if (savedRole == UserRole.OWNER_VIEW && (sessionPreferences?.ownerViewConfiguredFlow?.first() == true)) {
-                    _authSession.value = buildOwnerViewSession()
-                } else if (savedUserId != null) {
-                    val restored = repository.getSessionForUserId(savedUserId)
-                    if (restored != null) {
-                        _authSession.value = restored
-                        if (restored.assignedVehicle != null) {
-                            _selectedVehicleId.value = restored.assignedVehicle.id
-                        }
-                    } else {
-                        sessionPreferences?.clearLoggedInUserId()
-                    }
+            val bioAvail = startupResult.first
+            val bioState = startupResult.second
+            val (savedRole, ownerConfigured, restored) = startupResult.third
+            _biometricAvailability.value = bioAvail
+
+            if (bioState.isReadyForBiometric && bioAvail == BiometricAvailability.AVAILABLE) {
+                // Armed after first-time password login: require Fingerprint / Face Unlock on next app open
+                _authSession.value = null
+                _shouldAutoPromptBiometric.value = true
+            } else if (savedRole == UserRole.OWNER_VIEW && ownerConfigured) {
+                _authSession.value = buildOwnerViewSession()
+            } else if (restored != null) {
+                _authSession.value = restored
+                if (restored.assignedVehicle != null) {
+                    _selectedVehicleId.value = restored.assignedVehicle.id
                 }
             }
             _isInitialized.value = true
-            cloudSync?.connectForSignedInUser()
-            loadDriveAndPermissionState()
+            launch(Dispatchers.IO) {
+                cloudSync?.connectForSignedInUser()
+            }
+            launch(Dispatchers.IO) {
+                loadDriveAndPermissionState()
+            }
         }
 
         if (sessionPreferences != null) {
@@ -678,12 +693,18 @@ class AppViewModel(
     }
 
     private suspend fun loadDriveAndPermissionState() {
-        val enabled = sessionPreferences?.autoDriveBackupEnabledFlow?.first() ?: false
-        val lastAt = sessionPreferences?.lastDriveBackupAtMsFlow?.first() ?: 0L
-        val lastId = sessionPreferences?.lastDriveFileIdFlow?.first() ?: ""
-        val authorized = when (driveBackupManager?.authorizeDriveAccess(allowConsentPrompt = false)) {
-            is DriveAuthResult.Authorized -> true
-            else -> false
+        val (enabled, lastAt, lastId) = withContext(Dispatchers.IO) {
+            Triple(
+                sessionPreferences?.autoDriveBackupEnabledFlow?.first() ?: false,
+                sessionPreferences?.lastDriveBackupAtMsFlow?.first() ?: 0L,
+                sessionPreferences?.lastDriveFileIdFlow?.first() ?: ""
+            )
+        }
+        val authorized = withContext(Dispatchers.IO) {
+            when (driveBackupManager?.authorizeDriveAccess(allowConsentPrompt = false)) {
+                is DriveAuthResult.Authorized -> true
+                else -> false
+            }
         }
         val statusMsg = when {
             enabled && authorized && lastAt > 0L -> "Auto Drive Backup active"
@@ -704,7 +725,9 @@ class AppViewModel(
     fun refreshPermissionsStatus(driveAuthorizedOverride: Boolean? = null) {
         val ctx = appContext ?: return
         val driveOk = driveAuthorizedOverride ?: _driveBackupState.value.driveAuthorized
-        _permissionsStatus.value = AppPermissionsManager.evaluateStatus(ctx, driveAuthorized = driveOk)
+        viewModelScope.launch(Dispatchers.IO) {
+            _permissionsStatus.value = AppPermissionsManager.evaluateStatus(ctx, driveAuthorized = driveOk)
+        }
     }
 
     fun requestGoogleDriveAuthorizationAndEnable() {
@@ -1144,8 +1167,13 @@ class AppViewModel(
     }
 
     fun refreshBiometricAvailability() {
-        _biometricAvailability.value = appContext?.let { BiometricAuthManager.checkAvailability(it) }
-            ?: BiometricAvailability.UNAVAILABLE
+        val ctx = appContext ?: run {
+            _biometricAvailability.value = BiometricAvailability.UNAVAILABLE
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _biometricAvailability.value = BiometricAuthManager.checkAvailability(ctx)
+        }
     }
 
     fun consumeAutoPromptBiometric() {
@@ -1389,19 +1417,21 @@ class AppViewModel(
             _loginError.value = "Only Admin can create the Owner View password."
             return
         }
-        if (!AdminCredentialCrypto.isValidPassword(password)) {
-            _loginError.value = "Owner View password must be 6 to 64 characters."
+        if (!AdminCredentialCrypto.isValidOwnerViewPin(password)) {
+            _loginError.value = "Owner View PIN must be 4 digits."
             return
         }
         if (password != confirmPassword) {
-            _loginError.value = "Owner View password and confirmation do not match."
+            _loginError.value = "Owner View PIN and confirmation do not match."
             return
         }
 
         viewModelScope.launch {
             _isAuthenticating.value = true
             try {
-                val hash = AdminCredentialCrypto.hashPassword(password)
+                val hash = withContext(Dispatchers.Default) {
+                    AdminCredentialCrypto.hashPassword(password)
+                }
                 sessionPreferences?.saveOwnerViewPasswordHash(hash)
                 cloudSync?.saveOwnerViewPasswordHashToCloud(hash)
 
@@ -1420,7 +1450,7 @@ class AppViewModel(
                 _authSession.value = ownerSession
                 _loginError.value = null
                 _selectedDate.value = InventoryRepository.todayIsoDate()
-                _snackbarMessage.value = "Owner View password created. Fingerprint & Face Unlock enabled for next open."
+                _snackbarMessage.value = "Owner View 4-digit PIN created. Fingerprint & Face Unlock enabled for next open."
             } finally {
                 _isAuthenticating.value = false
             }
@@ -1436,7 +1466,7 @@ class AppViewModel(
             return
         }
         if (password.isEmpty()) {
-            _loginError.value = "Enter the Owner View password."
+            _loginError.value = "Enter the 4-digit Owner View PIN."
             return
         }
 
@@ -1445,10 +1475,13 @@ class AppViewModel(
             try {
                 val savedHash = sessionPreferences?.ownerViewPasswordHashFlow?.first().orEmpty()
                 if (savedHash.isBlank()) {
-                    _loginError.value = "Owner View password has not been created yet."
+                    _loginError.value = "Owner View PIN has not been created yet."
                     return@launch
                 }
-                if (!AdminCredentialCrypto.verifyPassword(password, savedHash)) {
+                val matches = withContext(Dispatchers.Default) {
+                    AdminCredentialCrypto.verifyPassword(password, savedHash)
+                }
+                if (!matches) {
                     failedOwnerLoginAttempts++
                     if (failedOwnerLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
                         ownerLoginLockoutUntilMs = System.currentTimeMillis() + LOGIN_LOCKOUT_MS
@@ -1456,7 +1489,7 @@ class AppViewModel(
                         _loginError.value = "Too many failed Owner View attempts. Locked for 30 seconds."
                     } else {
                         val remaining = MAX_LOGIN_ATTEMPTS - failedOwnerLoginAttempts
-                        _loginError.value = "Incorrect Owner View password ($remaining attempt(s) left)."
+                        _loginError.value = "Incorrect Owner View PIN ($remaining attempt(s) left)."
                     }
                     return@launch
                 }
@@ -1494,25 +1527,30 @@ class AppViewModel(
             _warningAlert.value = WarningAlert("Admin Only", "Only Admin can create or change the Owner View password.")
             return
         }
-        if (!AdminCredentialCrypto.isValidPassword(newOwnerPassword)) {
-            _warningAlert.value = WarningAlert("Invalid Password", "Owner View password must be 6 to 64 characters.")
+        if (!AdminCredentialCrypto.isValidOwnerViewPin(newOwnerPassword)) {
+            _warningAlert.value = WarningAlert("Invalid PIN", "Owner View PIN must be 4 digits.")
             return
         }
         if (newOwnerPassword != confirmOwnerPassword) {
-            _warningAlert.value = WarningAlert("Password Mismatch", "Owner View password and confirmation do not match.")
+            _warningAlert.value = WarningAlert("PIN Mismatch", "Owner View PIN and confirmation do not match.")
             return
         }
 
         viewModelScope.launch {
             val adminCreds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
-            if (adminCreds.isConfigured && !AdminCredentialCrypto.verifyPassword(currentAdminPassword, adminCreds.passwordHash)) {
+            val adminPasswordValid = !adminCreds.isConfigured || withContext(Dispatchers.Default) {
+                AdminCredentialCrypto.verifyPassword(currentAdminPassword, adminCreds.passwordHash)
+            }
+            if (!adminPasswordValid) {
                 _warningAlert.value = WarningAlert("Incorrect Password", "Current Admin password does not match.")
                 return@launch
             }
-            val hash = AdminCredentialCrypto.hashPassword(newOwnerPassword)
+            val hash = withContext(Dispatchers.Default) {
+                AdminCredentialCrypto.hashPassword(newOwnerPassword)
+            }
             sessionPreferences?.saveOwnerViewPasswordHash(hash)
             cloudSync?.saveOwnerViewPasswordHashToCloud(hash)
-            _snackbarMessage.value = "Owner View (Read-Only) password saved."
+            _snackbarMessage.value = "Owner View (Read-Only) 4-digit PIN saved."
         }
     }
 
@@ -1567,7 +1605,9 @@ class AppViewModel(
                     _loginError.value = "Admin account was not found."
                     return@launch
                 }
-                val hash = AdminCredentialCrypto.hashPassword(password)
+                val hash = withContext(Dispatchers.Default) {
+                    AdminCredentialCrypto.hashPassword(password)
+                }
                 sessionPreferences?.saveAdminCredentials(
                     username = cleanUser,
                     passwordHash = hash,
@@ -1631,7 +1671,9 @@ class AppViewModel(
                 }
 
                 val usernameMatches = creds.username.equals(cleanUser, ignoreCase = true)
-                val passwordMatches = AdminCredentialCrypto.verifyPassword(password, creds.passwordHash)
+                val passwordMatches = withContext(Dispatchers.Default) {
+                    AdminCredentialCrypto.verifyPassword(password, creds.passwordHash)
+                }
                 if (!usernameMatches || !passwordMatches) {
                     failedAdminLoginAttempts += 1
                     if (failedAdminLoginAttempts >= 5) {
@@ -1911,7 +1953,9 @@ class AppViewModel(
             _adminRecoveryState.value = current.copy(isVerifying = true, errorMessage = null)
             try {
                 val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
-                val newHash = AdminCredentialCrypto.hashPassword(newPassword)
+                val newHash = withContext(Dispatchers.Default) {
+                    AdminCredentialCrypto.hashPassword(newPassword)
+                }
                 val finalUsername = creds.username.ifBlank { "admin_ragavan" }
                 val finalEmail = creds.recoveryEmail.ifBlank { challenge.email }
                 sessionPreferences?.saveAdminCredentials(
@@ -2057,12 +2101,17 @@ class AppViewModel(
 
         viewModelScope.launch {
             val creds = sessionPreferences?.adminCredentialsFlow?.first() ?: adminCredentialsState.value
-            if (creds.isConfigured && !AdminCredentialCrypto.verifyPassword(currentPassword, creds.passwordHash)) {
+            val currentPasswordOk = !creds.isConfigured || withContext(Dispatchers.Default) {
+                AdminCredentialCrypto.verifyPassword(currentPassword, creds.passwordHash)
+            }
+            if (!currentPasswordOk) {
                 _warningAlert.value = WarningAlert("Wrong Current Password", "Enter your current Admin password to confirm changes.")
                 return@launch
             }
             val finalHash = if (newPassword.isNotEmpty()) {
-                AdminCredentialCrypto.hashPassword(newPassword)
+                withContext(Dispatchers.Default) {
+                    AdminCredentialCrypto.hashPassword(newPassword)
+                }
             } else if (creds.passwordHash.isNotBlank()) {
                 creds.passwordHash
             } else {

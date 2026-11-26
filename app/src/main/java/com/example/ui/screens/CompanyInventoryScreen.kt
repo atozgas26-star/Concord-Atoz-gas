@@ -46,10 +46,15 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.ProductCategory
 import com.example.ui.components.BrandHeaderBanner
-import com.example.ui.components.CategoryFilterRow
+import com.example.ui.components.CategoryFolderGrid
+import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.InsideOutsideScopeToggle
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
+import com.example.ui.components.StockZoneScope
+import com.example.ui.components.categoryVisualStyle
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -70,6 +75,7 @@ fun CompanyInventoryScreen(
 ) {
     androidx.activity.compose.BackHandler(onBack = onBack)
 
+    var activeZone by remember { mutableStateOf(StockZoneScope.INSIDE_STORE) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -79,6 +85,31 @@ fun CompanyInventoryScreen(
                 (searchQuery.isBlank() ||
                     row.product.name.contains(searchQuery, ignoreCase = true) ||
                     row.product.category.displayName.contains(searchQuery, ignoreCase = true))
+        }
+    }
+
+    val allInsideFull = remember(stockRows) { stockRows.sumOf { it.storeFull } }
+    val allInsideEmpty = remember(stockRows) { stockRows.sumOf { it.storeEmpty } }
+    val allOutsideFull = remember(stockRows) { stockRows.sumOf { it.vehiclesFull } }
+    val allOutsideEmpty = remember(stockRows) { stockRows.sumOf { it.vehiclesEmpty } }
+
+    val folderStats = remember(stockRows, activeZone) {
+        ProductCategory.entries.map { cat ->
+            val catRows = stockRows.filter { it.product.category == cat }
+            CategoryFolderStat(
+                category = cat,
+                itemCount = catRows.size,
+                fullTotal = if (activeZone == StockZoneScope.INSIDE_STORE) {
+                    catRows.sumOf { it.storeFull }
+                } else {
+                    catRows.sumOf { it.vehiclesFull }
+                },
+                emptyTotal = if (activeZone == StockZoneScope.INSIDE_STORE) {
+                    catRows.sumOf { it.storeEmpty }
+                } else {
+                    catRows.sumOf { it.vehiclesEmpty }
+                }
+            )
         }
     }
 
@@ -92,7 +123,9 @@ fun CompanyInventoryScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Company Inventory (View Only)" else "Company Inventory",
-            subtitle = "Combined Store + Fleet Stock" + if (isReadOnly) " • Read-Only" else "",
+            subtitle = "Inside Store + Outside Fleet Folders" + if (isReadOnly) " • Read-Only" else "",
+            headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.AdminGradient,
+            accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.AdminAccent,
             trailingContent = {
                 IconButton(
                     onClick = onBack,
@@ -107,92 +140,118 @@ fun CompanyInventoryScreen(
             }
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                KpiMetricCard(
-                    title = "ALL FULL",
-                    value = totalFull.toString(),
-                    subtitle = "Store $storeFull • Vehicles $vehiclesFull",
-                    icon = Icons.Default.PropaneTank,
-                    accentColor = BrandGreenPrimary,
-                    containerColor = BrandGreenContainer,
-                    onContainerColor = BrandGreenOnContainer,
-                    modifier = Modifier.weight(1f)
-                )
-                KpiMetricCard(
-                    title = "ALL EMPTY",
-                    value = totalEmpty.toString(),
-                    subtitle = "Store $storeEmpty • Vehicles $vehiclesEmpty",
-                    icon = Icons.Default.Recycling,
-                    accentColor = BrandRedSecondary,
-                    containerColor = BrandRedContainer,
-                    onContainerColor = BrandRedOnContainer,
-                    modifier = Modifier.weight(1f)
-                )
+            item(key = "inv_date") {
+                DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilledTonalButton(
-                    onClick = onOpenStockReport,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("inventory_export_report_button")
+            item(key = "inv_kpis") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Export Stock")
+                    KpiMetricCard(
+                        title = "ALL FULL",
+                        value = totalFull.toString(),
+                        subtitle = "Inside $storeFull • Outside $vehiclesFull",
+                        icon = Icons.Default.PropaneTank,
+                        accentColor = BrandGreenPrimary,
+                        containerColor = BrandGreenContainer,
+                        onContainerColor = BrandGreenOnContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiMetricCard(
+                        title = "ALL EMPTY",
+                        value = totalEmpty.toString(),
+                        subtitle = "Inside $storeEmpty • Outside $vehiclesEmpty",
+                        icon = Icons.Default.Recycling,
+                        accentColor = BrandRedSecondary,
+                        containerColor = BrandRedContainer,
+                        onContainerColor = BrandRedOnContainer,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
-                if (!isReadOnly) {
-                    OutlinedButton(
-                        onClick = onOpenProductMaster,
+            }
+
+            item(key = "inv_actions") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = onOpenStockReport,
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("inventory_product_master_button")
+                            .testTag("inventory_export_report_button")
                     ) {
-                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Product Master")
+                        Text("Export Stock")
+                    }
+                    if (!isReadOnly) {
+                        OutlinedButton(
+                            onClick = onOpenProductMaster,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("inventory_product_master_button")
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Product Master")
+                        }
                     }
                 }
             }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search cylinder or gas category...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            item(key = "inv_inside_outside_toggle") {
+                InsideOutsideScopeToggle(
+                    selectedScope = activeZone,
+                    insideTitle = "INSIDE • Store",
+                    outsideTitle = "OUTSIDE • Fleet",
+                    insideFull = allInsideFull,
+                    insideEmpty = allInsideEmpty,
+                    outsideFull = allOutsideFull,
+                    outsideEmpty = allOutsideEmpty,
+                    onScopeSelected = { activeZone = it }
+                )
+            }
 
-            CategoryFilterRow(
-                selectedCategory = selectedCategory,
-                onCategorySelected = { selectedCategory = it }
-            )
-        }
+            item(key = "inv_category_folders") {
+                CategoryFolderGrid(
+                    stats = folderStats,
+                    selectedCategory = selectedCategory,
+                    onSelectCategory = { selectedCategory = it },
+                    sectionTitle = if (activeZone == StockZoneScope.INSIDE_STORE) {
+                        "Inside Store Category Folders"
+                    } else {
+                        "Outside Fleet Category Folders"
+                    }
+                )
+            }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+            item(key = "inv_search") {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search cylinder or gas category...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             items(filteredRows, key = { it.product.id }) { row ->
+                val catStyle = categoryVisualStyle(row.product.category)
+                val primaryFull = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeFull else row.vehiclesFull
+                val primaryEmpty = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeEmpty else row.vehiclesEmpty
+                val zonePrefix = if (activeZone == StockZoneScope.INSIDE_STORE) "In" else "Out"
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -204,7 +263,7 @@ fun CompanyInventoryScreen(
                                 Text(
                                     text = row.product.category.displayName,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = BrandGreenPrimary,
+                                    color = catStyle.primaryColor,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
@@ -214,8 +273,8 @@ fun CompanyInventoryScreen(
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                StockPill(label = "Total Full", value = row.totalFull, isFull = true)
-                                StockPill(label = "Total Emp", value = row.totalEmpty, isFull = false)
+                                StockPill(label = "$zonePrefix Full", value = primaryFull, isFull = true)
+                                StockPill(label = "$zonePrefix Emp", value = primaryEmpty, isFull = false)
                             }
                         }
 
@@ -231,7 +290,7 @@ fun CompanyInventoryScreen(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
-                                    text = "FULL -> Store: ${row.storeFull}  |  Veh: ${row.vehiclesFull}",
+                                    text = "INSIDE Store: ${row.storeFull}F / ${row.storeEmpty}E",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono,
                                     color = BrandGreenOnContainer,
@@ -244,12 +303,43 @@ fun CompanyInventoryScreen(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
-                                    text = "EMPTY -> Store: ${row.storeEmpty}  |  Veh: ${row.vehiclesEmpty}",
+                                    text = "OUTSIDE Fleet: ${row.vehiclesFull}F / ${row.vehiclesEmpty}E",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono,
                                     color = BrandRedOnContainer,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                                 )
+                            }
+                        }
+
+                        Spacer(Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Overall Company Total: ${row.overallTotalCylinders} cyl (${row.totalFull}F + ${row.totalEmpty}E)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMono,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (row.newCustomerSoldOut > 0) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = "New Cust Set: -${row.newCustomerSoldOut}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = JetBrainsMono,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
                     }

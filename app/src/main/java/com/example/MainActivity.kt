@@ -10,7 +10,6 @@ import androidx.fragment.app.FragmentActivity
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,15 +44,19 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
@@ -76,7 +79,7 @@ import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.AppUpdateDialog
-import com.example.ui.components.FloatingCalculatorIconButton
+import com.example.ui.components.DraggableFloatingCalculatorOverlay
 import com.example.ui.components.InsufficientStockWarningDialog
 import com.example.ui.components.NotificationsBellDialog
 import com.example.ui.components.QuickCalculatorPopupDialog
@@ -95,7 +98,10 @@ import com.example.ui.theme.ConcordGasTheme
 import com.example.ui.viewmodel.AppViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class AdminNavTab(
     val label: String,
@@ -126,65 +132,79 @@ class MainActivity : FragmentActivity() {
             val rootScope = rememberCoroutineScope()
             val effectiveDarkMode = darkModeEnabled || themePreset == ThemePreset.MIDNIGHT_DARK
             var showSplash by rememberSaveable { mutableStateOf(true) }
+            // Defer heavy Firebase/Room/ViewModel mounting past the initial splash frame
+            // so WindowManager SurfaceSyncGroup receives the first transaction immediately (<50ms).
+            var mainContentReady by rememberSaveable { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                if (!mainContentReady) {
+                    // Let WindowManager finish initial SurfaceSyncGroup (#1/#2) cleanly before mounting heavy app trees
+                    withFrameNanos { }
+                    delay(450)
+                    withContext(Dispatchers.IO) {
+                        app.container.warmUp()
+                    }
+                    mainContentReady = true
+                }
+            }
 
             ConcordGasTheme(
                 themePreset = themePreset,
                 darkTheme = effectiveDarkMode
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    val auth = remember { Firebase.auth }
-                    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
-                    val user = currentUser
+                    if (mainContentReady || !showSplash) {
+                        val auth = remember { Firebase.auth }
+                        val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+                        val user = currentUser
 
-                    if (user == null) {
-                        GoogleAuthScreen(
-                            onAuthSuccess = { /* authStateFlow emits updated user */ },
-                            darkModeEnabled = effectiveDarkMode,
-                            onToggleDarkMode = {
-                                SoundEffectsManager.playTapTick(soundEnabled)
-                                val nextDark = !effectiveDarkMode
-                                rootScope.launch {
-                                    app.container.sessionPreferences.setDarkModeEnabled(nextDark)
-                                    if (!nextDark && themePreset == ThemePreset.MIDNIGHT_DARK) {
-                                        app.container.sessionPreferences.setThemePreset(ThemePreset.EMERALD_CORPORATE)
+                        if (user == null) {
+                            GoogleAuthScreen(
+                                onAuthSuccess = { /* authStateFlow emits updated user */ },
+                                darkModeEnabled = effectiveDarkMode,
+                                isSplashVisible = showSplash,
+                                onToggleDarkMode = {
+                                    SoundEffectsManager.playTapTick(soundEnabled)
+                                    val nextDark = !effectiveDarkMode
+                                    rootScope.launch {
+                                        app.container.sessionPreferences.setDarkModeEnabled(nextDark)
+                                        if (!nextDark && themePreset == ThemePreset.MIDNIGHT_DARK) {
+                                            app.container.sessionPreferences.setThemePreset(ThemePreset.EMERALD_CORPORATE)
+                                        }
                                     }
                                 }
-                            }
-                        )
-                    } else {
-                        val uid = user.uid
-                        key(uid) {
-                            val viewModel: AppViewModel = viewModel(
-                                key = uid,
-                                factory = AppViewModel.Factory(
-                                    repository = app.container.repository,
-                                    backupManager = app.container.backupManager,
-                                    cloudSync = app.container.cloudSyncRepository,
-                                    sessionPreferences = app.container.sessionPreferences,
-                                    driveBackupManager = app.container.driveBackupManager,
-                                    appContext = app.applicationContext,
-                                    gmailVerificationManager = app.container.gmailVerificationManager
+                            )
+                        } else {
+                            val uid = user.uid
+                            key(uid) {
+                                val viewModel: AppViewModel = viewModel(
+                                    key = uid,
+                                    factory = AppViewModel.Factory(
+                                        repository = app.container.repository,
+                                        backupManager = app.container.backupManager,
+                                        cloudSync = app.container.cloudSyncRepository,
+                                        sessionPreferences = app.container.sessionPreferences,
+                                        driveBackupManager = app.container.driveBackupManager,
+                                        appContext = app.applicationContext,
+                                        gmailVerificationManager = app.container.gmailVerificationManager
+                                    )
                                 )
-                            )
-                            ConcordGasRootApp(
-                                viewModel = viewModel,
-                                googleEmail = user.email.orEmpty(),
-                                isSplashVisible = showSplash,
-                                onPreviewStartupSplash = { showSplash = true }
-                            )
+                                ConcordGasRootApp(
+                                    viewModel = viewModel,
+                                    googleEmail = user.email.orEmpty(),
+                                    isSplashVisible = showSplash,
+                                    onPreviewStartupSplash = { showSplash = true }
+                                )
+                            }
                         }
                     }
 
                     if (showSplash) {
-                        LaunchedEffect(Unit) {
-                            SoundEffectsManager.playStartupChime(soundEnabled, startupSoundStyle)
-                        }
                         StartupSplashOverlay(
                             themePreset = themePreset,
-                            soundEnabled = soundEnabled,
+                            soundEnabled = false,
                             startupSoundStyle = startupSoundStyle,
                             onSplashFinished = {
-                                SoundEffectsManager.stopStartupSound()
                                 showSplash = false
                             }
                         )
@@ -204,7 +224,6 @@ fun ConcordGasRootApp(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
 
     val isInitialized by viewModel.isInitialized.collectAsStateWithLifecycle()
     val authSession by viewModel.authSession.collectAsStateWithLifecycle()
@@ -351,10 +370,6 @@ fun ConcordGasRootApp(
         }
     }
 
-    // Subscribe to report flows so report tables stay live
-    viewModel.monthlySalesReport.collectAsStateWithLifecycle()
-    viewModel.productWiseSales.collectAsStateWithLifecycle()
-    viewModel.staffWiseSales.collectAsStateWithLifecycle()
     val companyStockReport by viewModel.companyStockReport.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -473,18 +488,38 @@ fun ConcordGasRootApp(
 
     val handleGoogleSignOut: () -> Unit = {
         signOutGoogle(
-            credentialManager = credentialManager,
+            credentialManager = CredentialManager.create(context),
             scope = scope,
             onPreSignOutCleanup = { viewModel.stopCloudSyncBeforeSignOut() }
         )
     }
 
     val session = authSession
-    var calcBottomClearanceDp by remember { mutableStateOf(20.dp) }
+    val density = LocalDensity.current
+    var rootWidthPx by remember { mutableIntStateOf(0) }
+    val useRail = remember(rootWidthPx, density) {
+        rootWidthPx > 0 && with(density) { rootWidthPx.toDp() >= 600.dp }
+    }
+    var viewingVehicleDetail by rememberSaveable { mutableStateOf(false) }
+    var viewingCompanyInventory by rememberSaveable { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    val showAdminBottomBar = session != null &&
+        session.user.role != UserRole.STAFF &&
+        !useRail &&
+        !viewingVehicleDetail &&
+        !viewingCompanyInventory
+    val calcBottomClearanceDp = if (showAdminBottomBar) 92.dp else 20.dp
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { size ->
+                if (size.width != rootWidthPx) {
+                    rootWidthPx = size.width
+                }
+            }
+    ) {
         if (session == null) {
-            calcBottomClearanceDp = 20.dp
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 contentWindowInsets = WindowInsets(0, 0, 0, 0)
@@ -545,7 +580,6 @@ fun ConcordGasRootApp(
                 }
             }
         } else if (session.user.role == UserRole.STAFF) {
-            calcBottomClearanceDp = 20.dp
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 contentWindowInsets = WindowInsets.safeDrawing
@@ -626,6 +660,11 @@ fun ConcordGasRootApp(
                 }
             }
         } else {
+            // Subscribe to Admin/Owner report flows only when signed into Admin or Owner View
+            viewModel.monthlySalesReport.collectAsStateWithLifecycle()
+            viewModel.productWiseSales.collectAsStateWithLifecycle()
+            viewModel.staffWiseSales.collectAsStateWithLifecycle()
+
             val isReadOnly = session.user.role == UserRole.OWNER_VIEW
             val navTabs = remember(isReadOnly) {
                 if (isReadOnly) {
@@ -635,8 +674,6 @@ fun ConcordGasRootApp(
                 }
             }
             var currentTab by rememberSaveable { mutableStateOf(AdminNavTab.DASHBOARD) }
-            var viewingVehicleDetail by rememberSaveable { mutableStateOf(false) }
-            var viewingCompanyInventory by rememberSaveable { mutableStateOf(false) }
 
             LaunchedEffect(isReadOnly) {
                 if (isReadOnly && currentTab == AdminNavTab.SETTINGS) {
@@ -644,16 +681,13 @@ fun ConcordGasRootApp(
                 }
             }
 
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val useRail = maxWidth >= 600.dp
-                val showBottomBar = !useRail && !viewingVehicleDetail && !viewingCompanyInventory
-                calcBottomClearanceDp = if (showBottomBar) 92.dp else 20.dp
+            val showBottomBar = showAdminBottomBar
 
-                Scaffold(
-                    snackbarHost = { SnackbarHost(snackbarHostState) },
-                    contentWindowInsets = WindowInsets.safeDrawing,
-                    bottomBar = {
-                        if (showBottomBar) {
+            Scaffold(
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                contentWindowInsets = WindowInsets.safeDrawing,
+                bottomBar = {
+                    if (showBottomBar) {
                             NavigationBar {
                                 navTabs.forEach { tab ->
                                     val selected = currentTab == tab
@@ -788,6 +822,7 @@ fun ConcordGasRootApp(
                                         selectedDate = selectedDate,
                                         summary = dashboardSummary,
                                         storeRows = storeRows,
+                                        companyStockRows = companyStockReport,
                                         products = allProducts,
                                         pendingCustomerCount = allCustomerPendingRows.count { it.pendingEmptyBalance > 0 },
                                         totalPendingEmptyCount = allCustomerPendingRows.sumOf { it.pendingEmptyBalance.coerceAtLeast(0) },
@@ -973,23 +1008,19 @@ fun ConcordGasRootApp(
                                         onLogout = viewModel::logout
                                     )
                                 }
-                            }
                         }
                     }
                 }
             }
         }
 
-        // Small always-accessible floating calculator icon button
-        FloatingCalculatorIconButton(
+        // Freely movable floating calculator icon button (drag anywhere across full screen)
+        DraggableFloatingCalculatorOverlay(
+            initialBottomClearance = calcBottomClearanceDp,
             onClick = {
                 SoundEffectsManager.playTapTick(soundEnabled)
                 showQuickCalculator = true
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(end = 14.dp, bottom = calcBottomClearanceDp)
+            }
         )
     }
 
