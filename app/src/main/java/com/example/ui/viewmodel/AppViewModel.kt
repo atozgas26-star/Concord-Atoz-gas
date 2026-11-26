@@ -17,19 +17,27 @@ import com.example.auth.GmailVerificationManager
 import com.example.auth.RecoveryPurpose
 import com.example.auth.RecoveryStep
 import com.example.data.local.AdminCredentialsState
+import com.example.data.local.AppNotificationEntity
 import com.example.data.local.BiometricUnlockState
+import com.example.data.local.ChatMessageEntity
+import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.SessionPreferences
+import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.ApprovalStatus
 import com.example.data.model.AuthSession
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.ChatChannel
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.LowStockProductItem
 import com.example.data.model.MonthlyDailySaleRow
+import com.example.data.model.NotificationCategory
+import com.example.data.model.NotificationTargetScope
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ProductSalesRow
@@ -37,6 +45,7 @@ import com.example.data.model.ReportType
 import com.example.data.model.StaffSalesRow
 import com.example.data.model.StockCalculator
 import com.example.data.model.StoreStockRow
+import com.example.data.model.StoreTransferDirection
 import com.example.data.model.ThemePreset
 import com.example.data.model.TransactionDisplayItem
 import com.example.data.model.TransactionType
@@ -44,6 +53,7 @@ import com.example.data.model.UserRole
 import com.example.data.model.VehicleStockRow
 import com.example.data.remote.CloudLoginMetadata
 import com.example.data.remote.CloudSyncRepository
+import com.example.data.remote.CloudTypingStatus
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.data.repository.InventoryRepository
 import com.example.export.BackupManager
@@ -346,6 +356,125 @@ class AppViewModel(
     val companyStockReport: StateFlow<List<CompanyStockRow>> = _selectedDate
         .flatMapLatest { date -> repository.observeCompanyStockReport(date) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Staff Daily Duty Attendance (Morning In / Lunch Out / Break In / Duty Close) ---
+    val allAttendance: StateFlow<List<StaffAttendanceEntity>> = repository.allAttendanceFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val selectedDateAttendance: StateFlow<List<StaffAttendanceEntity>> = _selectedDate
+        .flatMapLatest { date -> repository.observeAttendanceByDate(date) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val myTodayAttendance: StateFlow<StaffAttendanceEntity?> = combine(
+        selectedDateAttendance,
+        _authSession
+    ) { rows, session ->
+        val uid = session?.user?.id ?: return@combine null
+        rows.firstOrNull { it.staffId == uid }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // --- Staff Store-to-Vehicle Full & Vehicle-to-Store Empty Admin Approval Queue ---
+    val allStoreTransferRequests: StateFlow<List<PendingStoreTransferEntity>> = repository.allPendingStoreTransfersFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val pendingStoreTransferRequests: StateFlow<List<PendingStoreTransferEntity>> = combine(
+        allStoreTransferRequests,
+        _authSession
+    ) { list, _ ->
+        list.filter { it.status == ApprovalStatus.PENDING.name }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val myStoreTransferRequests: StateFlow<List<PendingStoreTransferEntity>> = combine(
+        allStoreTransferRequests,
+        _authSession
+    ) { list, session ->
+        val staffId = session?.user?.id ?: return@combine emptyList()
+        list.filter { it.staffId == staffId }.take(20)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // --- Universal Notifications Bell (Admin, Owner View, Staff) ---
+    val visibleNotifications: StateFlow<List<AppNotificationEntity>> = combine(
+        repository.allNotificationsFlow,
+        _authSession
+    ) { allNotifs, session ->
+        val role = session?.user?.role ?: return@combine emptyList()
+        val uid = session.user.id
+        allNotifs.filter { n ->
+            when (role) {
+                UserRole.ADMIN, UserRole.OWNER_VIEW ->
+                    n.targetScope == NotificationTargetScope.ALL.name ||
+                        n.targetScope == NotificationTargetScope.ADMIN_OWNER.name
+                UserRole.STAFF ->
+                    n.targetScope == NotificationTargetScope.ALL.name ||
+                        (n.targetScope == NotificationTargetScope.STAFF.name &&
+                            (n.targetStaffId == 0L || n.targetStaffId == uid))
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val unreadNotificationCount: StateFlow<Int> = combine(
+        visibleNotifications,
+        pendingStoreTransferRequests,
+        _authSession
+    ) { notifs, pendingReqs, session ->
+        val unreadAlerts = notifs.count { !it.isRead }
+        val pendingCount = if (session?.user?.role == UserRole.ADMIN) pendingReqs.size else 0
+        if (unreadAlerts == 0 && pendingCount > 0) pendingCount else unreadAlerts
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    // --- Team & Admin-Owner Conversation Chat + Live Typing Indicators ---
+    private val _lastSeenChatMs = MutableStateFlow(0L)
+    private val _localTypingStatuses = MutableStateFlow<Map<String, CloudTypingStatus>>(emptyMap())
+
+    val teamChatMessages: StateFlow<List<ChatMessageEntity>> = combine(
+        repository.allChatMessagesFlow,
+        _authSession
+    ) { msgs, _ ->
+        msgs.filter { it.channel == ChatChannel.TEAM_CHAT.name }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val adminOwnerChatMessages: StateFlow<List<ChatMessageEntity>> = combine(
+        repository.allChatMessagesFlow,
+        _authSession
+    ) { msgs, session ->
+        val role = session?.user?.role
+        if (role == UserRole.ADMIN || role == UserRole.OWNER_VIEW) {
+            msgs.filter { it.channel == ChatChannel.ADMIN_OWNER.name }
+        } else {
+            emptyList()
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val unreadChatCount: StateFlow<Int> = combine(
+        repository.allChatMessagesFlow,
+        _lastSeenChatMs,
+        _authSession
+    ) { msgs, lastSeen, session ->
+        val role = session?.user?.role ?: return@combine 0
+        val myName = session.user.displayName
+        msgs.count { m ->
+            val allowed = m.channel == ChatChannel.TEAM_CHAT.name ||
+                role == UserRole.ADMIN || role == UserRole.OWNER_VIEW
+            allowed && m.createdAtMs > lastSeen && !m.senderName.equals(myName, ignoreCase = true)
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    val activeTypingStatuses: StateFlow<List<CloudTypingStatus>> = combine(
+        _localTypingStatuses,
+        cloudSync?.typingStatuses ?: flowOf(emptyList()),
+        _authSession
+    ) { localMap, cloudList, session ->
+        val now = System.currentTimeMillis()
+        val myId = currentTypingId(session)
+        val merged = LinkedHashMap<String, CloudTypingStatus>()
+        cloudList.forEach { merged[it.typingId.ifBlank { it.id }] = it }
+        localMap.forEach { (k, v) -> merged[k] = v }
+        merged.values.filter { st ->
+            st.isTyping &&
+                (now - st.updatedAtMs) <= 15_000L &&
+                st.typingId != myId
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     init {
         viewModelScope.launch {
@@ -2064,7 +2193,9 @@ class AppViewModel(
         productId: Long,
         fullQuantity: Int,
         emptyQuantity: Int,
-        notes: String = ""
+        notes: String = "",
+        extraFullQuantity: Int = 0,
+        extraEmptyQuantity: Int = 0
     ) {
         val session = _authSession.value ?: return
         if (session.user.role == UserRole.OWNER_VIEW) {
@@ -2090,10 +2221,478 @@ class AppViewModel(
                 fullQuantity = fullQuantity,
                 emptyQuantity = emptyQuantity,
                 actor = session.user,
-                notes = notes
+                notes = notes,
+                extraFullQuantity = extraFullQuantity,
+                extraEmptyQuantity = extraEmptyQuantity
             )
+            if (result is OperationResult.Success) {
+                val srcVeh = repository.getVehicleById(sourceVehicleId)
+                val dstVeh = repository.getVehicleById(targetVehicleId)
+                val prod = repository.getProductById(productId)
+                if (srcVeh != null && dstVeh != null && prod != null) {
+                    val totalFull = fullQuantity + extraFullQuantity
+                    val totalEmpty = emptyQuantity + extraEmptyQuantity
+                    val hasExtra = extraFullQuantity > 0 || extraEmptyQuantity > 0
+                    val detailParts = buildList {
+                        if (totalFull > 0) {
+                            add(
+                                if (extraFullQuantity > 0) "Full: $fullQuantity + Extra $extraFullQuantity = $totalFull"
+                                else "Full: $totalFull"
+                            )
+                        }
+                        if (totalEmpty > 0) {
+                            add(
+                                if (extraEmptyQuantity > 0) "Empty: $emptyQuantity + Extra $extraEmptyQuantity = $totalEmpty"
+                                else "Empty: $totalEmpty"
+                            )
+                        }
+                    }.joinToString(" | ")
+                    val grandTotal = totalFull + totalEmpty
+                    val title = if (hasExtra) {
+                        "Extra Cylinder Transfer → ${dstVeh.name}"
+                    } else {
+                        "Vehicle Transfer → ${dstVeh.name}"
+                    }
+                    val body = "${session.user.displayName} (${srcVeh.name}) transferred ${prod.name} ($detailParts • Total: $grandTotal) to ${dstVeh.name}."
+                    repository.createAppNotification(
+                        AppNotificationEntity(
+                            remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                            targetScope = NotificationTargetScope.STAFF.name,
+                            targetStaffId = dstVeh.staffUserId,
+                            category = NotificationCategory.TRANSFER_EXTRA.name,
+                            title = title,
+                            message = body,
+                            isUrgent = true,
+                            isRead = false,
+                            createdAtMs = System.currentTimeMillis()
+                        )
+                    )
+                    if (hasExtra) {
+                        repository.createAppNotification(
+                            AppNotificationEntity(
+                                remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                                targetScope = NotificationTargetScope.ADMIN_OWNER.name,
+                                targetStaffId = 0L,
+                                category = NotificationCategory.TRANSFER_EXTRA.name,
+                                title = "Extra Cylinder V2V Transfer",
+                                message = body,
+                                isUrgent = true,
+                                isRead = false,
+                                createdAtMs = System.currentTimeMillis() + 1L
+                            )
+                        )
+                    }
+                }
+            }
             handleOperationResult(result)
         }
+    }
+
+    // --- Staff Daily Duty Attendance (Morning In / Lunch Out / After Break In / Duty Close) ---
+    fun punchStaffDuty(stage: String) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.STAFF) {
+            _warningAlert.value = WarningAlert(
+                title = "Staff Duty Only",
+                message = "Duty attendance punch in/out is recorded from Staff accounts."
+            )
+            return
+        }
+        val businessDate = _selectedDate.value
+        val nowMs = System.currentTimeMillis()
+        val vehicleName = session.assignedVehicle?.name.orEmpty()
+
+        viewModelScope.launch {
+            val existing = repository.getAttendanceForStaffAndDate(businessDate, session.user.id)
+            val base = existing ?: StaffAttendanceEntity(
+                remoteId = "att_${businessDate.replace("-", "")}_staff_${session.user.id}",
+                businessDate = businessDate,
+                staffId = session.user.id,
+                staffName = session.user.displayName,
+                vehicleName = vehicleName,
+                updatedAtMs = nowMs
+            )
+
+            val updated: StaffAttendanceEntity
+            val stageLabel: String
+            when (stage) {
+                "DUTY_START" -> {
+                    if (base.dutyStartMs > 0L) {
+                        _warningAlert.value = WarningAlert("Already Punched In", "Morning Duty Start is already recorded for $businessDate.")
+                        return@launch
+                    }
+                    updated = base.copy(dutyStartMs = nowMs, updatedAtMs = nowMs, staffName = session.user.displayName, vehicleName = vehicleName)
+                    stageLabel = "Morning Duty Start (Punch In)"
+                }
+                "LUNCH_OUT" -> {
+                    if (base.dutyStartMs <= 0L) {
+                        _warningAlert.value = WarningAlert("Punch In First", "Please record Morning Duty Start before Lunch / Break Punch Out.")
+                        return@launch
+                    }
+                    if (base.lunchOutMs > 0L) {
+                        _warningAlert.value = WarningAlert("Already Recorded", "Lunch / Break Punch Out is already recorded for today.")
+                        return@launch
+                    }
+                    if (base.dutyCloseMs > 0L) {
+                        _warningAlert.value = WarningAlert("Duty Already Closed", "Today's duty is already closed.")
+                        return@launch
+                    }
+                    updated = base.copy(lunchOutMs = nowMs, updatedAtMs = nowMs)
+                    stageLabel = "Lunch / Break Rest (Punch Out)"
+                }
+                "LUNCH_IN" -> {
+                    if (base.lunchOutMs <= 0L) {
+                        _warningAlert.value = WarningAlert("Lunch Out First", "Please record Lunch / Break Punch Out before punching back in.")
+                        return@launch
+                    }
+                    if (base.lunchInMs > 0L) {
+                        _warningAlert.value = WarningAlert("Already Recorded", "After-Break Punch In is already recorded.")
+                        return@launch
+                    }
+                    if (base.dutyCloseMs > 0L) {
+                        _warningAlert.value = WarningAlert("Duty Already Closed", "Today's duty is already closed.")
+                        return@launch
+                    }
+                    updated = base.copy(lunchInMs = nowMs, updatedAtMs = nowMs)
+                    stageLabel = "After Lunch / Break (Punch In)"
+                }
+                "DUTY_CLOSE" -> {
+                    if (base.dutyStartMs <= 0L) {
+                        _warningAlert.value = WarningAlert("Punch In First", "Please record Morning Duty Start before closing duty.")
+                        return@launch
+                    }
+                    if (base.dutyCloseMs > 0L) {
+                        _warningAlert.value = WarningAlert("Already Closed", "Duty Close Punch Out is already recorded for $businessDate.")
+                        return@launch
+                    }
+                    val fixedLunchIn = if (base.lunchOutMs > 0L && base.lunchInMs <= 0L) nowMs else base.lunchInMs
+                    updated = base.copy(lunchInMs = fixedLunchIn, dutyCloseMs = nowMs, updatedAtMs = nowMs)
+                    stageLabel = "Duty Close (Punch Out)"
+                }
+                else -> return@launch
+            }
+
+            repository.upsertStaffAttendance(updated)
+            val timeStr = formatClockTime(nowMs)
+            repository.createAppNotification(
+                AppNotificationEntity(
+                    remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                    targetScope = NotificationTargetScope.ADMIN_OWNER.name,
+                    targetStaffId = 0L,
+                    category = NotificationCategory.ATTENDANCE.name,
+                    title = "Staff Duty: ${session.user.displayName}",
+                    message = "$stageLabel at $timeStr (${vehicleName.ifBlank { "Staff" }} • $businessDate).",
+                    isUrgent = false,
+                    isRead = false,
+                    createdAtMs = nowMs
+                )
+            )
+            _snackbarMessage.value = "$stageLabel recorded at $timeStr."
+        }
+    }
+
+    // --- Staff Store-to-Vehicle Full & Vehicle-to-Store Empty Approval Workflow ---
+    fun submitStaffStoreTransferRequest(
+        direction: StoreTransferDirection,
+        productId: Long,
+        quantity: Int,
+        notes: String = ""
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.STAFF) {
+            _warningAlert.value = WarningAlert("Staff Request Only", "Only Staff submits Store transfer verification requests.")
+            return
+        }
+        val vehicle = session.assignedVehicle
+        if (vehicle == null) {
+            _warningAlert.value = WarningAlert("No Vehicle Assigned", "Your staff account is not linked to a vehicle.")
+            return
+        }
+        if (quantity <= 0 || quantity > 100000) {
+            _warningAlert.value = WarningAlert("Invalid Quantity", "Enter a cylinder quantity between 1 and 100,000.")
+            return
+        }
+
+        viewModelScope.launch {
+            val product = repository.getProductById(productId)
+            if (product == null) {
+                _warningAlert.value = WarningAlert("Product Not Found", "Please select a valid gas cylinder.")
+                return@launch
+            }
+            val nowMs = System.currentTimeMillis()
+            val req = PendingStoreTransferEntity(
+                remoteId = CloudSyncRepository.generateRemoteId("req"),
+                businessDate = _selectedDate.value,
+                direction = direction.name,
+                vehicleId = vehicle.id,
+                vehicleName = vehicle.name,
+                productId = product.id,
+                productName = product.name,
+                productCategory = product.category.displayName,
+                quantity = quantity,
+                staffId = session.user.id,
+                staffName = session.user.displayName,
+                notes = notes.trim().take(300),
+                status = ApprovalStatus.PENDING.name,
+                requestedAtMs = nowMs
+            )
+            repository.createPendingStoreTransfer(req)
+
+            val actionText = if (direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL) {
+                "Full Received from Store → ${vehicle.name}"
+            } else {
+                "Empty Returned to Store ← ${vehicle.name}"
+            }
+            repository.createAppNotification(
+                AppNotificationEntity(
+                    remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                    targetScope = NotificationTargetScope.ADMIN_OWNER.name,
+                    targetStaffId = 0L,
+                    category = NotificationCategory.STORE_APPROVAL.name,
+                    title = "Admin Approval Needed: $quantity × ${product.name}",
+                    message = "${session.user.displayName} submitted $actionText ($quantity × ${product.name}). Tap Bell to check & accept.",
+                    isUrgent = true,
+                    isRead = false,
+                    createdAtMs = nowMs
+                )
+            )
+            _snackbarMessage.value = "Sent $quantity × ${product.name} ($actionText) to Admin for approval."
+        }
+    }
+
+    fun approvePendingStoreTransfer(requestId: Long, reviewNotes: String = "") {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert(
+                title = "Admin Approval Required",
+                message = "Only Admin can accept or reject staff Store-to-Vehicle and Empty Return entries."
+            )
+            return
+        }
+        viewModelScope.launch {
+            val req = repository.getPendingStoreTransferById(requestId)
+            if (req == null) {
+                _warningAlert.value = WarningAlert("Request Not Found", "This transfer request no longer exists.")
+                return@launch
+            }
+            if (req.status != ApprovalStatus.PENDING.name) {
+                _snackbarMessage.value = "Request already ${req.status.lowercase()}."
+                return@launch
+            }
+
+            val txType = if (req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name) {
+                TransactionType.VEHICLE_FULL_RECEIVED
+            } else {
+                TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
+            }
+            val cleanReview = reviewNotes.trim()
+            val combinedNotes = buildString {
+                append("Admin Accepted (${session.user.displayName})")
+                if (req.notes.isNotBlank()) append(" • ${req.notes}")
+                if (cleanReview.isNotBlank()) append(" • $cleanReview")
+            }.take(300)
+
+            val txResult = repository.recordTransaction(
+                businessDate = req.businessDate,
+                type = txType,
+                productId = req.productId,
+                vehicleId = req.vehicleId,
+                actor = session.user,
+                quantity = req.quantity,
+                notes = combinedNotes
+            )
+
+            if (txResult is OperationResult.Success) {
+                val nowMs = System.currentTimeMillis()
+                repository.updatePendingStoreTransferStatus(
+                    entity = req,
+                    newStatus = ApprovalStatus.APPROVED.name,
+                    reviewedAtMs = nowMs,
+                    reviewedBy = session.user.displayName,
+                    reviewNotes = cleanReview.ifBlank { "Verified & accepted by Admin" }
+                )
+                val dirLabel = if (req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name) {
+                    "Full Received from Store"
+                } else {
+                    "Empty Returned to Store"
+                }
+                repository.createAppNotification(
+                    AppNotificationEntity(
+                        remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                        targetScope = NotificationTargetScope.STAFF.name,
+                        targetStaffId = req.staffId,
+                        category = NotificationCategory.STORE_APPROVAL.name,
+                        title = "Entry Accepted by Admin",
+                        message = "Admin accepted $dirLabel: ${req.quantity} × ${req.productName} for ${req.vehicleName}. Stock updated.",
+                        isUrgent = true,
+                        isRead = false,
+                        createdAtMs = nowMs
+                    )
+                )
+                _snackbarMessage.value = "Accepted ${req.quantity} × ${req.productName} for ${req.vehicleName}."
+                scheduleAutoDriveBackup()
+            } else {
+                handleOperationResult(txResult)
+            }
+        }
+    }
+
+    fun rejectPendingStoreTransfer(requestId: Long, reviewNotes: String = "") {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert(
+                title = "Admin Approval Required",
+                message = "Only Admin can accept or reject staff store cylinder entries."
+            )
+            return
+        }
+        viewModelScope.launch {
+            val req = repository.getPendingStoreTransferById(requestId) ?: return@launch
+            if (req.status != ApprovalStatus.PENDING.name) return@launch
+            val nowMs = System.currentTimeMillis()
+            val reason = reviewNotes.trim().ifBlank { "Rejected by Admin" }
+            repository.updatePendingStoreTransferStatus(
+                entity = req,
+                newStatus = ApprovalStatus.REJECTED.name,
+                reviewedAtMs = nowMs,
+                reviewedBy = session.user.displayName,
+                reviewNotes = reason
+            )
+            repository.createAppNotification(
+                AppNotificationEntity(
+                    remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                    targetScope = NotificationTargetScope.STAFF.name,
+                    targetStaffId = req.staffId,
+                    category = NotificationCategory.STORE_APPROVAL.name,
+                    title = "Store Entry Rejected by Admin",
+                    message = "${req.quantity} × ${req.productName} (${req.vehicleName}) was not accepted: $reason",
+                    isUrgent = true,
+                    isRead = false,
+                    createdAtMs = nowMs
+                )
+            )
+            _snackbarMessage.value = "Rejected store request from ${req.staffName}."
+        }
+    }
+
+    // --- Universal Bell Notifications ---
+    fun markNotificationRead(notificationId: Long) {
+        viewModelScope.launch {
+            repository.markNotificationRead(notificationId)
+        }
+    }
+
+    fun markAllNotificationsRead() {
+        viewModelScope.launch {
+            repository.markAllNotificationsRead()
+        }
+    }
+
+    // --- Team & Admin-Owner Conversation Chat + Live Typing Indicators ---
+    fun markChatRead() {
+        _lastSeenChatMs.value = System.currentTimeMillis()
+    }
+
+    fun sendChatMessage(
+        channel: ChatChannel,
+        rawText: String,
+        isImportant: Boolean
+    ) {
+        val session = _authSession.value ?: return
+        val cleanText = rawText.trim().take(1000)
+        if (cleanText.isEmpty()) return
+        if (channel == ChatChannel.ADMIN_OWNER &&
+            session.user.role != UserRole.ADMIN &&
+            session.user.role != UserRole.OWNER_VIEW
+        ) {
+            _warningAlert.value = WarningAlert(
+                title = "Restricted Channel",
+                message = "Admin & Owner Direct Chat is available only to Admin and Owner."
+            )
+            return
+        }
+        val nowMs = System.currentTimeMillis()
+        viewModelScope.launch {
+            val entity = ChatMessageEntity(
+                remoteId = CloudSyncRepository.generateRemoteId("chat"),
+                channel = channel.name,
+                senderId = session.user.id.coerceAtLeast(0L),
+                senderName = session.user.displayName,
+                senderRole = session.user.role.name,
+                message = cleanText,
+                isImportant = isImportant,
+                createdAtMs = nowMs
+            )
+            repository.sendChatMessage(entity)
+            _lastSeenChatMs.value = nowMs
+            updateTypingStatus(channel, isTyping = false)
+
+            if (isImportant) {
+                val scope = if (channel == ChatChannel.ADMIN_OWNER) {
+                    NotificationTargetScope.ADMIN_OWNER.name
+                } else {
+                    NotificationTargetScope.ALL.name
+                }
+                repository.createAppNotification(
+                    AppNotificationEntity(
+                        remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                        targetScope = scope,
+                        targetStaffId = 0L,
+                        category = NotificationCategory.CHAT_IMPORTANT.name,
+                        title = "IMPORTANT from ${session.user.displayName}",
+                        message = cleanText.take(450),
+                        isUrgent = true,
+                        isRead = false,
+                        createdAtMs = nowMs
+                    )
+                )
+            }
+        }
+    }
+
+    fun updateTypingStatus(channel: ChatChannel, isTyping: Boolean) {
+        val session = _authSession.value ?: return
+        val typingId = currentTypingId(session)
+        val nowMs = System.currentTimeMillis()
+        val localStatus = CloudTypingStatus(
+            id = typingId,
+            typingId = typingId,
+            channel = channel.name,
+            senderName = session.user.displayName,
+            senderRole = session.user.role.name,
+            isTyping = isTyping,
+            updatedAtMs = nowMs
+        )
+        _localTypingStatuses.value = _localTypingStatuses.value.toMutableMap().apply {
+            if (isTyping) put(typingId, localStatus) else remove(typingId)
+        }
+        viewModelScope.launch {
+            cloudSync?.setTypingStatus(
+                typingId = typingId,
+                channel = channel.name,
+                senderName = session.user.displayName,
+                senderRole = session.user.role.name,
+                isTyping = isTyping
+            )
+        }
+    }
+
+    private fun currentTypingId(session: AuthSession?): String {
+        val role = session?.user?.role?.name ?: "GUEST"
+        val uid = (session?.user?.id ?: 0L).coerceAtLeast(0L)
+        return "typing_${role.lowercase(Locale.US)}_$uid"
+    }
+
+    private fun formatClockTime(epochMs: Long): String {
+        if (epochMs <= 0L) return "—"
+        return SimpleDateFormat("hh:mm a", Locale.US).format(Date(epochMs))
+    }
+
+    private fun formatMinutesAsHours(minutes: Long): String {
+        val safe = minutes.coerceAtLeast(0L)
+        val hrs = safe / 60L
+        val mins = safe % 60L
+        return String.format(Locale.US, "%dh %02dm", hrs, mins)
     }
 
     fun updateOpeningStock(
@@ -2907,6 +3506,59 @@ class AppViewModel(
                     )
                 )
             }
+
+            ReportType.STAFF_WORK_HOURS -> {
+                val staffUsers = users.value.filter { it.role == UserRole.STAFF && it.isActive }
+                val vehicleByStaff = vehicles.value.associateBy { it.staffUserId }
+                val attendanceByStaff = selectedDateAttendance.value.associateBy { it.staffId }
+                var totalBreakMins = 0L
+                var totalWorkMins = 0L
+                val rows = staffUsers.map { staff ->
+                    val att = attendanceByStaff[staff.id]
+                    val vehName = att?.vehicleName?.ifBlank { null }
+                        ?: vehicleByStaff[staff.id]?.name
+                        ?: "—"
+                    val breakMins = att?.breakDurationMinutes() ?: 0L
+                    val workMins = att?.netWorkMinutes() ?: 0L
+                    totalBreakMins += breakMins
+                    totalWorkMins += workMins
+                    listOf(
+                        staff.displayName,
+                        vehName,
+                        formatClockTime(att?.dutyStartMs ?: 0L),
+                        formatClockTime(att?.lunchOutMs ?: 0L),
+                        formatClockTime(att?.lunchInMs ?: 0L),
+                        formatClockTime(att?.dutyCloseMs ?: 0L),
+                        if (breakMins > 0L) formatMinutesAsHours(breakMins) else "0h 00m",
+                        if (workMins > 0L) formatMinutesAsHours(workMins) else "0h 00m",
+                        att?.statusLabel() ?: "Not Punched In"
+                    )
+                }
+                val activeCount = attendanceByStaff.values.count { it.dutyStartMs > 0L }
+                ReportTable(
+                    reportTitle = "Staff Daily Work Hours Report",
+                    subtitle = "Business Date: $date • Punched In: $activeCount / ${staffUsers.size} • Admin & Owner Only",
+                    generatedBy = actorName,
+                    headers = listOf(
+                        "Staff", "Vehicle", "Morning In", "Lunch Out",
+                        "Break In", "Duty Close", "Break", "Work Hrs", "Status"
+                    ),
+                    rows = rows.ifEmpty {
+                        listOf(listOf("No Staff", "—", "—", "—", "—", "—", "0h 00m", "0h 00m", "—"))
+                    },
+                    footerTotals = listOf(
+                        "TOTAL",
+                        "${staffUsers.size} Staff",
+                        "$activeCount Active",
+                        "",
+                        "",
+                        "",
+                        formatMinutesAsHours(totalBreakMins),
+                        formatMinutesAsHours(totalWorkMins),
+                        ""
+                    )
+                )
+            }
         }
     }
 
@@ -2939,6 +3591,22 @@ class AppViewModel(
                         lastCheckedAtMs = System.currentTimeMillis(),
                         bannerDismissed = if (res.isUpdateAvailable) false else _appUpdateState.value.bannerDismissed
                     )
+                    if (res.isUpdateAvailable) {
+                        val safeVer = res.latestVersion.replace(Regex("[^a-zA-Z0-9_]"), "_").ifBlank { "latest" }
+                        repository.createAppNotification(
+                            AppNotificationEntity(
+                                remoteId = "sys_update_$safeVer",
+                                targetScope = NotificationTargetScope.ALL.name,
+                                targetStaffId = 0L,
+                                category = NotificationCategory.SYSTEM_UPDATE.name,
+                                title = "System App Update v${res.latestVersion} Available",
+                                message = "A newer version of C&A Gas (v${res.latestVersion}) is ready. Tap the Update icon to download.",
+                                isUrgent = true,
+                                isRead = false,
+                                createdAtMs = System.currentTimeMillis()
+                            )
+                        )
+                    }
                     if (!silent) {
                         _snackbarMessage.value = if (res.isUpdateAvailable) {
                             "New version v${res.latestVersion} is available!"

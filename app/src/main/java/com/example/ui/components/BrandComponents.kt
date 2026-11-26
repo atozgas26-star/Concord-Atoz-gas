@@ -138,7 +138,7 @@ fun BrandHeaderBanner(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFB31B1A),
+                        color = Color(0xFF092C6C),
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f)),
                         modifier = Modifier.size(38.dp)
                     ) {

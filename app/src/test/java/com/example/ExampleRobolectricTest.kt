@@ -11,12 +11,17 @@ import com.example.auth.RecoveryPurpose
 import com.example.auth.RecoveryStep
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.SessionPreferences
+import com.example.data.model.ApprovalStatus
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.ChatChannel
 import com.example.data.model.CompanyStockRow
+import com.example.data.model.NotificationCategory
+import com.example.data.model.NotificationTargetScope
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ReportType
 import com.example.data.model.StockCalculator
+import com.example.data.model.StoreTransferDirection
 import com.example.data.model.ThemePreset
 import android.os.Looper
 import com.example.data.model.TransactionType
@@ -1724,35 +1729,35 @@ class ExampleRobolectricTest {
 
     @Test
     fun `app system update manager compares semver, enforces trusted github release urls, and updates viewmodel state`() = runTest {
-        assertEquals("1.8.0", BuildConfig.VERSION_NAME)
-        assertEquals(8, BuildConfig.VERSION_CODE)
+        assertEquals("1.9.0", BuildConfig.VERSION_NAME)
+        assertEquals(9, BuildConfig.VERSION_CODE)
 
         // 1. Semantic version comparisons
-        assertTrue(AppUpdateManager.compareSemVer("v1.8.0", "1.7.0") > 0)
-        assertEquals(0, AppUpdateManager.compareSemVer("v1.7.0", "1.7.0"))
-        assertTrue(AppUpdateManager.compareSemVer("v1.6.0", "1.7.0") < 0)
+        assertTrue(AppUpdateManager.compareSemVer("v2.0.0", "1.9.0") > 0)
+        assertEquals(0, AppUpdateManager.compareSemVer("v1.9.0", "1.9.0"))
+        assertTrue(AppUpdateManager.compareSemVer("v1.8.0", "1.9.0") < 0)
         assertTrue(AppUpdateManager.compareSemVer("1.10.0", "1.9.5") > 0)
-        assertEquals("1.8.0", AppUpdateManager.normalizeVersion("v1.8.0-beta1"))
+        assertEquals("1.9.0", AppUpdateManager.normalizeVersion("v1.9.0-beta1"))
 
         // 2. Strict trusted HTTPS release URL validation
         assertTrue(
             AppUpdateManager.isTrustedReleaseUrl(
-                "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk"
+                "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.9.0/CA-Gas-v1.9.0.apk"
             )
         )
         assertTrue(
             AppUpdateManager.isTrustedReleaseUrl(
-                "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.8.0"
+                "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.9.0"
             )
         )
         assertFalse(
             AppUpdateManager.isTrustedReleaseUrl(
-                "http://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk"
+                "http://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.9.0/CA-Gas-v1.9.0.apk"
             )
         )
         assertFalse(
             AppUpdateManager.isTrustedReleaseUrl(
-                "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.8.0/CA-Gas-v1.8.0.apk"
+                "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.9.0/CA-Gas-v1.9.0.apk"
             )
         )
         assertFalse(
@@ -1760,7 +1765,7 @@ class ExampleRobolectricTest {
         )
         assertFalse(
             AppUpdateManager.isTrustedReleaseUrl(
-                "https://github.com/other-org/other-repo/releases/download/v1.8.0/app.apk"
+                "https://github.com/other-org/other-repo/releases/download/v1.9.0/app.apk"
             )
         )
         assertFalse(
@@ -1770,7 +1775,7 @@ class ExampleRobolectricTest {
         )
         assertFalse(
             AppUpdateManager.isTrustedReleaseUrl(
-                "https://user@github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.8.0"
+                "https://user@github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.9.0"
             )
         )
 
@@ -1778,20 +1783,20 @@ class ExampleRobolectricTest {
         var mockedCode = 200
         var mockedBody = """
             {
-              "tag_name": "v1.9.0",
-              "name": "C&A Gas v1.9.0",
+              "tag_name": "v2.0.0",
+              "name": "C&A Gas v2.0.0",
               "body": "Added offline sync enhancements and invoice fixes.",
               "published_at": "2026-12-01T10:00:00Z",
-              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.9.0",
+              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v2.0.0",
               "assets": [
                 {
                   "name": "tampered.apk",
-                  "browser_download_url": "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.9.0/tampered.apk",
+                  "browser_download_url": "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.0.0/tampered.apk",
                   "size": 1048576
                 },
                 {
-                  "name": "CA-Gas-v1.9.0.apk",
-                  "browser_download_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.9.0/CA-Gas-v1.9.0.apk",
+                  "name": "CA-Gas-v2.0.0.apk",
+                  "browser_download_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.0.0/CA-Gas-v2.0.0.apk",
                   "size": 31457280
                 }
               ]
@@ -1831,15 +1836,15 @@ class ExampleRobolectricTest {
             }
         }
 
-        // Case A: Newer release v1.9.0 available -> skips tampered asset URL, picks trusted official APK URL
+        // Case A: Newer release v2.0.0 available -> skips tampered asset URL, picks trusted official APK URL
         vm.checkForAppUpdate(silent = false)
         waitUntil { !vm.appUpdateState.value.isChecking && vm.appUpdateState.value.status != AppUpdateStatus.IDLE }
         val available = vm.appUpdateState.value
         assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, available.status)
-        assertEquals("1.9.0", available.latestVersion)
+        assertEquals("2.0.0", available.latestVersion)
         assertTrue(available.shouldShowBanner)
         assertEquals(
-            "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v1.9.0/CA-Gas-v1.9.0.apk",
+            "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.0.0/CA-Gas-v2.0.0.apk",
             available.downloadUrl
         )
         assertEquals(30.0, available.apkSizeMb ?: 0.0, 0.1)
@@ -1850,14 +1855,14 @@ class ExampleRobolectricTest {
         assertFalse(vm.appUpdateState.value.shouldShowBanner)
         assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, vm.appUpdateState.value.status)
 
-        // Case B: Up-to-date release v1.8.0
+        // Case B: Up-to-date release v1.9.0
         mockedBody = """
             {
-              "tag_name": "v1.8.0",
-              "name": "C&A Gas v1.8.0",
+              "tag_name": "v1.9.0",
+              "name": "C&A Gas v1.9.0",
               "body": "Current version.",
-              "published_at": "2026-11-25T10:00:00Z",
-              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.8.0",
+              "published_at": "2026-11-26T10:00:00Z",
+              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v1.9.0",
               "assets": []
             }
         """.trimIndent()
@@ -1873,5 +1878,359 @@ class ExampleRobolectricTest {
         waitUntil { !vm.appUpdateState.value.isChecking && vm.appUpdateState.value.status == AppUpdateStatus.ERROR }
         assertEquals(AppUpdateStatus.ERROR, vm.appUpdateState.value.status)
         assertNotNull(vm.appUpdateState.value.errorMessage)
+    }
+
+    @Test
+    fun `staff 4-stage duty attendance calculates break and net work hours and populates admin work hours report`() = runTest {
+        repository.initializeDatabase()
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val nadeemVeh = repository.vehiclesFlow.first().first { it.staffUserId == nadeem.id }
+        val day = "2026-11-26"
+
+        // 08:00 start -> 13:00 lunch out -> 14:00 break in (60m break) -> 18:00 duty close (9h net work)
+        val base = 1_795_680_000_000L
+        val tStart = base
+        val tLunchOut = base + 5 * 3_600_000L
+        val tLunchIn = base + 6 * 3_600_000L
+        val tClose = base + 10 * 3_600_000L
+
+        repository.upsertStaffAttendance(
+            com.example.data.local.StaffAttendanceEntity(
+                remoteId = "att_${day}_${nadeem.id}",
+                businessDate = day,
+                staffId = nadeem.id,
+                staffName = nadeem.displayName,
+                vehicleName = nadeemVeh.name,
+                dutyStartMs = tStart,
+                lunchOutMs = tLunchOut,
+                lunchInMs = tLunchIn,
+                dutyCloseMs = tClose,
+                updatedAtMs = tClose
+            )
+        )
+
+        val record = repository.allAttendanceFlow.first().first { it.staffId == nadeem.id && it.businessDate == day }
+        assertEquals(60L, record.breakDurationMinutes())
+        assertEquals(540L, record.netWorkMinutes()) // 9 hours net
+
+        // Build Admin-Only Daily Work Hours Report via ViewModel
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            appContext = context
+        )
+        val initDeadline = System.currentTimeMillis() + 5000L
+        while (!vm.isInitialized.value && System.currentTimeMillis() < initDeadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        vm.setSelectedDate(day)
+        val attJob = launch(Dispatchers.Unconfined) { vm.selectedDateAttendance.collect {} }
+        val userJob = launch(Dispatchers.Unconfined) { vm.users.collect {} }
+        val vehJob = launch(Dispatchers.Unconfined) { vm.vehicles.collect {} }
+        val syncDeadline = System.currentTimeMillis() + 3000L
+        while ((vm.selectedDateAttendance.value.isEmpty() || vm.users.value.isEmpty() || vm.vehicles.value.isEmpty()) &&
+            System.currentTimeMillis() < syncDeadline
+        ) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+
+        val table = vm.buildReportTable(ReportType.STAFF_WORK_HOURS)
+        assertEquals("Staff Daily Work Hours Report", table.reportTitle)
+        val nadeemRow = table.rows.first { it[0] == "Nadeem" }
+        assertEquals("1h 00m", nadeemRow[6])
+        assertEquals("9h 00m", nadeemRow[7])
+        assertEquals("Duty Closed", nadeemRow[8])
+
+        // Also verify Staff punching through AppViewModel persists dutyStartMs and notifies Admin
+        vm.login(nadeem.id, "1001", UserRole.STAFF)
+        val loginDl = System.currentTimeMillis() + 5000L
+        while (vm.authSession.value?.user?.role != UserRole.STAFF && System.currentTimeMillis() < loginDl) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        vm.setSelectedDate("2026-11-27")
+        vm.punchStaffDuty("DUTY_START")
+        val punchDl = System.currentTimeMillis() + 5000L
+        while (repository.getAttendanceForStaffAndDate("2026-11-27", nadeem.id) == null && System.currentTimeMillis() < punchDl) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        val punched = repository.getAttendanceForStaffAndDate("2026-11-27", nadeem.id)
+        assertNotNull(punched)
+        assertTrue(punched!!.dutyStartMs > 0L)
+
+        attJob.cancel()
+        userJob.cancel()
+        vehJob.cancel()
+    }
+
+    @Test
+    fun `vehicle to vehicle extra full and empty collect auto-sums and notifies destination staff bell`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val nadeemVeh = repository.vehiclesFlow.first().first { it.staffUserId == nadeem.id }
+        val sivanVeh = repository.vehiclesFlow.first().first { it.name == "SIVAN" }
+        val sivanUser = repository.usersFlow.first().first { it.id == sivanVeh.staffUserId }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        val day = "2026-11-26"
+
+        // Seed NADEEM with 20 Full and 10 Empty
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVeh.id, oxygen.id, day, 20, 10, admin) is OperationResult.Success)
+
+        // 1. Standard transfer (extraFull = 0, extraEmpty = 0) -> no "Extra" mention in notes
+        val stdRes = repository.transferBetweenVehicles(
+            businessDate = day,
+            sourceVehicleId = nadeemVeh.id,
+            targetVehicleId = sivanVeh.id,
+            productId = oxygen.id,
+            actor = nadeem,
+            fullQuantity = 4,
+            emptyQuantity = 2,
+            extraFullQuantity = 0,
+            extraEmptyQuantity = 0,
+            notes = ""
+        )
+        assertTrue(stdRes is OperationResult.Success)
+        val stdTx = repository.transactionsFlow.first().first { it.type == TransactionType.VEHICLE_TRANSFER_FULL_OUT }
+        assertEquals(4, stdTx.quantity)
+        assertFalse(stdTx.notes.contains("Extra", ignoreCase = true))
+
+        // 2. Transfer WITH Extra Full (+3) and Extra Empty (+2) through AppViewModel
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            appContext = context
+        )
+        val deadline = System.currentTimeMillis() + 5000L
+        while (!vm.isInitialized.value && System.currentTimeMillis() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        vm.setSelectedDate(day)
+        vm.login(nadeem.id, "1001", UserRole.STAFF)
+        val loginDeadline = System.currentTimeMillis() + 5000L
+        while (vm.authSession.value == null && System.currentTimeMillis() < loginDeadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+
+        vm.transferBetweenVehicles(
+            sourceVehicleId = nadeemVeh.id,
+            targetVehicleId = sivanVeh.id,
+            productId = oxygen.id,
+            fullQuantity = 5,
+            emptyQuantity = 1,
+            notes = "Urgent route help",
+            extraFullQuantity = 3,
+            extraEmptyQuantity = 2
+        )
+        val txDeadline = System.currentTimeMillis() + 5000L
+        while (repository.allNotificationsFlow.first().none { it.category == NotificationCategory.TRANSFER_EXTRA.name } &&
+            System.currentTimeMillis() < txDeadline
+        ) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+
+        // Auto-summed totals: SIVAN Full = 4 + (5+3) = 12; Empty = 2 + (1+2) = 5
+        val sivanStock = repository.observeVehicleStock(sivanVeh.id, day).first().first { it.product.id == oxygen.id }
+        assertEquals(12, sivanStock.fullBalance)
+        assertEquals(5, sivanStock.emptyBalance)
+
+        // Destination staff (Sivan) received urgent TRANSFER_EXTRA bell notification mentioning Extra cylinders
+        val notifs = repository.allNotificationsFlow.first()
+        val destNotif = notifs.firstOrNull {
+            it.targetScope == NotificationTargetScope.STAFF.name &&
+                it.targetStaffId == sivanUser.id &&
+                it.category == NotificationCategory.TRANSFER_EXTRA.name
+        }
+        assertNotNull(destNotif)
+        assertTrue(destNotif!!.isUrgent)
+        assertTrue(destNotif.message.contains("Full: 5 + Extra 3 = 8"))
+        assertTrue(destNotif.message.contains("Empty: 1 + Extra 2 = 3"))
+        assertTrue(destNotif.message.contains("Total: 11"))
+    }
+
+    @Test
+    fun `staff store full receive and empty return require admin accept entry before stock updates`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+        val nadeemVeh = repository.vehiclesFlow.first().first { it.staffUserId == nadeem.id }
+        val oxygen = repository.activeProductsFlow.first().first { it.name == "Oxygen" }
+        val day = "2026-11-26"
+
+        // Store starts with 20 Full, 5 Empty; NADEEM starts with 0 Full, 6 Empty
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, oxygen.id, day, 20, 5, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVeh.id, oxygen.id, day, 0, 6, admin) is OperationResult.Success)
+
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            appContext = context
+        )
+        suspend fun waitUntil(condition: suspend () -> Boolean) {
+            val dl = System.currentTimeMillis() + 5000L
+            while (!condition() && System.currentTimeMillis() < dl) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+        waitUntil { vm.isInitialized.value }
+        vm.setSelectedDate(day)
+
+        // 1. Staff logs in and submits Store->Vehicle Full Received (8) & Vehicle->Store Empty Return (4)
+        vm.login(nadeem.id, "1001", UserRole.STAFF)
+        waitUntil { vm.authSession.value?.user?.role == UserRole.STAFF }
+
+        vm.submitStaffStoreTransferRequest(StoreTransferDirection.STORE_TO_VEHICLE_FULL, oxygen.id, 8, "Morning load")
+        vm.submitStaffStoreTransferRequest(StoreTransferDirection.VEHICLE_TO_STORE_EMPTY, oxygen.id, 4, "Evening empties")
+        waitUntil {
+            repository.allPendingStoreTransfersFlow.first().size == 2 &&
+                repository.allNotificationsFlow.first().count {
+                    it.targetScope == NotificationTargetScope.ADMIN_OWNER.name &&
+                        it.category == NotificationCategory.STORE_APPROVAL.name
+                } == 2
+        }
+
+        val requests = repository.allPendingStoreTransfersFlow.first()
+        assertTrue(requests.all { it.status == ApprovalStatus.PENDING.name })
+
+        // Stock MUST NOT have changed yet prior to Admin approval!
+        val storeBefore = repository.observeStoreStock(day).first().first { it.product.id == oxygen.id }
+        assertEquals(20, storeBefore.storeFullBalance)
+        assertEquals(5, storeBefore.storeEmptyBalance)
+
+        // Urgent Red-Dot Bell notifications sent to Admin
+        val adminBellAlerts = repository.allNotificationsFlow.first().filter {
+            it.targetScope == NotificationTargetScope.ADMIN_OWNER.name &&
+                it.category == NotificationCategory.STORE_APPROVAL.name &&
+                it.isUrgent
+        }
+        assertEquals(2, adminBellAlerts.size)
+
+        // Staff CANNOT self-approve
+        val fullReq = requests.first { it.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name }
+        val emptyReq = requests.first { it.direction == StoreTransferDirection.VEHICLE_TO_STORE_EMPTY.name }
+        vm.approvePendingStoreTransfer(fullReq.id)
+        assertEquals("Admin Approval Required", vm.warningAlert.value?.title)
+        vm.dismissWarningAlert()
+
+        // 2. Admin logs in and accepts both requests
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+        vm.login(admin.id, "1725", UserRole.ADMIN)
+        waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
+
+        vm.approvePendingStoreTransfer(fullReq.id)
+        vm.approvePendingStoreTransfer(emptyReq.id)
+        waitUntil {
+            repository.allPendingStoreTransfersFlow.first().all { it.status == ApprovalStatus.APPROVED.name } &&
+                repository.allNotificationsFlow.first().count {
+                    it.targetScope == NotificationTargetScope.STAFF.name &&
+                        it.targetStaffId == nadeem.id &&
+                        it.category == NotificationCategory.STORE_APPROVAL.name
+                } == 2
+        }
+
+        // Now stock reflects both accepted entries: Store Full = 12, Store Empty = 9; Vehicle Full = 8, Vehicle Empty = 2
+        val storeAfter = repository.observeStoreStock(day).first().first { it.product.id == oxygen.id }
+        val vehAfter = repository.observeVehicleStock(nadeemVeh.id, day).first().first { it.product.id == oxygen.id }
+        assertEquals(12, storeAfter.storeFullBalance)
+        assertEquals(9, storeAfter.storeEmptyBalance)
+        assertEquals(8, vehAfter.fullBalance)
+        assertEquals(2, vehAfter.emptyBalance)
+
+        // Staff received confirmation Bell notifications
+        val staffConfirmAlerts = repository.allNotificationsFlow.first().filter {
+            it.targetScope == NotificationTargetScope.STAFF.name &&
+                it.targetStaffId == nadeem.id &&
+                it.category == NotificationCategory.STORE_APPROVAL.name
+        }
+        assertEquals(2, staffConfirmAlerts.size)
+    }
+
+    @Test
+    fun `team chat and admin-owner private chat isolate staff and trigger bell alerts for important messages`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.username == "nadeem" }
+
+        val prefs = SessionPreferences(context)
+        prefs.clearLoggedInUserId()
+        val vm = AppViewModel(
+            repository = repository,
+            backupManager = backupManager,
+            cloudSync = null,
+            sessionPreferences = prefs,
+            driveBackupManager = null,
+            appContext = context
+        )
+        suspend fun waitUntil(condition: suspend () -> Boolean) {
+            val dl = System.currentTimeMillis() + 5000L
+            while (!condition() && System.currentTimeMillis() < dl) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+        }
+        waitUntil { vm.isInitialized.value }
+
+        // 1. Staff logs in: cannot post to ADMIN_OWNER channel, CAN post to TEAM_CHAT
+        vm.login(nadeem.id, "1001", UserRole.STAFF)
+        waitUntil { vm.authSession.value?.user?.role == UserRole.STAFF }
+
+        vm.sendChatMessage(ChatChannel.ADMIN_OWNER, "Staff snooping", isImportant = false)
+        assertEquals("Restricted Channel", vm.warningAlert.value?.title)
+        vm.dismissWarningAlert()
+
+        vm.sendChatMessage(ChatChannel.TEAM_CHAT, "Reached Sharjah industrial area", isImportant = false)
+        waitUntil { repository.allChatMessagesFlow.first().size == 1 }
+
+        // 2. Admin logs in: sends IMPORTANT message to TEAM_CHAT + private message to ADMIN_OWNER
+        vm.logout()
+        waitUntil { vm.authSession.value == null }
+        vm.login(admin.id, "1725", UserRole.ADMIN)
+        waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
+
+        vm.sendChatMessage(ChatChannel.TEAM_CHAT, "All trucks return before 7 PM today!", isImportant = true)
+        vm.sendChatMessage(ChatChannel.ADMIN_OWNER, "Monthly audit ready for Owner review", isImportant = true)
+        waitUntil {
+            repository.allChatMessagesFlow.first().size == 3 &&
+                repository.allNotificationsFlow.first().count {
+                    it.category == NotificationCategory.CHAT_IMPORTANT.name
+                } == 2
+        }
+
+        val messages = repository.allChatMessagesFlow.first()
+        assertEquals(2, messages.count { it.channel == ChatChannel.TEAM_CHAT.name })
+        assertEquals(1, messages.count { it.channel == ChatChannel.ADMIN_OWNER.name })
+
+        // Important messages created CHAT_IMPORTANT Bell notifications with proper target scopes
+        val chatAlerts = repository.allNotificationsFlow.first().filter { it.category == NotificationCategory.CHAT_IMPORTANT.name }
+        assertEquals(2, chatAlerts.size)
+        assertTrue(chatAlerts.any { it.targetScope == NotificationTargetScope.ALL.name && it.isUrgent })
+        assertTrue(chatAlerts.any { it.targetScope == NotificationTargetScope.ADMIN_OWNER.name && it.isUrgent })
+
+        // Verify Bell & Chat sounds are safe in Robolectric
+        SoundEffectsManager.playNotificationBell(true)
+        SoundEffectsManager.playChatMessageTone(true)
     }
 }

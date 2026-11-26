@@ -170,11 +170,13 @@ fun LoginScreen(
     var showStaffListSheet by remember { mutableStateOf(false) }
     var pinInput by remember { mutableStateOf("") }
 
-    // Admin Username & Password inputs
-    var adminUsernameInput by remember { mutableStateOf("") }
+    // Admin Username & 6-Digit PIN / Password inputs
+    var adminUsernameInput by remember(adminCredentials.username) {
+        mutableStateOf(adminCredentials.username)
+    }
     var adminPasswordInput by remember { mutableStateOf("") }
     var showAdminPassword by remember { mutableStateOf(false) }
-    var useAdminIphonePad by remember { mutableStateOf(false) }
+    var useAdminIphonePad by remember { mutableStateOf(true) }
 
     // First-run Admin Setup inputs
     var setupUsernameInput by remember { mutableStateOf("admin_ragavan") }
@@ -185,11 +187,11 @@ fun LoginScreen(
     }
     var showSetupPassword by remember { mutableStateOf(false) }
 
-    // Owner View (Read-Only) One-Password inputs
+    // Owner View (Read-Only) 6-Digit PIN / Password inputs
     var ownerPasswordInput by remember { mutableStateOf("") }
     var ownerConfirmPasswordInput by remember { mutableStateOf("") }
     var showOwnerPassword by remember { mutableStateOf(false) }
-    var useOwnerIphonePad by remember { mutableStateOf(false) }
+    var useOwnerIphonePad by remember { mutableStateOf(true) }
 
     LaunchedEffect(isStaffRestrictedCloud, linkedStaffRole, linkedStaffUsername, users) {
         if (isStaffRestrictedCloud && selectedRole == UserRole.ADMIN) {
@@ -315,7 +317,7 @@ fun LoginScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFB31B1A),
+                            color = Color(0xFF092C6C),
                             border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.45f)),
                             modifier = Modifier.size(50.dp)
                         ) {
@@ -875,33 +877,36 @@ fun LoginScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     FilterChip(
+                                        selected = useAdminIphonePad,
+                                        onClick = {
+                                            useAdminIphonePad = true
+                                            adminPasswordInput = adminPasswordInput.filter { it.isDigit() }.take(6)
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Dialpad, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                        label = { Text("6-Digit PIN Pad", fontSize = 12.sp) },
+                                        modifier = Modifier.testTag("admin_iphone_pad_mode_chip")
+                                    )
+                                    FilterChip(
                                         selected = !useAdminIphonePad,
                                         onClick = { useAdminIphonePad = false },
                                         leadingIcon = {
                                             Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(16.dp))
                                         },
-                                        label = { Text("Keyboard", fontSize = 12.sp) },
+                                        label = { Text("Full Keyboard", fontSize = 12.sp) },
                                         modifier = Modifier.testTag("admin_keyboard_mode_chip")
-                                    )
-                                    FilterChip(
-                                        selected = useAdminIphonePad,
-                                        onClick = { useAdminIphonePad = true },
-                                        leadingIcon = {
-                                            Icon(Icons.Default.Dialpad, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        },
-                                        label = { Text("iPhone Number Pad", fontSize = 12.sp) },
-                                        modifier = Modifier.testTag("admin_iphone_pad_mode_chip")
                                     )
                                 }
 
                                 if (useAdminIphonePad) {
                                     IphonePasscodePad(
-                                        title = "Admin Numeric Passcode",
-                                        subtitle = "Enter your numeric Admin passcode using the iPhone keypad",
+                                        title = "Admin 6-Digit PIN Passcode",
+                                        subtitle = "iPhone Style 6-Digit Admin PIN • Auto Sign-In on 6th Digit",
                                         pinInput = adminPasswordInput,
-                                        maxLength = 12,
+                                        maxLength = 6,
                                         minSubmitLength = 6,
-                                        autoSubmitAtMaxLength = false,
+                                        autoSubmitAtMaxLength = true,
                                         isAuthenticating = isAuthenticating,
                                         errorMessage = loginError,
                                         submitButtonLabel = "Sign In as Admin",
@@ -1214,33 +1219,36 @@ fun LoginScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     FilterChip(
+                                        selected = useOwnerIphonePad,
+                                        onClick = {
+                                            useOwnerIphonePad = true
+                                            ownerPasswordInput = ownerPasswordInput.filter { it.isDigit() }.take(6)
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Dialpad, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                        label = { Text("6-Digit PIN Pad", fontSize = 12.sp) },
+                                        modifier = Modifier.testTag("owner_iphone_pad_mode_chip")
+                                    )
+                                    FilterChip(
                                         selected = !useOwnerIphonePad,
                                         onClick = { useOwnerIphonePad = false },
                                         leadingIcon = {
                                             Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(16.dp))
                                         },
-                                        label = { Text("Keyboard", fontSize = 12.sp) },
+                                        label = { Text("Full Keyboard", fontSize = 12.sp) },
                                         modifier = Modifier.testTag("owner_keyboard_mode_chip")
-                                    )
-                                    FilterChip(
-                                        selected = useOwnerIphonePad,
-                                        onClick = { useOwnerIphonePad = true },
-                                        leadingIcon = {
-                                            Icon(Icons.Default.Dialpad, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        },
-                                        label = { Text("iPhone Number Pad", fontSize = 12.sp) },
-                                        modifier = Modifier.testTag("owner_iphone_pad_mode_chip")
                                     )
                                 }
 
                                 if (useOwnerIphonePad) {
                                     IphonePasscodePad(
-                                        title = "Owner View Passcode",
-                                        subtitle = "Enter numeric Owner View passcode (Read-Only)",
+                                        title = "Owner View 6-Digit PIN",
+                                        subtitle = "iPhone Style 6-Digit PIN (Read-Only) • Auto Sign-In on 6th Digit",
                                         pinInput = ownerPasswordInput,
-                                        maxLength = 12,
+                                        maxLength = 6,
                                         minSubmitLength = 6,
-                                        autoSubmitAtMaxLength = false,
+                                        autoSubmitAtMaxLength = true,
                                         isAuthenticating = isAuthenticating,
                                         errorMessage = loginError,
                                         submitButtonLabel = "Sign In to Owner View (Read-Only)",

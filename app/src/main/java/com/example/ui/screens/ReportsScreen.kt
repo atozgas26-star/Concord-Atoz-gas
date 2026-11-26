@@ -80,6 +80,7 @@ fun ReportsScreen(
     selectedVehicleId: Long?,
     recentPurchaseCompanies: List<String> = emptyList(),
     isReadOnly: Boolean = false,
+    initialReportType: ReportType = ReportType.DAILY_STORE,
     buildReportTable: (ReportType, Long?, Boolean, String?) -> ReportTable,
     onDateSelected: (String) -> Unit,
     onYearMonthSelected: (String) -> Unit,
@@ -88,7 +89,7 @@ fun ReportsScreen(
     onMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var selectedReport by remember { mutableStateOf(ReportType.DAILY_STORE) }
+    var selectedReport by remember(initialReportType) { mutableStateOf(initialReportType) }
     var vehicleFilterId by remember { mutableStateOf<Long?>(null) }
     var purchaseDailyMode by remember { mutableStateOf(false) }
     var purchaseCompanyFilter by remember { mutableStateOf<String?>(null) }

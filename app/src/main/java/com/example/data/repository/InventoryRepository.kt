@@ -1,9 +1,13 @@
 package com.example.data.repository
 
 import androidx.room.withTransaction
+import com.example.data.local.AppNotificationEntity
+import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.OpeningStockEntity
+import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
@@ -41,6 +45,10 @@ class InventoryRepository(
     private val productDao = db.productDao()
     private val openingDao = db.openingStockDao()
     private val txDao = db.transactionDao()
+    private val attendanceDao = db.staffAttendanceDao()
+    private val pendingStoreTransferDao = db.pendingStoreTransferDao()
+    private val notificationDao = db.appNotificationDao()
+    private val chatMessageDao = db.chatMessageDao()
 
     val usersFlow: Flow<List<UserAccountEntity>> = userDao.observeAllUsers()
     val vehiclesFlow: Flow<List<VehicleEntity>> = vehicleDao.observeActiveVehicles()
@@ -48,6 +56,10 @@ class InventoryRepository(
     val allProductsFlow: Flow<List<ProductEntity>> = productDao.observeAllProducts()
     val openingsFlow: Flow<List<OpeningStockEntity>> = openingDao.observeAllOpenings()
     val transactionsFlow: Flow<List<StockTransactionEntity>> = txDao.observeAllTransactions()
+    val allAttendanceFlow: Flow<List<StaffAttendanceEntity>> = attendanceDao.observeAllAttendance()
+    val allPendingStoreTransfersFlow: Flow<List<PendingStoreTransferEntity>> = pendingStoreTransferDao.observeAll()
+    val allNotificationsFlow: Flow<List<AppNotificationEntity>> = notificationDao.observeAll()
+    val allChatMessagesFlow: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAll()
 
     val recentPurchaseCompaniesFlow: Flow<List<String>> = transactionsFlow.map { txs ->
         val seen = LinkedHashSet<String>()
@@ -598,7 +610,9 @@ class InventoryRepository(
 
     /**
      * Atomically transfers Full and/or Empty cylinders directly from [sourceVehicleId] to [targetVehicleId].
-     * Strictly prevents negative source stock and records paired OUT/IN ledger entries on both vehicles.
+     * Supports optional Extra Full / Extra Empty cylinders collected and auto-sums total movement:
+     * - When no extra cylinders are entered, records standard transfer note with no extra mention.
+     * - When extra cylinders are entered, auto-sums Base + Extra and records explicit extra details.
      */
     suspend fun transferBetweenVehicles(
         businessDate: String,
@@ -608,15 +622,22 @@ class InventoryRepository(
         fullQuantity: Int,
         emptyQuantity: Int,
         actor: UserAccountEntity,
-        notes: String = ""
+        notes: String = "",
+        extraFullQuantity: Int = 0,
+        extraEmptyQuantity: Int = 0
     ): OperationResult {
         if (sourceVehicleId == targetVehicleId) {
             return OperationResult.ValidationError("Source and destination vehicles must be different.")
         }
-        if (fullQuantity < 0 || emptyQuantity < 0 || (fullQuantity + emptyQuantity) <= 0) {
+        if (fullQuantity < 0 || emptyQuantity < 0 || extraFullQuantity < 0 || extraEmptyQuantity < 0) {
+            return OperationResult.ValidationError("Cylinder quantities cannot be negative.")
+        }
+        val totalFull = fullQuantity + extraFullQuantity
+        val totalEmpty = emptyQuantity + extraEmptyQuantity
+        if ((totalFull + totalEmpty) <= 0) {
             return OperationResult.ValidationError("Enter at least 1 Full or Empty cylinder to transfer.")
         }
-        if (fullQuantity > 100000 || emptyQuantity > 100000) {
+        if (totalFull > 100000 || totalEmpty > 100000) {
             return OperationResult.ValidationError("Transfer quantity must be 100,000 or less.")
         }
 
@@ -641,24 +662,35 @@ class InventoryRepository(
             )
 
             val productLabel = "${product.category.displayName} • ${product.name}"
-            if (fullQuantity > liveSourceFull) {
+            if (totalFull > liveSourceFull) {
                 return@withTransaction OperationResult.InsufficientStock(
                     title = "Insufficient Vehicle Full Stock",
-                    message = "${sourceVehicle.name} does not have $fullQuantity Full $productLabel cylinders to transfer.\n\nAvailable Full: $liveSourceFull"
+                    message = "${sourceVehicle.name} does not have $totalFull Full $productLabel cylinders to transfer.\n\nAvailable Full: $liveSourceFull"
                 )
             }
-            if (emptyQuantity > liveSourceEmpty) {
+            if (totalEmpty > liveSourceEmpty) {
                 return@withTransaction OperationResult.InsufficientStock(
                     title = "Insufficient Vehicle Empty Stock",
-                    message = "${sourceVehicle.name} does not have $emptyQuantity Empty $productLabel cylinders to transfer.\n\nAvailable Empty: $liveSourceEmpty"
+                    message = "${sourceVehicle.name} does not have $totalEmpty Empty $productLabel cylinders to transfer.\n\nAvailable Empty: $liveSourceEmpty"
                 )
             }
 
             val cleanNote = notes.trim()
+            val hasExtraFull = extraFullQuantity > 0
+            val hasExtraEmpty = extraEmptyQuantity > 0
+            val fullExtraSuffix = if (hasExtraFull) " (Base $fullQuantity + Extra $extraFullQuantity = $totalFull)" else ""
+            val emptyExtraSuffix = if (hasExtraEmpty) " (Base $emptyQuantity + Extra $extraEmptyQuantity = $totalEmpty)" else ""
             val noteSuffix = if (cleanNote.isNotBlank()) " • $cleanNote" else ""
             val nowMs = System.currentTimeMillis()
 
-            suspend fun insertPair(outType: TransactionType, inType: TransactionType, label: String, qty: Int, offsetMs: Long) {
+            suspend fun insertPair(
+                outType: TransactionType,
+                inType: TransactionType,
+                label: String,
+                qty: Int,
+                extraTag: String,
+                offsetMs: Long
+            ) {
                 val outEntity = StockTransactionEntity(
                     businessDate = businessDate,
                     timestamp = nowMs + offsetMs,
@@ -669,7 +701,7 @@ class InventoryRepository(
                     staffId = actor.id,
                     staffName = actor.displayName,
                     quantity = qty,
-                    notes = "Transfer $label → ${targetVehicle.name}$noteSuffix".take(300),
+                    notes = "Transfer $label → ${targetVehicle.name}$extraTag$noteSuffix".take(300),
                     remoteId = CloudSyncRepository.generateRemoteTxId()
                 )
                 val outId = txDao.insert(outEntity)
@@ -685,35 +717,41 @@ class InventoryRepository(
                     staffId = actor.id,
                     staffName = actor.displayName,
                     quantity = qty,
-                    notes = "Transfer $label ← ${sourceVehicle.name}$noteSuffix".take(300),
+                    notes = "Transfer $label ← ${sourceVehicle.name}$extraTag$noteSuffix".take(300),
                     remoteId = CloudSyncRepository.generateRemoteTxId()
                 )
                 val inId = txDao.insert(inEntity)
                 insertedEntities.add(inEntity.copy(id = inId))
             }
 
-            if (fullQuantity > 0) {
+            if (totalFull > 0) {
                 insertPair(
                     outType = TransactionType.VEHICLE_TRANSFER_FULL_OUT,
                     inType = TransactionType.VEHICLE_TRANSFER_FULL_IN,
                     label = "Full",
-                    qty = fullQuantity,
+                    qty = totalFull,
+                    extraTag = fullExtraSuffix,
                     offsetMs = 0L
                 )
             }
-            if (emptyQuantity > 0) {
+            if (totalEmpty > 0) {
                 insertPair(
                     outType = TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
                     inType = TransactionType.VEHICLE_TRANSFER_EMPTY_IN,
                     label = "Empty",
-                    qty = emptyQuantity,
+                    qty = totalEmpty,
+                    extraTag = emptyExtraSuffix,
                     offsetMs = 2L
                 )
             }
 
             val parts = buildList {
-                if (fullQuantity > 0) add("$fullQuantity Full")
-                if (emptyQuantity > 0) add("$emptyQuantity Empty")
+                if (totalFull > 0) {
+                    add(if (hasExtraFull) "$totalFull Full (+$extraFullQuantity Extra)" else "$totalFull Full")
+                }
+                if (totalEmpty > 0) {
+                    add(if (hasExtraEmpty) "$totalEmpty Empty (+$extraEmptyQuantity Extra)" else "$totalEmpty Empty")
+                }
             }.joinToString(" & ")
             summaryMessage = "Transferred $parts ${product.name}: ${sourceVehicle.name} → ${targetVehicle.name}."
             OperationResult.Success(summaryMessage)
@@ -732,6 +770,81 @@ class InventoryRepository(
         }
         return localResult
     }
+
+    fun observeAttendanceByDate(date: String): Flow<List<StaffAttendanceEntity>> =
+        attendanceDao.observeAttendanceByDate(date)
+
+    suspend fun getAttendanceForStaffAndDate(date: String, staffId: Long): StaffAttendanceEntity? =
+        attendanceDao.getForStaffAndDate(date, staffId)
+
+    suspend fun upsertStaffAttendance(entity: StaffAttendanceEntity): StaffAttendanceEntity {
+        val rowId = attendanceDao.upsert(entity)
+        val saved = entity.copy(id = if (entity.id > 0L) entity.id else rowId)
+        cloudSync?.upsertStaffAttendance(saved)
+        return saved
+    }
+
+    suspend fun getPendingStoreTransferById(id: Long): PendingStoreTransferEntity? =
+        pendingStoreTransferDao.getById(id)
+
+    suspend fun createPendingStoreTransfer(entity: PendingStoreTransferEntity): PendingStoreTransferEntity {
+        val rowId = pendingStoreTransferDao.upsert(entity)
+        val saved = entity.copy(id = rowId)
+        cloudSync?.createPendingStoreTransfer(saved)
+        return saved
+    }
+
+    suspend fun updatePendingStoreTransferStatus(
+        entity: PendingStoreTransferEntity,
+        newStatus: String,
+        reviewedAtMs: Long,
+        reviewedBy: String,
+        reviewNotes: String
+    ): PendingStoreTransferEntity {
+        pendingStoreTransferDao.updateStatus(
+            id = entity.id,
+            status = newStatus,
+            reviewedAtMs = reviewedAtMs,
+            reviewedBy = reviewedBy,
+            reviewNotes = reviewNotes
+        )
+        val updated = entity.copy(
+            status = newStatus,
+            reviewedAtMs = reviewedAtMs,
+            reviewedBy = reviewedBy,
+            reviewNotes = reviewNotes
+        )
+        cloudSync?.updatePendingStoreTransferStatus(updated)
+        return updated
+    }
+
+    suspend fun createAppNotification(entity: AppNotificationEntity): AppNotificationEntity {
+        val rowId = notificationDao.upsert(entity)
+        val saved = entity.copy(id = if (entity.id > 0L) entity.id else rowId)
+        cloudSync?.createAppNotification(saved)
+        return saved
+    }
+
+    suspend fun markNotificationRead(id: Long) {
+        notificationDao.markRead(id)
+    }
+
+    suspend fun markAllNotificationsRead() {
+        notificationDao.markAllRead()
+    }
+
+    suspend fun sendChatMessage(entity: ChatMessageEntity): ChatMessageEntity {
+        val rowId = chatMessageDao.insertIgnore(entity)
+        val saved = entity.copy(id = if (rowId > 0L) rowId else entity.id)
+        cloudSync?.createChatMessage(saved)
+        return saved
+    }
+
+    suspend fun getVehicleById(vehicleId: Long): VehicleEntity? =
+        vehicleDao.getVehicleById(vehicleId)
+
+    suspend fun getProductById(productId: Long): ProductEntity? =
+        productDao.getProductById(productId)
 
     /**
      * Admin-only: sets desired Opening Full & Opening Empty for Store or a Vehicle on [date],

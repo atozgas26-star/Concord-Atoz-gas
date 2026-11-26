@@ -829,3 +829,258 @@ test("Staff cannot modify staff_accounts PINs, opening stocks, or vehicles", asy
       })
   );
 });
+
+test("Duty attendance, pending store transfer approvals, bell notifications, team/admin chat, and typing status enforce role isolation", async () => {
+  const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
+  const staffDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
+  const outsiderDb = testEnv.authenticatedContext(OUTSIDER_UID).firestore();
+
+  await assertSucceeds(
+    staffDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      role: "STAFF",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
+      memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
+      lastJoinInviteCode: INVITE_CODE,
+      updatedAt: pastDate(1000),
+    })
+  );
+  const members = [ADMIN_UID, STAFF_NADEEM_UID];
+
+  // 1. Staff records daily duty attendance punch in/out
+  const attRef = staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("staff_attendance").doc("att_2026_11_26_2");
+  await assertSucceeds(
+    attRef.set({
+      attendanceId: "att_2026_11_26_2",
+      businessDate: "2026-11-26",
+      staffId: 2,
+      staffName: "Nadeem",
+      vehicleName: "NADEEM",
+      dutyStartMs: Date.now() - 3600000,
+      lunchOutMs: 0,
+      lunchInMs: 0,
+      dutyCloseMs: 0,
+      updatedAtMs: Date.now() - 500,
+      updatedByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    attRef.update({
+      lunchOutMs: Date.now() - 1000,
+      updatedAtMs: Date.now() - 200,
+      updatedByUid: STAFF_NADEEM_UID,
+      updatedAt: pastDate(200),
+    })
+  );
+  // Staff cannot delete attendance records; Admin can
+  await assertFails(attRef.delete());
+
+  // 2. Staff submits PENDING store-to-vehicle full request -> cannot self-approve -> Admin accepts
+  const reqId = "req_store_full_001";
+  const staffReqRef = staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("pending_store_transfers").doc(reqId);
+  const adminReqRef = adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("pending_store_transfers").doc(reqId);
+
+  // Staff cannot create pre-approved request
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("pending_store_transfers").doc("req_hack_approved").set({
+      requestId: "req_hack_approved",
+      businessDate: "2026-11-26",
+      direction: "STORE_TO_VEHICLE_FULL",
+      vehicleId: 1,
+      vehicleName: "NADEEM",
+      productId: 1,
+      productName: "Oxygen",
+      productCategory: "INDUSTRIAL_GAS",
+      quantity: 10,
+      staffId: 2,
+      staffName: "Nadeem",
+      notes: "",
+      status: "APPROVED",
+      requestedAtMs: Date.now() - 1000,
+      reviewedAtMs: 0,
+      reviewedBy: "",
+      reviewNotes: "",
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Staff creates valid PENDING request
+  await assertSucceeds(
+    staffReqRef.set({
+      requestId: reqId,
+      businessDate: "2026-11-26",
+      direction: "STORE_TO_VEHICLE_FULL",
+      vehicleId: 1,
+      vehicleName: "NADEEM",
+      productId: 1,
+      productName: "Oxygen",
+      productCategory: "INDUSTRIAL_GAS",
+      quantity: 10,
+      staffId: 2,
+      staffName: "Nadeem",
+      notes: "Morning load",
+      status: "PENDING",
+      requestedAtMs: Date.now() - 1000,
+      reviewedAtMs: 0,
+      reviewedBy: "",
+      reviewNotes: "",
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Staff CANNOT approve their own pending request
+  await assertFails(
+    staffReqRef.update({
+      status: "APPROVED",
+      reviewedAtMs: Date.now() - 100,
+      reviewedBy: "Nadeem",
+      reviewNotes: "Self approved",
+      updatedAt: pastDate(100),
+    })
+  );
+
+  // Admin CAN approve the pending request
+  await assertSucceeds(
+    adminReqRef.update({
+      status: "APPROVED",
+      reviewedAtMs: Date.now() - 100,
+      reviewedBy: "Ragavan",
+      reviewNotes: "Verified at store",
+      updatedAt: pastDate(100),
+    })
+  );
+
+  // 3. Universal Bell Notification (immutable once created)
+  const notifRef = staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("app_notifications").doc("notif_extra_001");
+  await assertSucceeds(
+    notifRef.set({
+      notifId: "notif_extra_001",
+      targetScope: "STAFF",
+      targetStaffId: 5,
+      category: "TRANSFER_EXTRA",
+      title: "Extra Cylinders Collected",
+      message: "NADEEM transferred 5 + Extra Full +3 to SIVAN",
+      isUrgent: true,
+      createdAtMs: Date.now() - 500,
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+    })
+  );
+  await assertFails(notifRef.update({ title: "Tampered" }));
+
+  // 4. Team & Admin-Owner Chat: Staff can post/read TEAM_CHAT but is strictly blocked from ADMIN_OWNER
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("chat_messages").doc("msg_team_001").set({
+      messageId: "msg_team_001",
+      channel: "TEAM_CHAT",
+      senderId: 2,
+      senderName: "Nadeem",
+      senderRole: "STAFF",
+      message: "On route to customer",
+      isImportant: false,
+      createdAtMs: Date.now() - 500,
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+    })
+  );
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("chat_messages").doc("msg_private_hack").set({
+      messageId: "msg_private_hack",
+      channel: "ADMIN_OWNER",
+      senderId: 2,
+      senderName: "Nadeem",
+      senderRole: "STAFF",
+      message: "Trying private channel",
+      isImportant: false,
+      createdAtMs: Date.now() - 500,
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("chat_messages").doc("msg_admin_owner_001").set({
+      messageId: "msg_admin_owner_001",
+      channel: "ADMIN_OWNER",
+      senderId: 1,
+      senderName: "Ragavan",
+      senderRole: "ADMIN",
+      message: "Private audit update for Owner",
+      isImportant: true,
+      createdAtMs: Date.now() - 400,
+      createdByUid: ADMIN_UID,
+      memberUids: members,
+      createdAt: ts,
+    })
+  );
+  // Staff cannot read ADMIN_OWNER message or list unfiltered chat_messages
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("chat_messages").doc("msg_admin_owner_001").get()
+  );
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("chat_messages")
+      .where("memberUids", "array-contains", STAFF_NADEEM_UID).get()
+  );
+  // Staff CAN list filtered TEAM_CHAT messages; Admin can list all
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("chat_messages")
+      .where("memberUids", "array-contains", STAFF_NADEEM_UID)
+      .where("channel", "==", "TEAM_CHAT")
+      .get()
+  );
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("chat_messages")
+      .where("memberUids", "array-contains", ADMIN_UID)
+      .get()
+  );
+
+  // 5. Typing status & outsider isolation
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("typing_status").doc(`typing_${STAFF_NADEEM_UID}`).set({
+      typingId: `typing_${STAFF_NADEEM_UID}`,
+      channel: "TEAM_CHAT",
+      senderName: "Nadeem",
+      senderRole: "STAFF",
+      isTyping: true,
+      updatedAtMs: Date.now() - 100,
+      updatedByUid: STAFF_NADEEM_UID,
+    })
+  );
+  await assertFails(
+    outsiderDb.collection("workspaces").doc(WORKSPACE_ID).collection("typing_status").doc(`typing_${STAFF_NADEEM_UID}`).get()
+  );
+  // Admin can archive STAFF_WORK_HOURS report
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_reports").doc("STAFF_WORK_HOURS_2026_11_26").set({
+      reportId: "STAFF_WORK_HOURS_2026_11_26",
+      reportType: "STAFF_WORK_HOURS",
+      reportTitle: "Daily Staff Work Hours Report",
+      subtitle: "Date: 2026-11-26 • Active Staff: 1",
+      businessDate: "2026-11-26",
+      yearMonth: "2026-11",
+      generatedBy: "Ragavan",
+      rowCount: 7,
+      summaryTotals: "TOTAL | 1 Punched | 9h 00m",
+      createdByUid: ADMIN_UID,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+});

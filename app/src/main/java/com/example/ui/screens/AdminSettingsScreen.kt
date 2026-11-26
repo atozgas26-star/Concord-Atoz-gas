@@ -935,7 +935,7 @@ fun AdminSettingsScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Preview 10s Launch Screen & Sound")
+                                Text("Preview 7s Launch Screen & Sound")
                             }
                         }
                     }

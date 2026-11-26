@@ -3,9 +3,13 @@ package com.example.data.remote
 import android.content.Context
 import androidx.room.withTransaction
 import com.example.R
+import com.example.data.local.AppNotificationEntity
+import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.OpeningStockEntity
+import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
@@ -84,6 +88,9 @@ class CloudSyncRepository(
 
     private val _staffLoginEvents = MutableStateFlow<List<CloudStaffLoginEvent>>(emptyList())
     val staffLoginEvents: StateFlow<List<CloudStaffLoginEvent>> = _staffLoginEvents.asStateFlow()
+
+    private val _typingStatuses = MutableStateFlow<List<CloudTypingStatus>>(emptyList())
+    val typingStatuses: StateFlow<List<CloudTypingStatus>> = _typingStatuses.asStateFlow()
 
     @Volatile
     private var activeWorkspaceId: String? = null
@@ -667,6 +674,126 @@ class CloudSyncRepository(
                                 }
                             }
                         }
+                    }
+            }
+
+            // Listener 7: Staff Daily Duty Attendance
+            launch {
+                val path = "${wsRef.path}/staff_attendance"
+                wsRef.collection("staff_attendance")
+                    .whereArrayContains("memberUids", uid)
+                    .snapshots()
+                    .map { snap -> snap.toObjects(CloudStaffAttendance::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+                    .catch { error -> logListenerErrorIfAuthenticated(error, uid, path) }
+                    .collectLatest { cloudRows ->
+                        if (cloudRows.isNotEmpty()) {
+                            localDb.withTransaction {
+                                cloudRows.forEach { row ->
+                                    val rId = row.attendanceId.ifBlank { row.id }
+                                    if (rId.isNotBlank()) {
+                                        val existing = localDb.staffAttendanceDao().getByRemoteId(rId)
+                                            ?: localDb.staffAttendanceDao().getForStaffAndDate(row.businessDate, row.staffId)
+                                        val entity = row.toEntity(existing?.id ?: 0L)
+                                        if (existing == null || entity.updatedAtMs >= existing.updatedAtMs) {
+                                            localDb.staffAttendanceDao().upsert(entity)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+
+            // Listener 8: Pending Store-to-Vehicle Full & Vehicle-to-Store Empty Approvals
+            launch {
+                val path = "${wsRef.path}/pending_store_transfers"
+                wsRef.collection("pending_store_transfers")
+                    .whereArrayContains("memberUids", uid)
+                    .snapshots()
+                    .map { snap -> snap.toObjects(CloudPendingStoreTransfer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+                    .catch { error -> logListenerErrorIfAuthenticated(error, uid, path) }
+                    .collectLatest { cloudRequests ->
+                        if (cloudRequests.isNotEmpty()) {
+                            localDb.withTransaction {
+                                cloudRequests.forEach { req ->
+                                    val rId = req.requestId.ifBlank { req.id }
+                                    if (rId.isNotBlank()) {
+                                        val existing = localDb.pendingStoreTransferDao().getByRemoteId(rId)
+                                        val entity = req.toEntity(existing?.id ?: 0L)
+                                        if (existing == null || existing != entity) {
+                                            localDb.pendingStoreTransferDao().upsert(entity)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+
+            // Listener 9: Universal App Bell Notifications
+            launch {
+                val path = "${wsRef.path}/app_notifications"
+                wsRef.collection("app_notifications")
+                    .whereArrayContains("memberUids", uid)
+                    .snapshots()
+                    .map { snap -> snap.toObjects(CloudAppNotification::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+                    .catch { error -> logListenerErrorIfAuthenticated(error, uid, path) }
+                    .collectLatest { cloudNotifs ->
+                        if (cloudNotifs.isNotEmpty()) {
+                            localDb.withTransaction {
+                                cloudNotifs.forEach { cn ->
+                                    val rId = cn.notifId.ifBlank { cn.id }
+                                    if (rId.isNotBlank()) {
+                                        val existing = localDb.appNotificationDao().getByRemoteId(rId)
+                                        if (existing == null) {
+                                            localDb.appNotificationDao().insertIgnore(cn.toEntity(0L, existingRead = false))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+
+            // Listener 10: Team & Admin-Owner Chat Messages
+            launch {
+                val path = "${wsRef.path}/chat_messages"
+                val baseQuery = wsRef.collection("chat_messages")
+                    .whereArrayContains("memberUids", uid)
+                val query = if (isPrivilegedAdmin) {
+                    baseQuery
+                } else {
+                    baseQuery.whereEqualTo("channel", "TEAM_CHAT")
+                }
+                query.snapshots()
+                    .map { snap -> snap.toObjects(CloudChatMessage::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+                    .catch { error -> logListenerErrorIfAuthenticated(error, uid, path) }
+                    .collectLatest { cloudMsgs ->
+                        if (cloudMsgs.isNotEmpty()) {
+                            localDb.withTransaction {
+                                cloudMsgs.forEach { cm ->
+                                    val rId = cm.messageId.ifBlank { cm.id }
+                                    if (rId.isNotBlank()) {
+                                        val existing = localDb.chatMessageDao().getByRemoteId(rId)
+                                        if (existing == null) {
+                                            localDb.chatMessageDao().insertIgnore(cm.toEntity())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+
+            // Listener 11: Live Chat Typing Statuses
+            launch {
+                val path = "${wsRef.path}/typing_status"
+                wsRef.collection("typing_status")
+                    .snapshots()
+                    .map { snap -> snap.toObjects(CloudTypingStatus::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+                    .catch { error -> logListenerErrorIfAuthenticated(error, uid, path) }
+                    .collectLatest { statuses ->
+                        _typingStatuses.value = statuses
                     }
             }
         }
@@ -1427,6 +1554,234 @@ class CloudSyncRepository(
         }
     }
 
+    suspend fun upsertStaffAttendance(entity: StaffAttendanceEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = entity.remoteId
+        val docPath = "workspaces/$wsId/staff_attendance/$docId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("staff_attendance").document(docId)
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "staffName" to entity.staffName.trim().take(100).ifBlank { "Staff" },
+                        "vehicleName" to entity.vehicleName.trim().take(64),
+                        "dutyStartMs" to entity.dutyStartMs.coerceAtLeast(0L),
+                        "lunchOutMs" to entity.lunchOutMs.coerceAtLeast(0L),
+                        "lunchInMs" to entity.lunchInMs.coerceAtLeast(0L),
+                        "dutyCloseMs" to entity.dutyCloseMs.coerceAtLeast(0L),
+                        "updatedAtMs" to entity.updatedAtMs.coerceAtLeast(1L),
+                        "updatedByUid" to uid,
+                        "memberUids" to members,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(
+                    mapOf(
+                        "attendanceId" to docId,
+                        "businessDate" to entity.businessDate,
+                        "staffId" to entity.staffId.coerceAtLeast(1L),
+                        "staffName" to entity.staffName.trim().take(100).ifBlank { "Staff" },
+                        "vehicleName" to entity.vehicleName.trim().take(64),
+                        "dutyStartMs" to entity.dutyStartMs.coerceAtLeast(0L),
+                        "lunchOutMs" to entity.lunchOutMs.coerceAtLeast(0L),
+                        "lunchInMs" to entity.lunchInMs.coerceAtLeast(0L),
+                        "dutyCloseMs" to entity.dutyCloseMs.coerceAtLeast(0L),
+                        "updatedAtMs" to entity.updatedAtMs.coerceAtLeast(1L),
+                        "updatedByUid" to uid,
+                        "memberUids" to members,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createPendingStoreTransfer(entity: PendingStoreTransferEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = entity.remoteId
+        val docPath = "workspaces/$wsId/pending_store_transfers/$docId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val payload = mapOf(
+                "requestId" to docId,
+                "businessDate" to entity.businessDate,
+                "direction" to entity.direction,
+                "vehicleId" to entity.vehicleId.coerceAtLeast(1L),
+                "vehicleName" to entity.vehicleName.trim().take(64).ifBlank { "Vehicle" },
+                "productId" to entity.productId.coerceAtLeast(1L),
+                "productName" to entity.productName.trim().take(100).ifBlank { "Cylinder" },
+                "productCategory" to entity.productCategory.trim().take(64),
+                "quantity" to entity.quantity.coerceIn(1, 100000),
+                "staffId" to entity.staffId.coerceAtLeast(1L),
+                "staffName" to entity.staffName.trim().take(100).ifBlank { "Staff" },
+                "notes" to entity.notes.trim().take(300),
+                "status" to "PENDING",
+                "requestedAtMs" to entity.requestedAtMs.coerceAtLeast(1L),
+                "reviewedAtMs" to 0L,
+                "reviewedBy" to "",
+                "reviewNotes" to "",
+                "createdByUid" to uid,
+                "memberUids" to members,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("workspaces").document(wsId)
+                .collection("pending_store_transfers").document(docId)
+                .set(payload)
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updatePendingStoreTransferStatus(entity: PendingStoreTransferEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = entity.remoteId
+        val docPath = "workspaces/$wsId/pending_store_transfers/$docId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("pending_store_transfers").document(docId)
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "status" to entity.status,
+                        "reviewedAtMs" to entity.reviewedAtMs.coerceAtLeast(0L),
+                        "reviewedBy" to entity.reviewedBy.trim().take(100),
+                        "reviewNotes" to entity.reviewNotes.trim().take(300),
+                        "memberUids" to members,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createAppNotification(entity: AppNotificationEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = entity.remoteId
+        val docPath = "workspaces/$wsId/app_notifications/$docId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val payload = mapOf(
+                "notifId" to docId,
+                "targetScope" to entity.targetScope,
+                "targetStaffId" to entity.targetStaffId.coerceAtLeast(0L),
+                "category" to entity.category,
+                "title" to entity.title.trim().take(160).ifBlank { "Alert" },
+                "message" to entity.message.trim().take(500).ifBlank { "Update" },
+                "isUrgent" to entity.isUrgent,
+                "createdAtMs" to entity.createdAtMs.coerceAtLeast(1L),
+                "createdByUid" to uid,
+                "memberUids" to members,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("workspaces").document(wsId)
+                .collection("app_notifications").document(docId)
+                .set(payload)
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createChatMessage(entity: ChatMessageEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = entity.remoteId
+        val docPath = "workspaces/$wsId/chat_messages/$docId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val payload = mapOf(
+                "messageId" to docId,
+                "channel" to entity.channel,
+                "senderId" to entity.senderId.coerceAtLeast(0L),
+                "senderName" to entity.senderName.trim().take(100).ifBlank { "Team" },
+                "senderRole" to entity.senderRole,
+                "message" to entity.message.trim().take(1000).ifBlank { "..." },
+                "isImportant" to entity.isImportant,
+                "createdAtMs" to entity.createdAtMs.coerceAtLeast(1L),
+                "createdByUid" to uid,
+                "memberUids" to members,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("workspaces").document(wsId)
+                .collection("chat_messages").document(docId)
+                .set(payload)
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setTypingStatus(
+        typingId: String,
+        channel: String,
+        senderName: String,
+        senderRole: String,
+        isTyping: Boolean
+    ): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val cleanId = typingId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(80)
+        val docPath = "workspaces/$wsId/typing_status/$cleanId"
+        return try {
+            val uid = requireUserId()
+            val payload = mapOf(
+                "typingId" to cleanId,
+                "channel" to channel,
+                "senderName" to senderName.trim().take(100).ifBlank { "Member" },
+                "senderRole" to senderRole,
+                "isTyping" to isTyping,
+                "updatedAtMs" to System.currentTimeMillis(),
+                "updatedByUid" to uid
+            )
+            db.collection("workspaces").document(wsId)
+                .collection("typing_status").document(cleanId)
+                .set(payload)
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
     fun stopSync() {
         activeSyncJob?.cancel()
         activeSyncJob = null
@@ -1436,6 +1791,7 @@ class CloudSyncRepository(
         _adminSettings.value = null
         _adminReports.value = emptyList()
         _staffLoginEvents.value = emptyList()
+        _typingStatuses.value = emptyList()
         _connectionState.value = WorkspaceConnectionState.Checking
     }
 
@@ -1450,5 +1806,8 @@ class CloudSyncRepository(
 
         fun generateRemoteTxId(): String =
             "tx_${System.currentTimeMillis()}_${UUID.randomUUID().toString().replace("-", "").take(8)}"
+
+        fun generateRemoteId(prefix: String): String =
+            "${prefix}_${System.currentTimeMillis()}_${UUID.randomUUID().toString().replace("-", "").take(8)}"
     }
 }

@@ -67,13 +67,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.ApprovalStatus
 import com.example.data.model.AutoLogoutMode
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.ProductCategory
 import com.example.data.model.StoreStockRow
+import com.example.data.model.StoreTransferDirection
 import com.example.data.model.TransactionDisplayItem
 import com.example.data.model.TransactionType
 import com.example.data.model.VehicleStockRow
@@ -83,8 +87,12 @@ import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
 import com.example.ui.components.CategoryFilterRow
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.HeaderBellIconButton
+import com.example.ui.components.HeaderChatIconButton
+import com.example.ui.components.HeaderUpdateIconButton
 import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.PendingCustomerCard
+import com.example.ui.components.StaffDutyAttendanceCard
 import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.VehicleTransferDialog
@@ -120,14 +128,24 @@ fun StaffDashboardScreen(
     onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
     onDateSelected: (String) -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
+    onSubmitStoreTransferRequest: (StoreTransferDirection, Long, Int, String) -> Unit = { _, _, _, _ -> },
     onTransferBetweenVehicles: (
         sourceVehicleId: Long,
         targetVehicleId: Long,
         productId: Long,
         fullQty: Int,
         emptyQty: Int,
+        extraFullQty: Int,
+        extraEmptyQty: Int,
         notes: String
-    ) -> Unit = { _, _, _, _, _, _ -> },
+    ) -> Unit = { _, _, _, _, _, _, _, _ -> },
+    todayAttendance: StaffAttendanceEntity? = null,
+    onPunchDutyStage: (String) -> Unit = {},
+    myStoreTransferRequests: List<PendingStoreTransferEntity> = emptyList(),
+    unreadNotificationCount: Int = 0,
+    unreadChatCount: Int = 0,
+    onOpenNotificationsBell: () -> Unit = {},
+    onOpenTeamChat: () -> Unit = {},
     appUpdateState: AppUpdateUiState = AppUpdateUiState(),
     onOpenAppUpdate: () -> Unit = {},
     onDismissAppUpdateBanner: () -> Unit = {},
@@ -207,16 +225,22 @@ fun StaffDashboardScreen(
                         Spacer(Modifier.width(4.dp))
                     }
                     val hasUpdate = appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE
-                    IconButton(
+                    HeaderBellIconButton(
+                        unreadCount = unreadNotificationCount,
+                        onClick = onOpenNotificationsBell,
+                        testTag = "staff_bell_notifications_button"
+                    )
+                    HeaderChatIconButton(
+                        unreadCount = unreadChatCount,
+                        onClick = onOpenTeamChat,
+                        testTag = "staff_team_chat_button"
+                    )
+                    HeaderUpdateIconButton(
+                        hasUpdate = hasUpdate,
+                        isChecking = appUpdateState.isChecking,
                         onClick = onOpenAppUpdate,
-                        modifier = Modifier.testTag("staff_app_update_button")
-                    ) {
-                        Icon(
-                            imageVector = if (hasUpdate) Icons.Default.NewReleases else Icons.Default.SystemUpdate,
-                            contentDescription = if (hasUpdate) "New App Version Available" else "Check App System Update",
-                            tint = if (hasUpdate) Color(0xFFFFD54F) else Color.White
-                        )
-                    }
+                        testTag = "staff_app_update_button"
+                    )
                     IconButton(
                         onClick = onToggleDarkMode,
                         modifier = Modifier.testTag("staff_dark_mode_toggle")
@@ -468,6 +492,69 @@ fun StaffDashboardScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        item(key = "staff_duty_card") {
+                            StaffDutyAttendanceCard(
+                                attendance = todayAttendance,
+                                selectedDate = selectedDate,
+                                onPunchStage = onPunchDutyStage
+                            )
+                        }
+                        val recentRequests = myStoreTransferRequests.take(3)
+                        if (recentRequests.isNotEmpty()) {
+                            item(key = "staff_store_requests") {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("staff_store_requests_card"),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "Store Transfer Admin Approvals",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        recentRequests.forEach { req ->
+                                            val isFull = req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name
+                                            val label = if (isFull) "Full from Store" else "Empty to Store"
+                                            val badgeColor = when (req.status) {
+                                                ApprovalStatus.APPROVED.name -> BrandGreenPrimary
+                                                ApprovalStatus.REJECTED.name -> BrandRedSecondary
+                                                else -> Color(0xFFD97706)
+                                            }
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${req.quantity} × ${req.productName} ($label)",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = badgeColor.copy(alpha = 0.14f)
+                                                ) {
+                                                    Text(
+                                                        text = req.status,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = badgeColor,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         items(filteredRows, key = { it.product.id }) { row ->
                             // Staff CANNOT change opening stock
                             VehicleProductRowCard(row = row, canEditOpening = false)
@@ -866,7 +953,14 @@ fun StaffDashboardScreen(
             },
             onDismiss = { activeTxType = null },
             onConfirm = { prodId, _, qty, notes, _, custName, empNow ->
-                onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes, custName, empNow)
+                when (type) {
+                    TransactionType.VEHICLE_FULL_RECEIVED ->
+                        onSubmitStoreTransferRequest(StoreTransferDirection.STORE_TO_VEHICLE_FULL, prodId, qty, notes)
+                    TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
+                        onSubmitStoreTransferRequest(StoreTransferDirection.VEHICLE_TO_STORE_EMPTY, prodId, qty, notes)
+                    else ->
+                        onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes, custName, empNow)
+                }
             }
         )
     }
@@ -878,13 +972,15 @@ fun StaffDashboardScreen(
             products = products,
             sourceVehicleRows = vehicleRows,
             onDismiss = { showVehicleTransferDialog = false },
-            onConfirmTransfer = { targetId, prodId, fullQty, emptyQty, notes ->
+            onConfirmTransfer = { targetId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes ->
                 onTransferBetweenVehicles(
                     assignedVehicle.id,
                     targetId,
                     prodId,
                     fullQty,
                     emptyQty,
+                    extraFullQty,
+                    extraEmptyQty,
                     notes
                 )
             }

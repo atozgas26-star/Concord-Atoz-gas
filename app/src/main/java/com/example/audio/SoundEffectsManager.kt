@@ -142,6 +142,36 @@ object SoundEffectsManager {
         }
     }
 
+    /**
+     * Distinct crisp double-ring bell reminder sound for urgent notifications,
+     * extra cylinder vehicle transfers, store approval requests, and important chat alerts.
+     */
+    fun playNotificationBell(enabled: Boolean) {
+        if (!enabled) return
+        scope.launch {
+            playChordSequence(
+                steps = listOf(
+                    ChordStep(listOf(1046.50, 1567.98, 2093.00), 170, harmonicRichness = 0.30, decayRate = 3.4),
+                    ChordStep(listOf(1318.51, 1975.53, 2637.02), 340, harmonicRichness = 0.32, decayRate = 2.4)
+                ),
+                volume = 0.28
+            )
+        }
+    }
+
+    fun playChatMessageTone(enabled: Boolean) {
+        if (!enabled) return
+        scope.launch {
+            playChordSequence(
+                steps = listOf(
+                    ChordStep(listOf(783.99, 1174.66), 75, harmonicRichness = 0.20, decayRate = 4.5),
+                    ChordStep(listOf(1046.50, 1567.98), 115, harmonicRichness = 0.22, decayRate = 3.8)
+                ),
+                volume = 0.20
+            )
+        }
+    }
+
     private fun playChordSequence(
         steps: List<ChordStep>,
         volume: Double,

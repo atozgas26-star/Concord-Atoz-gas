@@ -179,3 +179,84 @@ interface TransactionDao {
     @Query("DELETE FROM stock_transactions")
     suspend fun deleteAll()
 }
+
+@Dao
+interface StaffAttendanceDao {
+    @Query("SELECT * FROM staff_attendance ORDER BY businessDate DESC, staffName ASC")
+    fun observeAllAttendance(): Flow<List<StaffAttendanceEntity>>
+
+    @Query("SELECT * FROM staff_attendance WHERE businessDate = :businessDate ORDER BY staffName ASC")
+    fun observeAttendanceByDate(businessDate: String): Flow<List<StaffAttendanceEntity>>
+
+    @Query("SELECT * FROM staff_attendance WHERE businessDate = :businessDate AND staffId = :staffId LIMIT 1")
+    suspend fun getForStaffAndDate(businessDate: String, staffId: Long): StaffAttendanceEntity?
+
+    @Query("SELECT * FROM staff_attendance WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getByRemoteId(remoteId: String): StaffAttendanceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: StaffAttendanceEntity): Long
+
+    @Query("DELETE FROM staff_attendance")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface PendingStoreTransferDao {
+    @Query("SELECT * FROM pending_store_transfers ORDER BY requestedAtMs DESC")
+    fun observeAll(): Flow<List<PendingStoreTransferEntity>>
+
+    @Query("SELECT * FROM pending_store_transfers WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): PendingStoreTransferEntity?
+
+    @Query("SELECT * FROM pending_store_transfers WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getByRemoteId(remoteId: String): PendingStoreTransferEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PendingStoreTransferEntity): Long
+
+    @Query("UPDATE pending_store_transfers SET status = :status, reviewedAtMs = :reviewedAtMs, reviewedBy = :reviewedBy, reviewNotes = :reviewNotes WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, reviewedAtMs: Long, reviewedBy: String, reviewNotes: String)
+
+    @Query("DELETE FROM pending_store_transfers")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface AppNotificationDao {
+    @Query("SELECT * FROM app_notifications ORDER BY createdAtMs DESC LIMIT 120")
+    fun observeAll(): Flow<List<AppNotificationEntity>>
+
+    @Query("SELECT * FROM app_notifications WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getByRemoteId(remoteId: String): AppNotificationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(entity: AppNotificationEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AppNotificationEntity): Long
+
+    @Query("UPDATE app_notifications SET isRead = 1 WHERE id = :id")
+    suspend fun markRead(id: Long)
+
+    @Query("UPDATE app_notifications SET isRead = 1")
+    suspend fun markAllRead()
+
+    @Query("DELETE FROM app_notifications")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface ChatMessageDao {
+    @Query("SELECT * FROM chat_messages ORDER BY createdAtMs ASC LIMIT 300")
+    fun observeAll(): Flow<List<ChatMessageEntity>>
+
+    @Query("SELECT * FROM chat_messages WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getByRemoteId(remoteId: String): ChatMessageEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(entity: ChatMessageEntity): Long
+
+    @Query("DELETE FROM chat_messages")
+    suspend fun deleteAll()
+}

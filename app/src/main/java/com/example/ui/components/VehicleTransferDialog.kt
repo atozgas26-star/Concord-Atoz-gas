@@ -77,6 +77,8 @@ fun VehicleTransferDialog(
         productId: Long,
         fullQuantity: Int,
         emptyQuantity: Int,
+        extraFullQuantity: Int,
+        extraEmptyQuantity: Int,
         notes: String
     ) -> Unit
 ) {
@@ -90,6 +92,8 @@ fun VehicleTransferDialog(
     var productExpanded by remember { mutableStateOf(false) }
     var fullQtyText by remember { mutableStateOf("") }
     var emptyQtyText by remember { mutableStateOf("") }
+    var extraFullQtyText by remember { mutableStateOf("") }
+    var extraEmptyQtyText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
 
     val activeRow = remember(sourceVehicleRows, selectedProduct) {
@@ -100,9 +104,16 @@ fun VehicleTransferDialog(
 
     val fullQty = fullQtyText.toIntOrNull() ?: 0
     val emptyQty = emptyQtyText.toIntOrNull() ?: 0
-    val hasValidQty = (fullQty > 0 || emptyQty > 0) && fullQty >= 0 && emptyQty >= 0
-    val exceedsFull = fullQty > availableFull
-    val exceedsEmpty = emptyQty > availableEmpty
+    val extraFullQty = extraFullQtyText.toIntOrNull() ?: 0
+    val extraEmptyQty = extraEmptyQtyText.toIntOrNull() ?: 0
+    val totalFull = fullQty + extraFullQty
+    val totalEmpty = emptyQty + extraEmptyQty
+    val grandTotal = totalFull + totalEmpty
+    val hasExtra = extraFullQty > 0 || extraEmptyQty > 0
+
+    val hasValidQty = grandTotal > 0 && fullQty >= 0 && emptyQty >= 0 && extraFullQty >= 0 && extraEmptyQty >= 0
+    val exceedsFull = totalFull > availableFull
+    val exceedsEmpty = totalEmpty > availableEmpty
     val canSubmit = selectedTargetVehicle != null &&
         selectedProduct != null &&
         hasValidQty &&
@@ -300,7 +311,7 @@ fun VehicleTransferDialog(
                     }
                 }
 
-                // Full & Empty Quantity Inputs side-by-side
+                // Standard Full & Empty Quantity Inputs
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -357,38 +368,95 @@ fun VehicleTransferDialog(
                     )
                 }
 
-                // Live Preview
+                // Optional Extra Full & Extra Empty Collect (Auto-Summed)
+                Text(
+                    text = "Extra Cylinders Collected (Optional — Auto Sum)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = extraFullQtyText,
+                        onValueChange = { raw ->
+                            extraFullQtyText = raw.filter { it.isDigit() }.take(5)
+                        },
+                        label = { Text("+Extra Full") },
+                        placeholder = { Text("0") },
+                        isError = exceedsFull,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("transfer_extra_full_qty_input")
+                    )
+                    OutlinedTextField(
+                        value = extraEmptyQtyText,
+                        onValueChange = { raw ->
+                            extraEmptyQtyText = raw.filter { it.isDigit() }.take(5)
+                        },
+                        label = { Text("+Extra Empty") },
+                        placeholder = { Text("0") },
+                        isError = exceedsEmpty,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("transfer_extra_empty_qty_input")
+                    )
+                }
+
+                // Live Auto-Sum Preview + Auto Destination Staff Bell Alert Info
                 if (hasValidQty && selectedTargetVehicle != null && selectedProduct != null) {
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = if (hasExtra) BrandRedContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.fillMaxWidth()
+                        border = BorderStroke(
+                            1.dp,
+                            if (hasExtra) BrandRedSecondary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("transfer_auto_sum_preview")
                     ) {
                         Column(
                             modifier = Modifier.padding(10.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "${sourceVehicle.name} → ${selectedTargetVehicle!!.name}",
+                                text = "${sourceVehicle.name} → ${selectedTargetVehicle!!.name}  •  Auto-Sum Total: $grandTotal",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandGreenPrimary
+                                color = if (hasExtra) BrandRedSecondary else BrandGreenPrimary
                             )
-                            if (fullQty > 0) {
+                            if (totalFull > 0) {
+                                val fullDetail = if (extraFullQty > 0) "$fullQty + Extra $extraFullQty = $totalFull" else "$totalFull"
                                 Text(
-                                    text = "Full: $availableFull → ${availableFull - fullQty} (Target +$fullQty)",
+                                    text = "Full ($fullDetail): $availableFull → ${availableFull - totalFull} (Target +$totalFull)",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono
                                 )
                             }
-                            if (emptyQty > 0) {
+                            if (totalEmpty > 0) {
+                                val emptyDetail = if (extraEmptyQty > 0) "$emptyQty + Extra $extraEmptyQty = $totalEmpty" else "$totalEmpty"
                                 Text(
-                                    text = "Empty: $availableEmpty → ${availableEmpty - emptyQty} (Target +$emptyQty)",
+                                    text = "Empty ($emptyDetail): $availableEmpty → ${availableEmpty - totalEmpty} (Target +$totalEmpty)",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono
                                 )
                             }
+                            Text(
+                                text = if (hasExtra) {
+                                    "Bell Alert + Reminder Sound will notify ${selectedTargetVehicle!!.name} staff & Admin about extra cylinders."
+                                } else {
+                                    "Bell notification will alert ${selectedTargetVehicle!!.name} staff automatically."
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -397,7 +465,7 @@ fun VehicleTransferDialog(
                     value = notesText,
                     onValueChange = { notesText = it.take(180) },
                     label = { Text("Notes (Optional)") },
-                    placeholder = { Text("e.g. Route handoff / cylinder swap") },
+                    placeholder = { Text("e.g. Route handoff / extra cylinder collect") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -410,14 +478,22 @@ fun VehicleTransferDialog(
                 onClick = {
                     val target = selectedTargetVehicle ?: return@Button
                     val product = selectedProduct ?: return@Button
-                    onConfirmTransfer(target.id, product.id, fullQty, emptyQty, notesText.trim())
+                    onConfirmTransfer(
+                        target.id,
+                        product.id,
+                        fullQty,
+                        emptyQty,
+                        extraFullQty,
+                        extraEmptyQty,
+                        notesText.trim()
+                    )
                     onDismiss()
                 },
                 enabled = canSubmit,
                 colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
                 modifier = Modifier.testTag("confirm_vehicle_transfer_button")
             ) {
-                Text("Confirm Transfer")
+                Text(if (hasExtra) "Confirm (+Extra)" else "Confirm Transfer")
             }
         },
         dismissButton = {

@@ -82,14 +82,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.StockTransactionEntity
+import com.example.data.local.UserAccountEntity
+import com.example.data.local.VehicleEntity
 import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.StoreStockRow
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.SystemUpdate
 import com.example.notifications.StaffLoginNotificationItem
+import com.example.ui.components.AdminDailyWorkHoursCard
 import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
 import com.example.update.AppUpdateStatus
@@ -97,8 +102,12 @@ import com.example.update.AppUpdateUiState
 import com.example.ui.components.CurrentInventoryTotalsCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
+import com.example.ui.components.HeaderBellIconButton
+import com.example.ui.components.HeaderChatIconButton
+import com.example.ui.components.HeaderUpdateIconButton
 import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.PendingDeliveriesSummaryCard
+import com.example.ui.components.PendingStoreTransferCard
 import com.example.ui.components.RecentStoreActivityCard
 import com.example.ui.components.StockCalculatorDialog
 import com.example.ui.components.StockPill
@@ -144,6 +153,17 @@ fun AdminDashboardScreen(
     onOpenVehicles: () -> Unit,
     onOpenVehicleDetail: (Long) -> Unit,
     onOpenReports: () -> Unit,
+    onOpenWorkHoursReport: () -> Unit = onOpenReports,
+    users: List<UserAccountEntity> = emptyList(),
+    vehicles: List<VehicleEntity> = emptyList(),
+    todayAttendance: List<StaffAttendanceEntity> = emptyList(),
+    pendingStoreTransfers: List<PendingStoreTransferEntity> = emptyList(),
+    unreadNotificationCount: Int = 0,
+    unreadChatCount: Int = 0,
+    onOpenNotificationsBell: () -> Unit = {},
+    onOpenTeamChat: () -> Unit = {},
+    onApproveStoreTransfer: (Long) -> Unit = {},
+    onRejectStoreTransfer: (Long) -> Unit = {},
     onUpdateLowStockThreshold: (Int) -> Unit = {},
     onDismissLowStockAlert: () -> Unit = {},
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
@@ -164,16 +184,22 @@ fun AdminDashboardScreen(
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val hasUpdate = appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE
-                    IconButton(
+                    HeaderBellIconButton(
+                        unreadCount = unreadNotificationCount,
+                        onClick = onOpenNotificationsBell,
+                        testTag = "admin_bell_notifications_button"
+                    )
+                    HeaderChatIconButton(
+                        unreadCount = unreadChatCount,
+                        onClick = onOpenTeamChat,
+                        testTag = "admin_team_chat_button"
+                    )
+                    HeaderUpdateIconButton(
+                        hasUpdate = hasUpdate,
+                        isChecking = appUpdateState.isChecking,
                         onClick = onOpenAppUpdate,
-                        modifier = Modifier.testTag("admin_app_update_button")
-                    ) {
-                        Icon(
-                            imageVector = if (hasUpdate) Icons.Default.NewReleases else Icons.Default.SystemUpdate,
-                            contentDescription = if (hasUpdate) "New App Version Available" else "Check App System Update",
-                            tint = if (hasUpdate) Color(0xFFFFD54F) else Color.White
-                        )
-                    }
+                        testTag = "admin_app_update_button"
+                    )
                     IconButton(
                         onClick = onToggleDarkMode,
                         modifier = Modifier.testTag("admin_dark_mode_toggle")
@@ -393,6 +419,39 @@ fun AdminDashboardScreen(
                         onOpenStore = onOpenStore,
                         onConfigureThreshold = { if (!isReadOnly) showThresholdDialog = true },
                         onDismiss = onDismissLowStockAlert
+                    )
+                }
+            }
+
+            // Pending Store-to-Vehicle Full & Vehicle-to-Store Empty Approvals
+            if (pendingStoreTransfers.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Pending Store Cylinder Approvals (${pendingStoreTransfers.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandRedSecondary
+                    )
+                }
+                items(pendingStoreTransfers, key = { "dash_pending_${it.id}" }) { req ->
+                    PendingStoreTransferCard(
+                        request = req,
+                        canApprove = !isReadOnly,
+                        onApprove = { onApproveStoreTransfer(req.id) },
+                        onReject = { onRejectStoreTransfer(req.id) }
+                    )
+                }
+            }
+
+            // Admin & Owner-Only Daily Work Hours Card
+            if (users.isNotEmpty()) {
+                item {
+                    AdminDailyWorkHoursCard(
+                        selectedDate = selectedDate,
+                        users = users,
+                        vehicles = vehicles,
+                        attendanceList = todayAttendance,
+                        onOpenWorkHoursReport = onOpenWorkHoursReport
                     )
                 }
             }

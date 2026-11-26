@@ -70,6 +70,7 @@ import com.example.auth.GoogleAuthScreen
 import com.example.auth.authStateFlow
 import com.example.auth.signOutGoogle
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.ReportType
 import com.example.data.model.StockCalculator
 import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
@@ -77,8 +78,10 @@ import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.FloatingCalculatorIconButton
 import com.example.ui.components.InsufficientStockWarningDialog
+import com.example.ui.components.NotificationsBellDialog
 import com.example.ui.components.QuickCalculatorPopupDialog
 import com.example.ui.components.StartupSplashOverlay
+import com.example.ui.components.TeamChatDialog
 import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.AdminSettingsScreen
 import com.example.ui.screens.CompanyInventoryScreen
@@ -251,10 +254,48 @@ fun ConcordGasRootApp(
     val biometricAvailability by viewModel.biometricAvailability.collectAsStateWithLifecycle()
     val shouldAutoPromptBiometric by viewModel.shouldAutoPromptBiometric.collectAsStateWithLifecycle()
     val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+    val selectedDateAttendance by viewModel.selectedDateAttendance.collectAsStateWithLifecycle()
+    val myTodayAttendance by viewModel.myTodayAttendance.collectAsStateWithLifecycle()
+    val pendingStoreTransferRequests by viewModel.pendingStoreTransferRequests.collectAsStateWithLifecycle()
+    val myStoreTransferRequests by viewModel.myStoreTransferRequests.collectAsStateWithLifecycle()
+    val visibleNotifications by viewModel.visibleNotifications.collectAsStateWithLifecycle()
+    val unreadNotificationCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
+    val teamChatMessages by viewModel.teamChatMessages.collectAsStateWithLifecycle()
+    val adminOwnerChatMessages by viewModel.adminOwnerChatMessages.collectAsStateWithLifecycle()
+    val unreadChatCount by viewModel.unreadChatCount.collectAsStateWithLifecycle()
+    val activeTypingStatuses by viewModel.activeTypingStatuses.collectAsStateWithLifecycle()
+
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
+    var showNotificationsBell by rememberSaveable { mutableStateOf(false) }
+    var showTeamChat by rememberSaveable { mutableStateOf(false) }
+    var requestedReportType by rememberSaveable { mutableStateOf(ReportType.DAILY_STORE) }
     var checkedUpdateOnce by rememberSaveable { mutableStateOf(false) }
     var showQuickCalculator by rememberSaveable { mutableStateOf(false) }
     var promptedNotifPermission by rememberSaveable { mutableStateOf(false) }
+    var lastUnreadNotificationCount by remember { mutableStateOf(-1) }
+    var lastUnreadChatCount by remember { mutableStateOf(-1) }
+
+    LaunchedEffect(unreadNotificationCount, authSession != null) {
+        if (authSession == null) {
+            lastUnreadNotificationCount = -1
+        } else {
+            if (lastUnreadNotificationCount >= 0 && unreadNotificationCount > lastUnreadNotificationCount) {
+                SoundEffectsManager.playNotificationBell(soundEnabled)
+            }
+            lastUnreadNotificationCount = unreadNotificationCount
+        }
+    }
+
+    LaunchedEffect(unreadChatCount, showTeamChat, authSession != null) {
+        if (authSession == null) {
+            lastUnreadChatCount = -1
+        } else {
+            if (lastUnreadChatCount >= 0 && unreadChatCount > lastUnreadChatCount && !showTeamChat) {
+                SoundEffectsManager.playChatMessageTone(soundEnabled)
+            }
+            lastUnreadChatCount = unreadChatCount
+        }
+    }
 
     LaunchedEffect(authSession != null) {
         if (authSession != null && !checkedUpdateOnce) {
@@ -547,7 +588,33 @@ fun ConcordGasRootApp(
                                 emptyCollectedNow = empNow
                             )
                         },
-                        onTransferBetweenVehicles = viewModel::transferBetweenVehicles,
+                        onSubmitStoreTransferRequest = viewModel::submitStaffStoreTransferRequest,
+                        onTransferBetweenVehicles = { srcId, dstId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes ->
+                            viewModel.transferBetweenVehicles(
+                                sourceVehicleId = srcId,
+                                targetVehicleId = dstId,
+                                productId = prodId,
+                                fullQuantity = fullQty,
+                                emptyQuantity = emptyQty,
+                                notes = notes,
+                                extraFullQuantity = extraFullQty,
+                                extraEmptyQuantity = extraEmptyQty
+                            )
+                        },
+                        todayAttendance = myTodayAttendance,
+                        onPunchDutyStage = viewModel::punchStaffDuty,
+                        myStoreTransferRequests = myStoreTransferRequests,
+                        unreadNotificationCount = unreadNotificationCount,
+                        unreadChatCount = unreadChatCount,
+                        onOpenNotificationsBell = {
+                            SoundEffectsManager.playTapTick(soundEnabled)
+                            showNotificationsBell = true
+                        },
+                        onOpenTeamChat = {
+                            SoundEffectsManager.playTapTick(soundEnabled)
+                            viewModel.markChatRead()
+                            showTeamChat = true
+                        },
                         appUpdateState = appUpdateState,
                         onOpenAppUpdate = {
                             showAppUpdateDialog = true
@@ -685,7 +752,18 @@ fun ConcordGasRootApp(
                                             emptyCollectedNow = empNow
                                         )
                                     },
-                                    onTransferBetweenVehicles = viewModel::transferBetweenVehicles,
+                                    onTransferBetweenVehicles = { srcId, dstId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes ->
+                                        viewModel.transferBetweenVehicles(
+                                            sourceVehicleId = srcId,
+                                            targetVehicleId = dstId,
+                                            productId = prodId,
+                                            fullQuantity = fullQty,
+                                            emptyQuantity = emptyQty,
+                                            notes = notes,
+                                            extraFullQuantity = extraFullQty,
+                                            extraEmptyQuantity = extraEmptyQty
+                                        )
+                                    },
                                     onUpdateTransaction = viewModel::updateTransaction,
                                     onDeleteTransaction = viewModel::deleteTransaction,
                                     onUpdateVehicleOpening = { vId, pId, oldFull, oldEmpty ->
@@ -738,7 +816,31 @@ fun ConcordGasRootApp(
                                             currentTab = AdminNavTab.VEHICLES
                                             viewingVehicleDetail = true
                                         },
-                                        onOpenReports = { currentTab = AdminNavTab.REPORTS },
+                                        onOpenReports = {
+                                            requestedReportType = ReportType.DAILY_STORE
+                                            currentTab = AdminNavTab.REPORTS
+                                        },
+                                        onOpenWorkHoursReport = {
+                                            requestedReportType = ReportType.STAFF_WORK_HOURS
+                                            currentTab = AdminNavTab.REPORTS
+                                        },
+                                        users = users,
+                                        vehicles = vehicles,
+                                        todayAttendance = selectedDateAttendance,
+                                        pendingStoreTransfers = pendingStoreTransferRequests,
+                                        unreadNotificationCount = unreadNotificationCount,
+                                        unreadChatCount = unreadChatCount,
+                                        onOpenNotificationsBell = {
+                                            SoundEffectsManager.playTapTick(soundEnabled)
+                                            showNotificationsBell = true
+                                        },
+                                        onOpenTeamChat = {
+                                            SoundEffectsManager.playTapTick(soundEnabled)
+                                            viewModel.markChatRead()
+                                            showTeamChat = true
+                                        },
+                                        onApproveStoreTransfer = viewModel::approvePendingStoreTransfer,
+                                        onRejectStoreTransfer = viewModel::rejectPendingStoreTransfer,
                                         onUpdateLowStockThreshold = viewModel::updateLowStockThreshold,
                                         onDismissLowStockAlert = viewModel::dismissLowStockAlert,
                                         onUpdateTransaction = viewModel::updateTransaction,
@@ -799,6 +901,7 @@ fun ConcordGasRootApp(
                                         selectedVehicleId = selectedVehicleId,
                                         recentPurchaseCompanies = recentPurchaseCompanies,
                                         isReadOnly = isReadOnly,
+                                        initialReportType = requestedReportType,
                                         buildReportTable = viewModel::buildReportTable,
                                         onDateSelected = viewModel::setSelectedDate,
                                         onYearMonthSelected = viewModel::setSelectedYearMonth,
@@ -910,6 +1013,39 @@ fun ConcordGasRootApp(
             onCheckForUpdate = { viewModel.checkForAppUpdate(silent = false) },
             onDismiss = { showAppUpdateDialog = false },
             onMessage = viewModel::showMessage
+        )
+    }
+
+    if (showNotificationsBell && session != null) {
+        NotificationsBellDialog(
+            role = session.user.role,
+            notifications = visibleNotifications,
+            pendingTransfers = pendingStoreTransferRequests,
+            onMarkRead = viewModel::markNotificationRead,
+            onMarkAllRead = viewModel::markAllNotificationsRead,
+            onApproveTransfer = viewModel::approvePendingStoreTransfer,
+            onRejectTransfer = viewModel::rejectPendingStoreTransfer,
+            onOpenChat = {
+                viewModel.markChatRead()
+                showTeamChat = true
+            },
+            onDismiss = { showNotificationsBell = false }
+        )
+    }
+
+    if (showTeamChat && session != null) {
+        TeamChatDialog(
+            currentUserRole = session.user.role,
+            currentUserName = session.user.displayName,
+            teamMessages = teamChatMessages,
+            adminOwnerMessages = adminOwnerChatMessages,
+            activeTypingStatuses = activeTypingStatuses,
+            onSendMessage = { channel, text, important ->
+                viewModel.sendChatMessage(channel, text, important)
+            },
+            onTypingChanged = viewModel::updateTypingStatus,
+            onMarkChatRead = viewModel::markChatRead,
+            onDismiss = { showTeamChat = false }
         )
     }
 

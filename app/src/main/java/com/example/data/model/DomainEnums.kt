@@ -64,7 +64,39 @@ enum class ReportType(val title: String, val subtitle: String) {
     STAFF_WISE_SALES("Staff-Wise Sales", "Performance & balances by staff/vehicle"),
     FULL_EMPTY_STOCK("Full & Empty Stock", "Combined Store + Vehicles inventory balance"),
     PURCHASE_REGISTER("Purchase Register", "Daily & monthly supplier entry log & complaint replacements"),
-    CUSTOMER_PENDING("Customer Pending Empty", "Customer-wise full sold, empty collected & pending balance")
+    CUSTOMER_PENDING("Customer Pending Empty", "Customer-wise full sold, empty collected & pending balance"),
+    STAFF_WORK_HOURS("Staff Work Hours", "Daily punch in, lunch break, duty close & net hours (Admin/Owner)")
+}
+
+enum class StoreTransferDirection(val label: String) {
+    STORE_TO_VEHICLE_FULL("Full Received (Store → Vehicle)"),
+    VEHICLE_TO_STORE_EMPTY("Empty Return (Vehicle → Store)")
+}
+
+enum class ApprovalStatus(val label: String) {
+    PENDING("Pending Admin Check"),
+    APPROVED("Accepted by Admin"),
+    REJECTED("Rejected by Admin")
+}
+
+enum class NotificationCategory(val label: String) {
+    TRANSFER_EXTRA("Vehicle Transfer"),
+    STORE_APPROVAL("Store Approval"),
+    ATTENDANCE("Staff Duty"),
+    CHAT_IMPORTANT("Important Message"),
+    SYSTEM_UPDATE("App Update"),
+    INFO("Information")
+}
+
+enum class NotificationTargetScope {
+    ALL,
+    ADMIN_OWNER,
+    STAFF
+}
+
+enum class ChatChannel(val label: String) {
+    TEAM_CHAT("Team & Staff Chat"),
+    ADMIN_OWNER("Admin & Owner Direct")
 }
 
 enum class ThemePreset(val title: String, val subtitle: String) {

@@ -235,8 +235,10 @@ fun VehicleDetailScreen(
         productId: Long,
         fullQty: Int,
         emptyQty: Int,
+        extraFullQty: Int,
+        extraEmptyQty: Int,
         notes: String
-    ) -> Unit = { _, _, _, _, _, _ -> },
+    ) -> Unit = { _, _, _, _, _, _, _, _ -> },
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onDeleteTransaction: (Long) -> Unit = {},
     onUpdateVehicleOpening: (vehicleId: Long, productId: Long, oldFull: Int, oldEmpty: Int) -> Unit
@@ -638,8 +640,8 @@ fun VehicleDetailScreen(
             products = products,
             sourceVehicleRows = rows,
             onDismiss = { showVehicleTransferDialog = false },
-            onConfirmTransfer = { targetId, prodId, fullQty, emptyQty, notes ->
-                onTransferBetweenVehicles(vehicle.id, targetId, prodId, fullQty, emptyQty, notes)
+            onConfirmTransfer = { targetId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes ->
+                onTransferBetweenVehicles(vehicle.id, targetId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes)
             }
         )
     }

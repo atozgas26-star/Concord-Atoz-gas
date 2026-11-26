@@ -352,3 +352,161 @@ data class CloudStaffLoginEvent(
     val loginByUid: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null
 )
+
+@Keep
+@IgnoreExtraProperties
+data class CloudStaffAttendance(
+    @DocumentId val id: String = "",
+    val attendanceId: String = "",
+    val businessDate: String = "",
+    val staffId: Long = 0L,
+    val staffName: String = "",
+    val vehicleName: String = "",
+    val dutyStartMs: Long = 0L,
+    val lunchOutMs: Long = 0L,
+    val lunchInMs: Long = 0L,
+    val dutyCloseMs: Long = 0L,
+    val updatedAtMs: Long = 0L,
+    val updatedByUid: String = "",
+    val memberUids: List<String> = emptyList(),
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun toEntity(existingId: Long = 0L): com.example.data.local.StaffAttendanceEntity =
+        com.example.data.local.StaffAttendanceEntity(
+            id = existingId,
+            remoteId = attendanceId.ifBlank { id },
+            businessDate = businessDate,
+            staffId = staffId,
+            staffName = staffName,
+            vehicleName = vehicleName,
+            dutyStartMs = dutyStartMs,
+            lunchOutMs = lunchOutMs,
+            lunchInMs = lunchInMs,
+            dutyCloseMs = dutyCloseMs,
+            updatedAtMs = updatedAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+        )
+}
+
+@Keep
+@IgnoreExtraProperties
+data class CloudPendingStoreTransfer(
+    @DocumentId val id: String = "",
+    val requestId: String = "",
+    val businessDate: String = "",
+    val direction: String = "",
+    val vehicleId: Long = 0L,
+    val vehicleName: String = "",
+    val productId: Long = 0L,
+    val productName: String = "",
+    val productCategory: String = "",
+    val quantity: Int = 0,
+    val staffId: Long = 0L,
+    val staffName: String = "",
+    val notes: String = "",
+    val status: String = "PENDING",
+    val requestedAtMs: Long = 0L,
+    val reviewedAtMs: Long = 0L,
+    val reviewedBy: String = "",
+    val reviewNotes: String = "",
+    val createdByUid: String = "",
+    val memberUids: List<String> = emptyList(),
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun toEntity(existingId: Long = 0L): com.example.data.local.PendingStoreTransferEntity =
+        com.example.data.local.PendingStoreTransferEntity(
+            id = existingId,
+            remoteId = requestId.ifBlank { id },
+            businessDate = businessDate,
+            direction = direction,
+            vehicleId = vehicleId,
+            vehicleName = vehicleName,
+            productId = productId,
+            productName = productName,
+            productCategory = productCategory,
+            quantity = quantity,
+            staffId = staffId,
+            staffName = staffName,
+            notes = notes,
+            status = status,
+            requestedAtMs = requestedAtMs.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            reviewedAtMs = reviewedAtMs,
+            reviewedBy = reviewedBy,
+            reviewNotes = reviewNotes
+        )
+}
+
+@Keep
+@IgnoreExtraProperties
+data class CloudAppNotification(
+    @DocumentId val id: String = "",
+    val notifId: String = "",
+    val targetScope: String = "ALL",
+    val targetStaffId: Long = 0L,
+    val category: String = "INFO",
+    val title: String = "",
+    val message: String = "",
+    val isUrgent: Boolean = false,
+    val createdAtMs: Long = 0L,
+    val createdByUid: String = "",
+    val memberUids: List<String> = emptyList(),
+    @ServerTimestamp val createdAt: Timestamp? = null
+) {
+    fun toEntity(existingId: Long = 0L, existingRead: Boolean = false): com.example.data.local.AppNotificationEntity =
+        com.example.data.local.AppNotificationEntity(
+            id = existingId,
+            remoteId = notifId.ifBlank { id },
+            targetScope = targetScope,
+            targetStaffId = targetStaffId,
+            category = category,
+            title = title,
+            message = message,
+            isUrgent = isUrgent,
+            isRead = existingRead,
+            createdAtMs = createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+        )
+}
+
+@Keep
+@IgnoreExtraProperties
+data class CloudChatMessage(
+    @DocumentId val id: String = "",
+    val messageId: String = "",
+    val channel: String = "TEAM_CHAT",
+    val senderId: Long = 0L,
+    val senderName: String = "",
+    val senderRole: String = "STAFF",
+    val message: String = "",
+    val isImportant: Boolean = false,
+    val createdAtMs: Long = 0L,
+    val createdByUid: String = "",
+    val memberUids: List<String> = emptyList(),
+    @ServerTimestamp val createdAt: Timestamp? = null
+) {
+    fun toEntity(): com.example.data.local.ChatMessageEntity =
+        com.example.data.local.ChatMessageEntity(
+            id = 0L,
+            remoteId = messageId.ifBlank { id },
+            channel = channel,
+            senderId = senderId,
+            senderName = senderName,
+            senderRole = senderRole,
+            message = message,
+            isImportant = isImportant,
+            createdAtMs = createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+        )
+}
+
+@Keep
+@IgnoreExtraProperties
+data class CloudTypingStatus(
+    @DocumentId val id: String = "",
+    val typingId: String = "",
+    val channel: String = "TEAM_CHAT",
+    val senderName: String = "",
+    val senderRole: String = "STAFF",
+    val isTyping: Boolean = false,
+    val updatedAtMs: Long = 0L,
+    val updatedByUid: String = ""
+)

@@ -81,11 +81,11 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-const val STARTUP_LAUNCH_DURATION_SECONDS = 10f
+const val STARTUP_LAUNCH_DURATION_SECONDS = 7f
 
 /**
- * Choreographed 10-second cinematic app-open launch screen for Concord & Atoz Gas Trading LLC.
- * Harmonizes with the red C&A cylinder emblem with repeating ignition ripples, dual orbital
+ * Choreographed 7-second cinematic app-open launch screen for Concord & Atoz Gas Trading LLC.
+ * Harmonizes with the Red & Blue C&A cylinder emblem with repeating ignition ripples, dual orbital
  * pressure rings, metallic light shimmer sweeps, animated audio equalizer bars, rotating
  * system-ready phases, and smooth exit fade (with instant skip option).
  */
@@ -226,23 +226,24 @@ fun StartupSplashOverlay(
             footerAlpha.animateTo(1f, tween(durationMillis = 480))
         }
 
-        // Overall 10-second launch progression (9.7s progress + 0.3s smooth exit = 10.0s)
+        // Overall 7-second launch progression (6.7s progress + 0.3s smooth exit = 7.0s)
         launchProgress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 9700, easing = LinearEasing)
+            animationSpec = tween(durationMillis = 6700, easing = LinearEasing)
         )
         triggerSmoothExit()
     }
 
     val crimsonPrimary = Color(0xFFB31B1A)
     val crimsonBright = Color(0xFFFF4D4D)
+    val royalBlue = Color(0xFF1E88E5)
     val goldAccent = Color(0xFFF6C667)
     val warmEmber = Color(0xFFFF8A4C)
 
     val phaseMessage = when {
         launchProgress.value < 0.25f -> "Igniting C&A Gas Fleet System..."
-        launchProgress.value < 0.50f -> "Syncing Store & Vehicle Cylinders..."
-        launchProgress.value < 0.75f -> "Loading Live Sales & Purchase Reports..."
+        launchProgress.value < 0.50f -> "Syncing Store, Vehicles & Duty Punches..."
+        launchProgress.value < 0.75f -> "Loading Live Alerts, Chat & Reports..."
         else -> "Ready • Concord & Atoz Gas Trading LLC"
     }
 
@@ -257,10 +258,10 @@ fun StartupSplashOverlay(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF190405),
-                        Color(0xFF5A0D0E),
-                        Color(0xFF140405),
-                        Color(0xFF2D0708)
+                        Color(0xFF061A42),
+                        Color(0xFF092C6C),
+                        Color(0xFF3E0B14),
+                        Color(0xFF150610)
                     )
                 )
             )
@@ -276,7 +277,7 @@ fun StartupSplashOverlay(
                 .alpha(0.14f)
         )
 
-        // Atmospheric radial crimson-gold spotlight behind the animated logo
+        // Atmospheric radial red-and-blue spotlight behind the animated logo
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width * 0.5f, size.height * 0.43f)
             val maxRadius = size.minDimension * 0.62f * glowPulse
@@ -284,7 +285,7 @@ fun StartupSplashOverlay(
                 brush = Brush.radialGradient(
                     colors = listOf(
                         crimsonBright.copy(alpha = 0.28f),
-                        goldAccent.copy(alpha = 0.11f),
+                        royalBlue.copy(alpha = 0.22f),
                         Color.Transparent
                     ),
                     center = center,
@@ -478,17 +479,17 @@ fun StartupSplashOverlay(
                         }
                     }
 
-                    // Circular Crimson Emblem Medallion with Shimmer Sweep
+                    // Circular Red & Blue Emblem Medallion with Shimmer Sweep
                     Surface(
                         shape = CircleShape,
-                        color = crimsonPrimary,
+                        color = Color(0xFF092C6C),
                         border = BorderStroke(
                             width = 2.8.dp,
                             brush = Brush.linearGradient(
                                 listOf(
-                                    goldAccent.copy(alpha = 0.95f),
+                                    crimsonBright.copy(alpha = 0.95f),
                                     Color.White.copy(alpha = 0.85f),
-                                    crimsonBright.copy(alpha = 0.9f)
+                                    royalBlue.copy(alpha = 0.95f)
                                 )
                             )
                         ),

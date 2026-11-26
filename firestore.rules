@@ -266,7 +266,8 @@ service cloud.firestore {
                'STAFF_WISE_SALES',
                'FULL_EMPTY_STOCK',
                'PURCHASE_REGISTER',
-               'CUSTOMER_PENDING'
+               'CUSTOMER_PENDING',
+               'STAFF_WORK_HOURS'
              ] &&
              data.reportTitle is string && data.reportTitle.size() >= 1 && data.reportTitle.size() <= 160 &&
              data.subtitle is string && data.subtitle.size() <= 300 &&
@@ -279,6 +280,90 @@ service cloud.firestore {
              data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStaffAttendance(data, attendanceId) {
+      return data.attendanceId == attendanceId &&
+             data.attendanceId is string && isValidId(data.attendanceId) &&
+             data.businessDate is string && data.businessDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.staffId is int && data.staffId >= 1 &&
+             data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
+             data.vehicleName is string && data.vehicleName.size() <= 64 &&
+             data.dutyStartMs is int && data.dutyStartMs >= 0 &&
+             data.lunchOutMs is int && data.lunchOutMs >= 0 &&
+             data.lunchInMs is int && data.lunchInMs >= 0 &&
+             data.dutyCloseMs is int && data.dutyCloseMs >= 0 &&
+             data.updatedAtMs is int && data.updatedAtMs > 0 &&
+             data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
+             isValidMemberUids(data.memberUids) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPendingStoreTransfer(data, requestId) {
+      return data.requestId == requestId &&
+             data.requestId is string && isValidId(data.requestId) &&
+             data.businessDate is string && data.businessDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.direction in ['STORE_TO_VEHICLE_FULL', 'VEHICLE_TO_STORE_EMPTY'] &&
+             data.vehicleId is int && data.vehicleId >= 1 &&
+             data.vehicleName is string && data.vehicleName.size() >= 1 && data.vehicleName.size() <= 64 &&
+             data.productId is int && data.productId >= 1 &&
+             data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 100 &&
+             data.productCategory is string && data.productCategory.size() <= 64 &&
+             data.quantity is int && data.quantity > 0 && data.quantity <= 100000 &&
+             data.staffId is int && data.staffId >= 1 &&
+             data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
+             data.notes is string && data.notes.size() <= 300 &&
+             data.status in ['PENDING', 'APPROVED', 'REJECTED'] &&
+             data.requestedAtMs is int && data.requestedAtMs > 0 &&
+             data.reviewedAtMs is int && data.reviewedAtMs >= 0 &&
+             data.reviewedBy is string && data.reviewedBy.size() <= 100 &&
+             data.reviewNotes is string && data.reviewNotes.size() <= 300 &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             isValidMemberUids(data.memberUids) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAppNotification(data, notifId) {
+      return data.notifId == notifId &&
+             data.notifId is string && isValidId(data.notifId) &&
+             data.targetScope in ['ALL', 'ADMIN_OWNER', 'STAFF'] &&
+             data.targetStaffId is int && data.targetStaffId >= 0 &&
+             data.category in ['TRANSFER_EXTRA', 'STORE_APPROVAL', 'ATTENDANCE', 'CHAT_IMPORTANT', 'SYSTEM_UPDATE', 'INFO'] &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 500 &&
+             data.isUrgent is bool &&
+             data.createdAtMs is int && data.createdAtMs > 0 &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             isValidMemberUids(data.memberUids) &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidChatMessage(data, messageId) {
+      return data.messageId == messageId &&
+             data.messageId is string && isValidId(data.messageId) &&
+             data.channel in ['TEAM_CHAT', 'ADMIN_OWNER'] &&
+             data.senderId is int && data.senderId >= 0 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+             data.senderRole in ['ADMIN', 'OWNER_VIEW', 'STAFF'] &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 1000 &&
+             data.isImportant is bool &&
+             data.createdAtMs is int && data.createdAtMs > 0 &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             isValidMemberUids(data.memberUids) &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidTypingStatus(data, typingId) {
+      return data.typingId == typingId &&
+             data.typingId is string && isValidId(data.typingId) &&
+             data.channel in ['TEAM_CHAT', 'ADMIN_OWNER'] &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+             data.senderRole in ['ADMIN', 'OWNER_VIEW', 'STAFF'] &&
+             data.isTyping is bool &&
+             data.updatedAtMs is int && data.updatedAtMs > 0 &&
+             data.updatedByUid == request.auth.uid;
     }
 
     // --- COLLECTION RULES ---
@@ -627,6 +712,127 @@ service cloud.firestore {
 
         allow update: if false;
         allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(eventId);
+      }
+
+      // --- 3I. Staff Daily Duty Attendance (Punch In / Lunch Out / Break In / Duty Close) ---
+      match /staff_attendance/{attendanceId} {
+        allow get: if isSignedIn() && isValidId(attendanceId) &&
+                      (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(attendanceId) &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['attendanceId', 'businessDate', 'staffId', 'staffName', 'vehicleName', 'dutyStartMs', 'lunchOutMs', 'lunchInMs', 'dutyCloseMs', 'updatedAtMs', 'updatedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['attendanceId', 'businessDate', 'staffId', 'staffName', 'vehicleName', 'dutyStartMs', 'lunchOutMs', 'lunchInMs', 'dutyCloseMs', 'updatedAtMs', 'updatedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidStaffAttendance(incoming(), attendanceId);
+
+        allow update: if isWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(attendanceId) &&
+                         incoming().attendanceId == existing().attendanceId &&
+                         incoming().businessDate == existing().businessDate &&
+                         incoming().staffId == existing().staffId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         isValidStaffAttendance(incoming(), attendanceId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['staffName', 'vehicleName', 'dutyStartMs', 'lunchOutMs', 'lunchInMs', 'dutyCloseMs', 'updatedAtMs', 'updatedByUid', 'memberUids', 'updatedAt']);
+
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(attendanceId);
+      }
+
+      // --- 3J. Pending Store-to-Vehicle Full & Vehicle-to-Store Empty Approvals ---
+      match /pending_store_transfers/{requestId} {
+        allow get: if isSignedIn() && isValidId(requestId) &&
+                      (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(requestId) &&
+                         incoming().createdByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().status == 'PENDING' &&
+                         incoming().reviewedAtMs == 0 &&
+                         incoming().keys().hasAll(['requestId', 'businessDate', 'direction', 'vehicleId', 'vehicleName', 'productId', 'productName', 'productCategory', 'quantity', 'staffId', 'staffName', 'notes', 'status', 'requestedAtMs', 'reviewedAtMs', 'reviewedBy', 'reviewNotes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['requestId', 'businessDate', 'direction', 'vehicleId', 'vehicleName', 'productId', 'productName', 'productCategory', 'quantity', 'staffId', 'staffName', 'notes', 'status', 'requestedAtMs', 'reviewedAtMs', 'reviewedBy', 'reviewNotes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidPendingStoreTransfer(incoming(), requestId);
+
+        // ONLY Workspace Admin can approve or reject staff store cylinder entries
+        allow update: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(requestId) &&
+                         incoming().requestId == existing().requestId &&
+                         incoming().businessDate == existing().businessDate &&
+                         incoming().direction == existing().direction &&
+                         incoming().vehicleId == existing().vehicleId &&
+                         incoming().productId == existing().productId &&
+                         incoming().quantity == existing().quantity &&
+                         incoming().staffId == existing().staffId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidPendingStoreTransfer(incoming(), requestId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewedAtMs', 'reviewedBy', 'reviewNotes', 'memberUids', 'updatedAt']);
+
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(requestId);
+      }
+
+      // --- 3K. Universal App Bell Notifications (Transfers, Approvals, Updates, Chat Alerts) ---
+      match /app_notifications/{notifId} {
+        allow get: if isSignedIn() && isValidId(notifId) &&
+                      (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(notifId) &&
+                         incoming().createdByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['notifId', 'targetScope', 'targetStaffId', 'category', 'title', 'message', 'isUrgent', 'createdAtMs', 'createdByUid', 'memberUids', 'createdAt']) &&
+                         incoming().keys().hasOnly(['notifId', 'targetScope', 'targetStaffId', 'category', 'title', 'message', 'isUrgent', 'createdAtMs', 'createdByUid', 'memberUids', 'createdAt']) &&
+                         isValidAppNotification(incoming(), notifId);
+
+        allow update: if false;
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(notifId);
+      }
+
+      // --- 3L. Team & Admin-Owner Chat Messages (With Important Flag) ---
+      match /chat_messages/{messageId} {
+        allow get: if isSignedIn() && isValidId(messageId) &&
+                      (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId)) &&
+                      (existing().channel == 'TEAM_CHAT' || isWorkspaceAdmin(workspaceId));
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids &&
+                       (resource.data.channel == 'TEAM_CHAT' || isWorkspaceAdmin(workspaceId));
+
+        allow create: if isWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(messageId) &&
+                         incoming().createdByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         (incoming().channel == 'TEAM_CHAT' || isWorkspaceAdmin(workspaceId)) &&
+                         incoming().keys().hasAll(['messageId', 'channel', 'senderId', 'senderName', 'senderRole', 'message', 'isImportant', 'createdAtMs', 'createdByUid', 'memberUids', 'createdAt']) &&
+                         incoming().keys().hasOnly(['messageId', 'channel', 'senderId', 'senderName', 'senderRole', 'message', 'isImportant', 'createdAtMs', 'createdByUid', 'memberUids', 'createdAt']) &&
+                         isValidChatMessage(incoming(), messageId);
+
+        allow update: if false;
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(messageId);
+      }
+
+      // --- 3M. Live Chat Typing Indicators ---
+      match /typing_status/{typingId} {
+        allow get: if isWorkspaceMember(workspaceId) && isValidId(typingId);
+        allow list: if isWorkspaceMember(workspaceId);
+
+        allow create, update: if isWorkspaceMember(workspaceId) &&
+                                 isValidId(workspaceId) &&
+                                 isValidId(typingId) &&
+                                 incoming().keys().hasAll(['typingId', 'channel', 'senderName', 'senderRole', 'isTyping', 'updatedAtMs', 'updatedByUid']) &&
+                                 incoming().keys().hasOnly(['typingId', 'channel', 'senderName', 'senderRole', 'isTyping', 'updatedAtMs', 'updatedByUid']) &&
+                                 isValidTypingStatus(incoming(), typingId);
+
+        allow delete: if isWorkspaceMember(workspaceId) && isValidId(typingId);
       }
     }
   }
