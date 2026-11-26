@@ -48,9 +48,11 @@ import com.example.data.model.ProductCategory
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.InsideOutsideScopeToggle
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
 import com.example.ui.components.StockZoneScope
@@ -244,7 +246,38 @@ fun CompanyInventoryScreen(
                 )
             }
 
-            items(filteredRows, key = { it.product.id }) { row ->
+            val showProducts = selectedCategory != null || searchQuery.isNotBlank()
+            if (!showProducts) {
+                item(key = "inv_closed_folder_prompt") {
+                    ClosedFolderPromptCard(
+                        title = "Company Products Inside Folders",
+                        subtitle = "Tap any category folder above to open Inside Store & Outside Fleet products, or search by cylinder name.",
+                        accentColor = activeZone.accentColor
+                    )
+                }
+            } else {
+                selectedCategory?.let { openCat ->
+                    item(key = "inv_opened_folder_header_${openCat.name}") {
+                        OpenedCategoryFolderHeader(
+                            category = openCat,
+                            itemCount = filteredRows.size,
+                            subtitle = (if (activeZone == StockZoneScope.INSIDE_STORE) "Inside Store" else "Outside Fleet") +
+                                " • ${filteredRows.size} products inside folder",
+                            onClose = { selectedCategory = null }
+                        )
+                    }
+                }
+                if (filteredRows.isEmpty()) {
+                    item(key = "inv_empty_search_notice") {
+                        Text(
+                            text = "No matching products found.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                } else {
+                    items(filteredRows, key = { it.product.id }) { row ->
                 val catStyle = categoryVisualStyle(row.product.category)
                 val primaryFull = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeFull else row.vehiclesFull
                 val primaryEmpty = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeEmpty else row.vehiclesEmpty
@@ -343,6 +376,8 @@ fun CompanyInventoryScreen(
                             }
                         }
                     }
+                }
+            }
                 }
             }
         }

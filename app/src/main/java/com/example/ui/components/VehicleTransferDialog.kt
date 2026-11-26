@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CompareArrows
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.ProductCategory
 import com.example.data.model.VehicleStockRow
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
@@ -88,7 +90,11 @@ fun VehicleTransferDialog(
     var selectedTargetVehicle by remember(destinationVehicles) {
         mutableStateOf(destinationVehicles.firstOrNull())
     }
-    var selectedProduct by remember(products) { mutableStateOf(products.firstOrNull()) }
+    var selectedCategory by remember { mutableStateOf(ProductCategory.INDUSTRIAL_GAS) }
+    val categoryProducts = remember(products, selectedCategory) {
+        products.filter { it.category == selectedCategory }
+    }
+    var selectedProduct by remember(categoryProducts) { mutableStateOf(categoryProducts.firstOrNull()) }
     var productExpanded by remember { mutableStateOf(false) }
     var fullQtyText by remember { mutableStateOf("") }
     var emptyQtyText by remember { mutableStateOf("") }
@@ -216,7 +222,49 @@ fun VehicleTransferDialog(
                     }
                 }
 
-                // Product Selector Dropdown
+                // Category Folder Selector so products are grouped inside folders
+                Text(
+                    text = "Select Category Folder",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ProductCategory.entries.forEach { cat ->
+                        val catStyle = categoryVisualStyle(cat)
+                        val isCatSelected = selectedCategory == cat
+                        FilterChip(
+                            selected = isCatSelected,
+                            onClick = {
+                                selectedCategory = cat
+                                selectedProduct = products.firstOrNull { it.category == cat }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = catStyle.shortTitle,
+                                    fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = catStyle.primaryColor,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("transfer_folder_${cat.name.lowercase()}")
+                        )
+                    }
+                }
+
+                // Product Selector Dropdown (scoped to opened category folder)
                 ExposedDropdownMenuBox(
                     expanded = productExpanded,
                     onExpandedChange = { productExpanded = !productExpanded }
@@ -225,7 +273,7 @@ fun VehicleTransferDialog(
                         value = selectedProduct?.let { "${it.category.shortCode} • ${it.name}" } ?: "Select gas cylinder",
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Gas Cylinder") },
+                        label = { Text("Gas Cylinder (${categoryVisualStyle(selectedCategory).shortTitle})") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = productExpanded) },
                         modifier = Modifier
                             .menuAnchor(MenuAnchorType.PrimaryNotEditable)
@@ -236,7 +284,7 @@ fun VehicleTransferDialog(
                         expanded = productExpanded,
                         onDismissRequest = { productExpanded = false }
                     ) {
-                        products.forEach { product ->
+                        categoryProducts.forEach { product ->
                             val row = sourceVehicleRows.firstOrNull { it.product.id == product.id }
                             DropdownMenuItem(
                                 text = {

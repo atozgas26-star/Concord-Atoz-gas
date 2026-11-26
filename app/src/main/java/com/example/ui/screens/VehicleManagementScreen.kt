@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material.icons.filled.Recycling
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
@@ -41,6 +42,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -73,8 +75,10 @@ import com.example.ui.components.AddStaffVehicleDialog
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
+import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpeningStockEditDialog
 import com.example.ui.components.PendingCustomerCard
 import com.example.ui.components.RoleHeaderPalettes
@@ -249,6 +253,7 @@ fun VehicleDetailScreen(
 
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
@@ -257,8 +262,13 @@ fun VehicleDetailScreen(
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
 
-    val filteredRows = remember(rows, selectedCategory) {
-        rows.filter { selectedCategory == null || it.product.category == selectedCategory }
+    val filteredRows = remember(rows, selectedCategory, searchQuery) {
+        rows.filter { row ->
+            (selectedCategory == null || row.product.category == selectedCategory) &&
+                (searchQuery.isBlank() ||
+                    row.product.name.contains(searchQuery, ignoreCase = true) ||
+                    row.product.category.displayName.contains(searchQuery, ignoreCase = true))
+        }
     }
 
     val dayTransactions = remember(transactions, vehicle, selectedDate) {
@@ -409,6 +419,7 @@ fun VehicleDetailScreen(
 
         when (activeTab) {
             0 -> {
+                val showProducts = selectedCategory != null || searchQuery.isNotBlank()
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -422,12 +433,53 @@ fun VehicleDetailScreen(
                             sectionTitle = "Outside Vehicle Category Folders"
                         )
                     }
-                    items(filteredRows, key = { it.product.id }) { row ->
-                        VehicleProductRowCard(
-                            row = row,
-                            canEditOpening = !isReadOnly,
-                            onEditOpening = if (isReadOnly) null else { { editingRow = row } }
+                    item(key = "vehicle_search_field") {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search cylinder in ${vehicle?.name ?: "vehicle"}...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
                         )
+                    }
+                    if (!showProducts) {
+                        item(key = "vehicle_closed_folder_prompt") {
+                            ClosedFolderPromptCard(
+                                title = "Vehicle Products Inside Folders",
+                                subtitle = "Tap any category folder above to open ${vehicle?.name ?: "vehicle"} cylinders, or search by name.",
+                                accentColor = RoleHeaderPalettes.OutsideFleetAccent
+                            )
+                        }
+                    } else {
+                        selectedCategory?.let { openCat ->
+                            item(key = "vehicle_opened_folder_header_${openCat.name}") {
+                                OpenedCategoryFolderHeader(
+                                    category = openCat,
+                                    itemCount = filteredRows.size,
+                                    subtitle = "${vehicle?.name ?: "Vehicle"} • ${filteredRows.size} products inside folder",
+                                    onClose = { selectedCategory = null }
+                                )
+                            }
+                        }
+                        if (filteredRows.isEmpty()) {
+                            item(key = "vehicle_empty_search_notice") {
+                                Text(
+                                    text = "No matching products found.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        } else {
+                            items(filteredRows, key = { it.product.id }) { row ->
+                                VehicleProductRowCard(
+                                    row = row,
+                                    canEditOpening = !isReadOnly,
+                                    onEditOpening = if (isReadOnly) null else { { editingRow = row } }
+                                )
+                            }
+                        }
                     }
                 }
             }

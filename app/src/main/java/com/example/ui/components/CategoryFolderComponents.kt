@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LocalFireDepartment
@@ -32,9 +33,11 @@ import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -326,8 +329,14 @@ fun CategoryFolderGrid(
                     onClick = { onSelectCategory(null) },
                     modifier = Modifier.testTag("category_folder_show_all_button")
                 ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close folder",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        text = "Show All (${orderedStats.sumOf { it.itemCount }})",
+                        text = "Close Folder",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -659,3 +668,203 @@ fun DashboardInsideOutsideFolderCard(
         }
     }
 }
+
+/**
+ * Banner header shown right above the items inside an opened gas category folder.
+ * Gives clear visual feedback of which folder is currently open and provides a 1-tap Close action.
+ */
+@Composable
+fun OpenedCategoryFolderHeader(
+    category: ProductCategory,
+    itemCount: Int,
+    subtitle: String = "$itemCount products inside folder",
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isDark = LocalIsDarkTheme.current
+    val style = categoryVisualStyle(category)
+    val containerColor = if (isDark) style.darkContainer else style.lightContainer
+    val onContainerColor = if (isDark) style.darkOnContainer else style.lightOnContainer
+
+    OpenedSectionFolderHeader(
+        title = category.displayName,
+        subtitle = subtitle,
+        accentColor = style.primaryColor,
+        containerColor = containerColor,
+        onContainerColor = onContainerColor,
+        icon = style.icon,
+        onClose = onClose,
+        modifier = modifier.testTag("opened_category_folder_header_${category.name.lowercase()}")
+    )
+}
+
+/**
+ * Reusable opened-folder header bar for any folder section (gas category or system settings).
+ */
+@Composable
+fun OpenedSectionFolderHeader(
+    title: String,
+    subtitle: String,
+    accentColor: Color,
+    containerColor: Color,
+    onContainerColor: Color,
+    icon: ImageVector,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = containerColor,
+        border = BorderStroke(1.5.dp, accentColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(accentColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = onContainerColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = onContainerColor.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(
+                onClick = onClose,
+                border = BorderStroke(1.dp, accentColor.copy(alpha = 0.7f)),
+                modifier = Modifier.testTag("close_opened_folder_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close folder",
+                    tint = onContainerColor,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = "Close",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = onContainerColor
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Clean prompt card shown when all folders are closed so product/settings items stay neatly tucked inside folders.
+ */
+@Composable
+fun ClosedFolderPromptCard(
+    title: String,
+    subtitle: String,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("closed_folder_prompt_card"),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.35f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(accentColor.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (actionLabel != null && onAction != null) {
+                FilledTonalButton(
+                    onClick = onAction,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .testTag("closed_folder_prompt_action")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = actionLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+

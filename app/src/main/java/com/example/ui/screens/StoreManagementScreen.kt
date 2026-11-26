@@ -67,8 +67,10 @@ import com.example.data.model.TransactionType
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
+import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpeningStockEditDialog
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
@@ -218,7 +220,7 @@ fun StoreManagementScreen(
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                text = { Text("Current Balance (${filteredRows.size})") }
+                text = { Text("Folder Balance (${storeRows.size})") }
             )
             Tab(
                 selected = activeTab == 1,
@@ -228,6 +230,7 @@ fun StoreManagementScreen(
         }
 
         if (activeTab == 0) {
+            val showProducts = selectedCategory != null || searchQuery.isNotBlank()
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -251,12 +254,43 @@ fun StoreManagementScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                items(filteredRows, key = { it.product.id }) { row ->
-                    StoreProductCard(
-                        row = row,
-                        canEditOpening = !isReadOnly,
-                        onEditOpening = { if (!isReadOnly) editingOpeningRow = row }
-                    )
+                if (!showProducts) {
+                    item(key = "store_closed_folder_prompt") {
+                        ClosedFolderPromptCard(
+                            title = "Products Inside Category Folders",
+                            subtitle = "Tap any category folder above to open Inside Store products, or search by cylinder name.",
+                            accentColor = BrandGreenPrimary
+                        )
+                    }
+                } else {
+                    selectedCategory?.let { openCat ->
+                        item(key = "store_opened_folder_header_${openCat.name}") {
+                            OpenedCategoryFolderHeader(
+                                category = openCat,
+                                itemCount = filteredRows.size,
+                                subtitle = "Inside Store • ${filteredRows.size} products inside folder",
+                                onClose = { selectedCategory = null }
+                            )
+                        }
+                    }
+                    if (filteredRows.isEmpty()) {
+                        item(key = "store_empty_search_notice") {
+                            Text(
+                                text = "No matching products found.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                    } else {
+                        items(filteredRows, key = { it.product.id }) { row ->
+                            StoreProductCard(
+                                row = row,
+                                canEditOpening = !isReadOnly,
+                                onEditOpening = { if (!isReadOnly) editingOpeningRow = row }
+                            )
+                        }
+                    }
                 }
             }
         } else {

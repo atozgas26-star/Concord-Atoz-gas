@@ -85,11 +85,13 @@ import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.HeaderBellIconButton
 import com.example.ui.components.HeaderChatIconButton
 import com.example.ui.components.HeaderUpdateIconButton
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.PendingCustomerCard
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StaffDutyAttendanceCard
@@ -166,6 +168,7 @@ fun StaffDashboardScreen(
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var selectedSalesCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
     var prefillCustomerName by remember { mutableStateOf("") }
@@ -238,6 +241,21 @@ fun StaffDashboardScreen(
                 compRepl = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE }.sumOf { it.quantity }
             )
         }.filter { it.totalSold > 0 || it.fullRecd > 0 || it.custEmpty > 0 || it.compRepl > 0 }
+    }
+    val salesFolderStats = remember(productSummaries) {
+        ProductCategory.entries.map { cat ->
+            val catItems = productSummaries.filter { it.product.category == cat }
+            CategoryFolderStat(
+                category = cat,
+                itemCount = catItems.size,
+                fullTotal = catItems.sumOf { it.totalSold },
+                emptyTotal = catItems.sumOf { it.custEmpty }
+            )
+        }
+    }
+    val filteredSalesSummaries = remember(productSummaries, selectedSalesCategory) {
+        if (selectedSalesCategory == null) emptyList()
+        else productSummaries.filter { it.product.category == selectedSalesCategory }
     }
 
     val recentRequests = remember(myStoreTransferRequests) { myStoreTransferRequests.take(3) }
@@ -654,6 +672,7 @@ fun StaffDashboardScreen(
             // Inline Content for Selected Section — all part of the SAME smooth vertical LazyColumn!
             when (activeTab) {
                 0 -> {
+                    val showVehicleProducts = selectedCategory != null || searchQuery.isNotBlank()
                     // 4 Color-Coded My Vehicle Category Folders (Staff sees ONLY assigned vehicle)
                     item(key = "staff_category_folders") {
                         CategoryFolderGrid(
@@ -676,8 +695,39 @@ fun StaffDashboardScreen(
                         )
                     }
 
-                    items(filteredVehicleRows, key = { "veh_row_${it.product.id}" }) { row ->
-                        VehicleProductRowCard(row = row, canEditOpening = false)
+                    if (!showVehicleProducts) {
+                        item(key = "staff_closed_folder_prompt") {
+                            ClosedFolderPromptCard(
+                                title = "Products Inside Category Folders",
+                                subtitle = "Tap any category folder above to open your vehicle cylinders, or search by name.",
+                                accentColor = Color(0xFF0F766E)
+                            )
+                        }
+                    } else {
+                        selectedCategory?.let { openCat ->
+                            item(key = "staff_opened_folder_header_${openCat.name}") {
+                                OpenedCategoryFolderHeader(
+                                    category = openCat,
+                                    itemCount = filteredVehicleRows.size,
+                                    subtitle = "${assignedVehicle?.name ?: "My Vehicle"} • ${filteredVehicleRows.size} products inside folder",
+                                    onClose = { selectedCategory = null }
+                                )
+                            }
+                        }
+                        if (filteredVehicleRows.isEmpty()) {
+                            item(key = "staff_empty_search_notice") {
+                                Text(
+                                    text = "No matching cylinders found.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        } else {
+                            items(filteredVehicleRows, key = { "veh_row_${it.product.id}" }) { row ->
+                                VehicleProductRowCard(row = row, canEditOpening = false)
+                            }
+                        }
                     }
                 }
 
@@ -744,6 +794,14 @@ fun StaffDashboardScreen(
                             }
                         }
                     }
+                    item(key = "staff_sales_category_folders") {
+                        CategoryFolderGrid(
+                            stats = salesFolderStats,
+                            selectedCategory = selectedSalesCategory,
+                            onSelectCategory = { selectedSalesCategory = it },
+                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Sales Category Folders"
+                        )
+                    }
                     if (productSummaries.isEmpty()) {
                         item(key = "staff_sales_empty") {
                             Surface(
@@ -763,69 +821,103 @@ fun StaffDashboardScreen(
                                 )
                             }
                         }
+                    } else if (selectedSalesCategory == null) {
+                        item(key = "staff_sales_closed_folder_prompt") {
+                            ClosedFolderPromptCard(
+                                title = "Sales Products Inside Folders",
+                                subtitle = "Tap any category folder above to open product-wise sales inside.",
+                                accentColor = Color(0xFF1D4ED8)
+                            )
+                        }
                     } else {
-                        items(productSummaries, key = { "sale_sum_${it.product.id}" }) { item ->
-                            val catStyle = categoryVisualStyle(item.product.category)
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        val openSalesCat = selectedSalesCategory!!
+                        item(key = "staff_sales_opened_header_${openSalesCat.name}") {
+                            OpenedCategoryFolderHeader(
+                                category = openSalesCat,
+                                itemCount = filteredSalesSummaries.size,
+                                subtitle = "${filteredSalesSummaries.size} products sold inside folder",
+                                onClose = { selectedSalesCategory = null }
+                            )
+                        }
+                        if (filteredSalesSummaries.isEmpty()) {
+                            item(key = "staff_sales_folder_empty") {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Text(
+                                        text = "No ${openSalesCat.displayName} sales in this period.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(16.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            items(filteredSalesSummaries, key = { "sale_sum_${it.product.id}" }) { item ->
+                                val catStyle = categoryVisualStyle(item.product.category)
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = item.product.name,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = item.product.category.displayName,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = catStyle.primaryColor,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = item.product.name,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = item.product.category.displayName,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = catStyle.primaryColor,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                            Surface(
+                                                color = BrandRedContainer,
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Sold: ${item.totalSold}",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = BrandRedOnContainer,
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                                )
+                                            }
                                         }
-                                        Surface(
-                                            color = BrandRedContainer,
-                                            shape = RoundedCornerShape(8.dp)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Text(
-                                                text = "Sold: ${item.totalSold}",
-                                                style = MaterialTheme.typography.labelLarge,
-                                                fontWeight = FontWeight.Bold,
-                                                color = BrandRedOnContainer,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                                text = "Recd: ${item.fullRecd}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "Reg: ${item.regSales} • New: ${item.newCustSales}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "Empty: ${item.custEmpty} • Repl: ${item.compRepl}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = "Recd: ${item.fullRecd}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = "Reg: ${item.regSales} • New: ${item.newCustSales}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = "Empty: ${item.custEmpty} • Repl: ${item.compRepl}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
                                     }
                                 }
                             }

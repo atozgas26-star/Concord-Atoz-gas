@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
@@ -56,6 +57,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -124,6 +126,9 @@ import com.example.ui.components.AppUpdateSettingsCard
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.ClosedFolderPromptCard
+import com.example.ui.components.OpenedCategoryFolderHeader
+import com.example.ui.components.OpenedSectionFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.categoryVisualStyle
 import com.example.update.AppUpdateUiState
@@ -193,6 +198,7 @@ fun AdminSettingsScreen(
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedSettingsFolder by remember { mutableStateOf<SettingsFolderSection?>(null) }
     var selectedProductCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var productSearchQuery by remember { mutableStateOf("") }
     var editingPinUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var editingNameUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
@@ -279,9 +285,10 @@ fun AdminSettingsScreen(
         }
 
         if (activeTab == 0) {
-            val showCloudBackup = selectedSettingsFolder == null || selectedSettingsFolder == SettingsFolderSection.CLOUD_BACKUP
-            val showSecurityPins = selectedSettingsFolder == null || selectedSettingsFolder == SettingsFolderSection.SECURITY_PINS
-            val showAppTheme = selectedSettingsFolder == null || selectedSettingsFolder == SettingsFolderSection.APP_THEME
+            val isDark = LocalIsDarkTheme.current
+            val showCloudBackup = selectedSettingsFolder == SettingsFolderSection.CLOUD_BACKUP
+            val showSecurityPins = selectedSettingsFolder == SettingsFolderSection.SECURITY_PINS
+            val showAppTheme = selectedSettingsFolder == SettingsFolderSection.APP_THEME
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -301,6 +308,29 @@ fun AdminSettingsScreen(
                             }
                         }
                     )
+                }
+
+                if (selectedSettingsFolder == null) {
+                    item(key = "settings_closed_folder_prompt") {
+                        ClosedFolderPromptCard(
+                            title = "System Settings Inside Folders",
+                            subtitle = "Tap Security & PINs, Cloud & Backup, App & Theme, or Product Master above to open its items.",
+                            accentColor = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else {
+                    val openFolder = selectedSettingsFolder!!
+                    item(key = "settings_opened_folder_header_${openFolder.name}") {
+                        OpenedSectionFolderHeader(
+                            title = openFolder.title,
+                            subtitle = openFolder.subtitle,
+                            accentColor = openFolder.primaryColor,
+                            containerColor = if (isDark) openFolder.darkContainer else openFolder.lightContainer,
+                            onContainerColor = if (isDark) openFolder.darkOnContainer else openFolder.lightOnContainer,
+                            icon = openFolder.icon,
+                            onClose = { selectedSettingsFolder = null }
+                        )
+                    }
                 }
 
                 if (showAppTheme) {
@@ -1010,10 +1040,14 @@ fun AdminSettingsScreen(
                 }
             }
         } else {
-            val visibleCategories = if (selectedProductCategory != null) {
-                listOf(selectedProductCategory!!)
-            } else {
-                ProductCategory.entries
+            val showProducts = selectedProductCategory != null || productSearchQuery.isNotBlank()
+            val matchingProducts = remember(products, selectedProductCategory, productSearchQuery) {
+                products.filter { prod ->
+                    (selectedProductCategory == null || prod.category == selectedProductCategory) &&
+                        (productSearchQuery.isBlank() ||
+                            prod.name.contains(productSearchQuery, ignoreCase = true) ||
+                            prod.category.displayName.contains(productSearchQuery, ignoreCase = true))
+                }
             }
 
             LazyColumn(
@@ -1030,7 +1064,7 @@ fun AdminSettingsScreen(
                     )
                 }
 
-                item {
+                item(key = "product_master_add_button") {
                     Button(
                         onClick = { showAddProductDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
@@ -1044,47 +1078,90 @@ fun AdminSettingsScreen(
                     }
                 }
 
-                visibleCategories.forEach { category ->
-                    val catStyle = categoryVisualStyle(category)
-                    val catProducts = products.filter { it.category == category }
-                    item(key = "header_${category.name}") {
-                        Text(
-                            text = "${category.displayName} (${catProducts.size})",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = catStyle.primaryColor,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 6.dp)
+                item(key = "product_master_search_field") {
+                    OutlinedTextField(
+                        value = productSearchQuery,
+                        onValueChange = { productSearchQuery = it },
+                        placeholder = { Text("Search gas cylinder or category...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (!showProducts) {
+                    item(key = "product_master_closed_folder_prompt") {
+                        ClosedFolderPromptCard(
+                            title = "Gas Products Inside Folders",
+                            subtitle = "Tap any gas category folder above to manage products inside, or search by name.",
+                            accentColor = Color(0xFF7E22CE)
                         )
                     }
-                    items(catProducts, key = { it.id }) { prod ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                } else {
+                    selectedProductCategory?.let { openCat ->
+                        item(key = "product_master_opened_header_${openCat.name}") {
+                            OpenedCategoryFolderHeader(
+                                category = openCat,
+                                itemCount = matchingProducts.size,
+                                subtitle = "${matchingProducts.count { it.isActive }} active • ${matchingProducts.size} products inside folder",
+                                onClose = { selectedProductCategory = null }
+                            )
+                        }
+                    }
+
+                    if (matchingProducts.isEmpty()) {
+                        item(key = "product_master_empty_notice") {
+                            Text(
+                                text = "No matching gas products found.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                    } else {
+                        items(matchingProducts, key = { it.id }) { prod ->
+                            val catStyle = categoryVisualStyle(prod.category)
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.Inventory2,
-                                        contentDescription = null,
-                                        tint = if (prod.isActive) catStyle.primaryColor else MaterialTheme.colorScheme.outline,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        text = prod.name,
-                                        style = MaterialTheme.typography.titleSmall
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Inventory2,
+                                            contentDescription = null,
+                                            tint = if (prod.isActive) catStyle.primaryColor else MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = prod.name,
+                                                style = MaterialTheme.typography.titleSmall
+                                            )
+                                            if (selectedProductCategory == null) {
+                                                Text(
+                                                    text = prod.category.displayName,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = catStyle.primaryColor
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Switch(
+                                        checked = prod.isActive,
+                                        onCheckedChange = { onToggleProductActive(prod) }
                                     )
                                 }
-                                Switch(
-                                    checked = prod.isActive,
-                                    onCheckedChange = { onToggleProductActive(prod) }
-                                )
                             }
                         }
                     }
@@ -1655,7 +1732,13 @@ private fun SettingsCategoryFolderGrid(
                     onClick = { onSelectFolder(null) },
                     modifier = Modifier.testTag("settings_folder_show_all_button")
                 ) {
-                    Text("Show All", fontWeight = FontWeight.Bold)
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close folder",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Close Folder", fontWeight = FontWeight.Bold)
                 }
             } else {
                 Text(

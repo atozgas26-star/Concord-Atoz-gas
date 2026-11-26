@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +63,9 @@ import com.example.export.ReportTable
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
@@ -97,6 +100,7 @@ fun ReportsScreen(
     var purchaseDailyMode by remember { mutableStateOf(false) }
     var purchaseCompanyFilter by remember { mutableStateOf<String?>(null) }
     var selectedCategory by remember(selectedReport, vehicleFilterId) { mutableStateOf<ProductCategory?>(null) }
+    var showAllReportRows by remember(selectedReport, vehicleFilterId) { mutableStateOf(false) }
 
     val baseTable = buildReportTable(selectedReport, vehicleFilterId, purchaseDailyMode, purchaseCompanyFilter)
 
@@ -369,7 +373,10 @@ fun ReportsScreen(
                     CategoryFolderGrid(
                         stats = folderStats,
                         selectedCategory = selectedCategory,
-                        onSelectCategory = { selectedCategory = it },
+                        onSelectCategory = { cat ->
+                            selectedCategory = cat
+                            if (cat != null) showAllReportRows = false
+                        },
                         sectionTitle = "Report Category Folders"
                     )
                 }
@@ -447,14 +454,56 @@ fun ReportsScreen(
                 }
             }
 
-            // Report Preview Header + Horizontally Scrollable Table Card
-            item(key = "report_preview_table") {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+            // Report Preview: Keep product rows neatly inside Category Folders until opened
+            val showTable = !supportsCategoryFolders || selectedCategory != null || showAllReportRows
+            if (!showTable) {
+                item(key = "report_closed_folder_prompt") {
+                    ClosedFolderPromptCard(
+                        title = "Report Items Inside Category Folders",
+                        subtitle = "Tap any category folder above to open its product rows. Save PDF / Excel exports all ${baseTable.rows.size} items.",
+                        accentColor = BrandGreenPrimary,
+                        actionLabel = "View All (${baseTable.rows.size})",
+                        onAction = { showAllReportRows = true }
+                    )
+                }
+            } else {
+                selectedCategory?.let { openCat ->
+                    item(key = "report_opened_folder_header_${openCat.name}") {
+                        OpenedCategoryFolderHeader(
+                            category = openCat,
+                            itemCount = table.rows.size,
+                            subtitle = "${selectedReport.title} • ${table.rows.size} items inside folder",
+                            onClose = { selectedCategory = null }
+                        )
+                    }
+                }
+                if (supportsCategoryFolders && selectedCategory == null && showAllReportRows) {
+                    item(key = "report_collapse_all_bar") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Showing all ${baseTable.rows.size} items across folders",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(onClick = { showAllReportRows = false }) {
+                                Text("Back to Folders", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // Report Preview Header + Horizontally Scrollable Table Card
+                item(key = "report_preview_table") {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -560,6 +609,7 @@ fun ReportsScreen(
                         }
                     }
                 }
+            }
             }
 
             item(key = "report_bottom_spacer") {
