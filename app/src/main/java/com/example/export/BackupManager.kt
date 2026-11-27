@@ -2,6 +2,7 @@ package com.example.export
 
 import androidx.room.withTransaction
 import com.example.data.local.ConcordDatabase
+import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.OpeningStockEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
@@ -22,10 +23,11 @@ class BackupManager(private val db: ConcordDatabase) {
         val products = db.productDao().getAllProductsOnce()
         val openings = db.openingStockDao().getAllOpeningsOnce()
         val transactions = db.transactionDao().getAllTransactionsOnce()
+        val differentGasReturns = db.differentGasReturnDao().getAllOnce()
 
         val root = JSONObject().apply {
             put("app", "Concord & A to Z Gas")
-            put("schemaVersion", 1)
+            put("schemaVersion", 2)
             put("exportedAt", System.currentTimeMillis())
 
             put("users", JSONArray().apply {
@@ -60,6 +62,7 @@ class BackupManager(private val db: ConcordDatabase) {
                         put("name", p.name)
                         put("sortOrder", p.sortOrder)
                         put("isActive", p.isActive)
+                        put("cylinderSizeKg", p.cylinderSizeKg)
                     })
                 }
             })
@@ -95,6 +98,30 @@ class BackupManager(private val db: ConcordDatabase) {
                         put("purchaseCompanyName", t.purchaseCompanyName)
                         put("customerName", t.customerName)
                         put("notes", t.notes)
+                    })
+                }
+            })
+
+            put("differentGasReturns", JSONArray().apply {
+                differentGasReturns.forEach { r ->
+                    put(JSONObject().apply {
+                        put("id", r.id)
+                        put("submissionKey", r.submissionKey)
+                        put("businessDate", r.businessDate)
+                        put("timestamp", r.timestamp)
+                        put("customerName", r.customerName)
+                        put("customerPhone", r.customerPhone)
+                        put("staffId", r.staffId)
+                        put("staffName", r.staffName)
+                        put("vehicleId", r.vehicleId ?: JSONObject.NULL)
+                        put("vehicleName", r.vehicleName ?: JSONObject.NULL)
+                        put("deliveredSummary", r.deliveredSummary)
+                        put("returnedSummary", r.returnedSummary)
+                        put("deliveredItemsJson", r.deliveredItemsJson)
+                        put("returnedItemsJson", r.returnedItemsJson)
+                        put("totalDeliveredQty", r.totalDeliveredQty)
+                        put("totalReturnedQty", r.totalReturnedQty)
+                        put("notes", r.notes)
                     })
                 }
             })
@@ -148,7 +175,8 @@ class BackupManager(private val db: ConcordDatabase) {
                     category = ProductCategory.valueOf(o.getString("category")),
                     name = o.getString("name"),
                     sortOrder = o.optInt("sortOrder", 0),
-                    isActive = o.optBoolean("isActive", true)
+                    isActive = o.optBoolean("isActive", true),
+                    cylinderSizeKg = o.optString("cylinderSizeKg", "")
                 )
             }
 
@@ -185,7 +213,36 @@ class BackupManager(private val db: ConcordDatabase) {
                 )
             }
 
+            val diffReturnsArr = root.optJSONArray("differentGasReturns")
+            val diffReturns = if (diffReturnsArr != null) {
+                (0 until diffReturnsArr.length()).map { i ->
+                    val o = diffReturnsArr.getJSONObject(i)
+                    DifferentGasReturnEntity(
+                        id = o.optLong("id", 0L),
+                        submissionKey = o.getString("submissionKey"),
+                        businessDate = o.getString("businessDate"),
+                        timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+                        customerName = o.getString("customerName"),
+                        customerPhone = o.optString("customerPhone", ""),
+                        staffId = o.getLong("staffId"),
+                        staffName = o.getString("staffName"),
+                        vehicleId = if (o.isNull("vehicleId")) null else o.getLong("vehicleId"),
+                        vehicleName = if (o.isNull("vehicleName")) null else o.getString("vehicleName"),
+                        deliveredSummary = o.optString("deliveredSummary", ""),
+                        returnedSummary = o.optString("returnedSummary", ""),
+                        deliveredItemsJson = o.optString("deliveredItemsJson", "[]"),
+                        returnedItemsJson = o.optString("returnedItemsJson", "[]"),
+                        totalDeliveredQty = o.optInt("totalDeliveredQty", 0),
+                        totalReturnedQty = o.optInt("totalReturnedQty", 0),
+                        notes = o.optString("notes", "")
+                    )
+                }
+            } else {
+                emptyList()
+            }
+
             db.withTransaction {
+                db.differentGasReturnDao().deleteAll()
                 db.transactionDao().deleteAll()
                 db.openingStockDao().deleteAll()
                 db.productDao().deleteAll()
@@ -197,6 +254,9 @@ class BackupManager(private val db: ConcordDatabase) {
                 db.productDao().insertAll(products)
                 db.openingStockDao().insertAll(openings)
                 db.transactionDao().insertAll(transactions)
+                if (diffReturns.isNotEmpty()) {
+                    db.differentGasReturnDao().insertAll(diffReturns)
+                }
             }
 
             OperationResult.Success(

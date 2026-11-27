@@ -21,9 +21,10 @@ import com.example.data.model.UserRole
         StaffAttendanceEntity::class,
         PendingStoreTransferEntity::class,
         AppNotificationEntity::class,
-        ChatMessageEntity::class
+        ChatMessageEntity::class,
+        DifferentGasReturnEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -37,6 +38,7 @@ abstract class ConcordDatabase : RoomDatabase() {
     abstract fun pendingStoreTransferDao(): PendingStoreTransferDao
     abstract fun appNotificationDao(): AppNotificationDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun differentGasReturnDao(): DifferentGasReturnDao
 
     suspend fun ensureSeeded() {
         val existingUsers = userDao().getAllUsersOnce()
@@ -91,30 +93,30 @@ abstract class ConcordDatabase : RoomDatabase() {
             if (productDao().getAllProductsOnce().isEmpty()) {
                 val seededProducts = listOf(
                     // INDUSTRIAL GAS
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Oxygen", sortOrder = 101),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Acetylene", sortOrder = 102),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Argon", sortOrder = 103),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Argon Mix", sortOrder = 104),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "CO2 20kg", sortOrder = 105),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "CO2 30kg", sortOrder = 106),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Nitrogen", sortOrder = 107),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Oxygen", sortOrder = 101, cylinderSizeKg = "47L Industrial"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Acetylene", sortOrder = 102, cylinderSizeKg = "40L Industrial"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Argon", sortOrder = 103, cylinderSizeKg = "47L Industrial"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Argon Mix", sortOrder = 104, cylinderSizeKg = "47L Industrial"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "CO2 20kg", sortOrder = 105, cylinderSizeKg = "20 KG"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "CO2 30kg", sortOrder = 106, cylinderSizeKg = "30 KG"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Nitrogen", sortOrder = 107, cylinderSizeKg = "47L Industrial"),
 
                     // 48 CFT SMALL
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Oxygen", sortOrder = 201),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Acetylene", sortOrder = 202),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Argon", sortOrder = 203),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Argon Mix", sortOrder = 204),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "CO2 5kg", sortOrder = 205),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Nitrogen", sortOrder = 206),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Oxygen", sortOrder = 201, cylinderSizeKg = "48 CFT"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Acetylene", sortOrder = 202, cylinderSizeKg = "48 CFT"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Argon", sortOrder = 203, cylinderSizeKg = "48 CFT"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Argon Mix", sortOrder = 204, cylinderSizeKg = "48 CFT"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "CO2 5kg", sortOrder = 205, cylinderSizeKg = "5 KG"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Nitrogen", sortOrder = 206, cylinderSizeKg = "48 CFT"),
 
                     // COOKING GAS
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "11kg", sortOrder = 301),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "22kg", sortOrder = 302),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "11kg", sortOrder = 301, cylinderSizeKg = "11 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "22kg", sortOrder = 302, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303, cylinderSizeKg = "44 KG"),
 
                     // MCG CUTTING GAS
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "22kg", sortOrder = 401),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "44kg", sortOrder = 402)
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "22kg", sortOrder = 401, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "44kg", sortOrder = 402, cylinderSizeKg = "44 KG")
                 )
                 productDao().insertAll(seededProducts)
             }
@@ -235,6 +237,39 @@ abstract class ConcordDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE products ADD COLUMN cylinderSizeKg TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS different_gas_returns (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        submissionKey TEXT NOT NULL,
+                        businessDate TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        customerName TEXT NOT NULL,
+                        customerPhone TEXT NOT NULL,
+                        staffId INTEGER NOT NULL,
+                        staffName TEXT NOT NULL,
+                        vehicleId INTEGER,
+                        vehicleName TEXT,
+                        deliveredSummary TEXT NOT NULL,
+                        returnedSummary TEXT NOT NULL,
+                        deliveredItemsJson TEXT NOT NULL,
+                        returnedItemsJson TEXT NOT NULL,
+                        totalDeliveredQty INTEGER NOT NULL,
+                        totalReturnedQty INTEGER NOT NULL,
+                        notes TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_different_gas_returns_submissionKey ON different_gas_returns(submissionKey)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_different_gas_returns_businessDate ON different_gas_returns(businessDate)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_different_gas_returns_staffId ON different_gas_returns(staffId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_different_gas_returns_customerName ON different_gas_returns(customerName)")
+            }
+        }
+
         fun getInstance(context: Context): ConcordDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -242,7 +277,7 @@ abstract class ConcordDatabase : RoomDatabase() {
                     ConcordDatabase::class.java,
                     "concord_gas_inventory.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { INSTANCE = it }

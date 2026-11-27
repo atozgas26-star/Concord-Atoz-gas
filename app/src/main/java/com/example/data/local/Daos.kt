@@ -98,8 +98,14 @@ interface ProductDao {
     @Update
     suspend fun update(product: ProductEntity)
 
+    @Query("UPDATE products SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateSortOrder(id: Long, sortOrder: Int)
+
     @Delete
     suspend fun delete(product: ProductEntity)
+
+    @Query("DELETE FROM products WHERE id = :id")
+    suspend fun deleteById(id: Long)
 
     @Query("DELETE FROM products")
     suspend fun deleteAll()
@@ -119,6 +125,9 @@ interface OpeningStockDao {
     @Query("SELECT * FROM opening_stocks")
     suspend fun getAllOpeningsOnce(): List<OpeningStockEntity>
 
+    @Query("SELECT * FROM opening_stocks WHERE productId = :productId")
+    suspend fun getOpeningsForProduct(productId: Long): List<OpeningStockEntity>
+
     @Query("SELECT * FROM opening_stocks WHERE scope = :scope AND vehicleId = :vehicleId AND productId = :productId LIMIT 1")
     suspend fun getOpening(scope: String, vehicleId: Long, productId: Long): OpeningStockEntity?
 
@@ -127,6 +136,9 @@ interface OpeningStockDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(openings: List<OpeningStockEntity>)
+
+    @Query("DELETE FROM opening_stocks WHERE productId = :productId")
+    suspend fun deleteByProductId(productId: Long)
 
     @Query("DELETE FROM opening_stocks")
     suspend fun deleteAll()
@@ -169,6 +181,9 @@ interface TransactionDao {
 
     @Query("UPDATE stock_transactions SET remoteId = :remoteId WHERE id = :id")
     suspend fun updateRemoteId(id: Long, remoteId: String)
+
+    @Query("SELECT COUNT(*) FROM stock_transactions WHERE productId = :productId")
+    suspend fun countTransactionsForProduct(productId: Long): Int
 
     @Query("DELETE FROM stock_transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -260,3 +275,25 @@ interface ChatMessageDao {
     @Query("DELETE FROM chat_messages")
     suspend fun deleteAll()
 }
+
+@Dao
+interface DifferentGasReturnDao {
+    @Query("SELECT * FROM different_gas_returns ORDER BY timestamp DESC, id DESC")
+    fun observeAll(): Flow<List<DifferentGasReturnEntity>>
+
+    @Query("SELECT * FROM different_gas_returns ORDER BY timestamp DESC, id DESC")
+    suspend fun getAllOnce(): List<DifferentGasReturnEntity>
+
+    @Query("SELECT * FROM different_gas_returns WHERE submissionKey = :submissionKey LIMIT 1")
+    suspend fun getBySubmissionKey(submissionKey: String): DifferentGasReturnEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: DifferentGasReturnEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<DifferentGasReturnEntity>)
+
+    @Query("DELETE FROM different_gas_returns")
+    suspend fun deleteAll()
+}
+

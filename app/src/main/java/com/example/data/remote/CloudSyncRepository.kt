@@ -573,7 +573,10 @@ class CloudSyncRepository(
                                 cloudProducts.forEach { cp ->
                                     val match = byId[cp.localId] ?: byKey[cp.category to cp.name.lowercase()]
                                     if (match != null) {
+                                        val parsedCat = com.example.data.model.ProductCategory.entries
+                                            .firstOrNull { it.name == cp.category } ?: match.category
                                         val updated = match.copy(
+                                            category = parsedCat,
                                             name = cp.name,
                                             sortOrder = cp.sortOrder,
                                             isActive = cp.active
@@ -995,6 +998,24 @@ class CloudSyncRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteProduct(productId: Long): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = "prod_$productId"
+        val docPath = "workspaces/$wsId/products/$docId"
+        return try {
+            requireUserId()
+            db.collection("workspaces").document(wsId).collection("products").document(docId)
+                .delete()
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docPath)
             Result.failure(e)
         }
     }

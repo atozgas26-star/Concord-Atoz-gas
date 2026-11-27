@@ -217,6 +217,8 @@ fun StaffDashboardScreen(
     appUpdateState: AppUpdateUiState = AppUpdateUiState(),
     onOpenAppUpdate: () -> Unit = {},
     onDismissAppUpdateBanner: () -> Unit = {},
+    onOpenDifferentGasReturn: () -> Unit = {},
+    onOpenReturnHistory: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
@@ -596,6 +598,29 @@ fun StaffDashboardScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("staff_action_customer_change")
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StaffBigActionButton(
+                                label = "Different Gas\nReturn",
+                                icon = Icons.Default.SwapHoriz,
+                                containerColor = MetallicOrange,
+                                onClick = onOpenDifferentGasReturn,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_different_gas_return")
+                            )
+                            StaffBigActionButton(
+                                label = "Return\nHistory",
+                                icon = Icons.Default.History,
+                                containerColor = RoyalElectricBlue,
+                                onClick = onOpenReturnHistory,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_return_history")
                             )
                         }
                         if (assignedVehicle != null && allVehicles.any { it.id != assignedVehicle.id }) {

@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.example.data.local.AppNotificationEntity
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ConcordDatabase
+import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.OpeningStockEntity
 import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
@@ -17,11 +18,14 @@ import com.example.data.model.CompanyStockRow
 import com.example.data.model.CustomerChangeMode
 import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
+import com.example.data.model.CustomerReturnHistoryGroup
 import com.example.data.model.DashboardSummary
+import com.example.data.model.DifferentGasLineItem
 import com.example.data.model.MonthlyDailySaleRow
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ProductSalesRow
+import com.example.data.model.StaffReturnHistoryGroup
 import com.example.data.model.StaffSalesRow
 import com.example.data.model.StockCalculator
 import com.example.data.model.StoreStockRow
@@ -54,6 +58,7 @@ class InventoryRepository(
     private val pendingStoreTransferDao = db.pendingStoreTransferDao()
     private val notificationDao = db.appNotificationDao()
     private val chatMessageDao = db.chatMessageDao()
+    private val differentGasReturnDao = db.differentGasReturnDao()
 
     val usersFlow: Flow<List<UserAccountEntity>> = userDao.observeAllUsers()
     val vehiclesFlow: Flow<List<VehicleEntity>> = vehicleDao.observeActiveVehicles()
@@ -65,6 +70,48 @@ class InventoryRepository(
     val allPendingStoreTransfersFlow: Flow<List<PendingStoreTransferEntity>> = pendingStoreTransferDao.observeAll()
     val allNotificationsFlow: Flow<List<AppNotificationEntity>> = notificationDao.observeAll()
     val allChatMessagesFlow: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAll()
+    val differentGasReturnsFlow: Flow<List<DifferentGasReturnEntity>> = differentGasReturnDao.observeAll()
+
+    val customerReturnHistoryFlow: Flow<List<CustomerReturnHistoryGroup>> = differentGasReturnsFlow.map { records ->
+        records
+            .groupBy { it.customerName.trim().lowercase(Locale.US) }
+            .values
+            .map { group ->
+                val sorted = group.sortedByDescending { it.timestamp }
+                val latest = sorted.first()
+                CustomerReturnHistoryGroup(
+                    customerName = latest.customerName,
+                    customerPhone = sorted.firstOrNull { it.customerPhone.isNotBlank() }?.customerPhone.orEmpty(),
+                    totalTransactions = sorted.size,
+                    totalDeliveredFull = sorted.sumOf { it.totalDeliveredQty },
+                    totalReturnedEmpty = sorted.sumOf { it.totalReturnedQty },
+                    lastTimestampMs = latest.timestamp,
+                    records = sorted
+                )
+            }
+            .sortedByDescending { it.lastTimestampMs }
+    }.flowOn(Dispatchers.Default)
+
+    val staffReturnHistoryFlow: Flow<List<StaffReturnHistoryGroup>> = differentGasReturnsFlow.map { records ->
+        records
+            .groupBy { it.staffId }
+            .values
+            .map { group ->
+                val sorted = group.sortedByDescending { it.timestamp }
+                val latest = sorted.first()
+                StaffReturnHistoryGroup(
+                    staffId = latest.staffId,
+                    staffName = latest.staffName,
+                    vehicleName = sorted.firstOrNull { !it.vehicleName.isNullOrBlank() }?.vehicleName,
+                    totalTransactions = sorted.size,
+                    totalDeliveredFull = sorted.sumOf { it.totalDeliveredQty },
+                    totalReturnedEmpty = sorted.sumOf { it.totalReturnedQty },
+                    lastTimestampMs = latest.timestamp,
+                    records = sorted
+                )
+            }
+            .sortedByDescending { it.lastTimestampMs }
+    }.flowOn(Dispatchers.Default)
 
     val recentPurchaseCompaniesFlow: Flow<List<String>> = transactionsFlow.map { txs ->
         val seen = LinkedHashSet<String>()
@@ -289,8 +336,13 @@ class InventoryRepository(
         return result
     }
 
-    suspend fun addProduct(category: ProductCategory, name: String): OperationResult {
+    suspend fun addProduct(
+        category: ProductCategory,
+        name: String,
+        cylinderSizeKg: String = ""
+    ): OperationResult {
         val cleanName = name.trim().take(100)
+        val cleanSize = cylinderSizeKg.trim().take(40)
         if (cleanName.isEmpty()) {
             return OperationResult.ValidationError("Product name cannot be empty.")
         }
@@ -304,19 +356,425 @@ class InventoryRepository(
             category = category,
             name = cleanName,
             sortOrder = nextSort,
-            isActive = true
+            isActive = true,
+            cylinderSizeKg = cleanSize
         )
         val newId = productDao.insert(newProduct)
         cloudSync?.pushProduct(newProduct.copy(id = newId))
-        return OperationResult.Success("Product added to ${category.displayName}.")
+        return OperationResult.Success("Product '$cleanName' added to ${category.displayName}.")
+    }
+
+    suspend fun updateProduct(
+        productId: Long,
+        category: ProductCategory,
+        name: String,
+        cylinderSizeKg: String,
+        isActive: Boolean,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can edit gas products.")
+        }
+        val cleanName = name.trim().take(100)
+        val cleanSize = cylinderSizeKg.trim().take(40)
+        if (cleanName.isEmpty()) {
+            return OperationResult.ValidationError("Product name cannot be empty.")
+        }
+        var updatedProduct: ProductEntity? = null
+        val result = db.withTransaction {
+            val allProducts = productDao.getAllProductsOnce()
+            val target = allProducts.firstOrNull { it.id == productId }
+                ?: return@withTransaction OperationResult.ValidationError("Product not found.")
+            val duplicate = allProducts.firstOrNull {
+                it.id != productId && it.category == category && it.name.equals(cleanName, ignoreCase = true)
+            }
+            if (duplicate != null) {
+                return@withTransaction OperationResult.ValidationError("${category.displayName} - $cleanName already exists.")
+            }
+            val updated = target.copy(
+                category = category,
+                name = cleanName,
+                cylinderSizeKg = cleanSize,
+                isActive = isActive
+            )
+            productDao.update(updated)
+            updatedProduct = updated
+            OperationResult.Success("Updated '$cleanName' (${category.displayName}).")
+        }
+        if (result is OperationResult.Success) {
+            updatedProduct?.let { cloudSync?.pushProduct(it) }
+        }
+        return result
+    }
+
+    /**
+     * Product deletion safety rule:
+     * - Permanently delete ONLY products with zero stock (opening & current across store and vehicles)
+     *   AND zero transaction history.
+     * - Products with existing stock or transaction history MUST be marked Inactive instead,
+     *   preserving all historical stock and transaction records.
+     */
+    suspend fun deleteOrDeactivateProduct(
+        productId: Long,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can delete or deactivate products.")
+        }
+        var permanentlyDeleted = false
+        var deactivatedEntity: ProductEntity? = null
+
+        val result = db.withTransaction {
+            val product = productDao.getProductById(productId)
+                ?: return@withTransaction OperationResult.ValidationError("Product not found.")
+
+            val txCount = txDao.countTransactionsForProduct(productId)
+            val productOpenings = openingDao.getOpeningsForProduct(productId)
+            val hasOpeningStock = productOpenings.any { it.openingFull != 0 || it.openingEmpty != 0 }
+
+            val allOpenings = openingDao.getAllOpeningsOnce()
+            val allTxs = txDao.getAllTransactionsOnce()
+            val (storeFull, storeEmpty) = StockCalculator.currentStoreBalance(productId, allOpenings, allTxs)
+            val vehicles = vehicleDao.getAllVehiclesOnce()
+            val hasVehicleStock = vehicles.any { veh ->
+                val (vFull, vEmpty) = StockCalculator.currentVehicleBalance(veh.id, productId, allOpenings, allTxs)
+                vFull != 0 || vEmpty != 0
+            }
+            val hasAnyStockOrHistory = txCount > 0 || hasOpeningStock || storeFull != 0 || storeEmpty != 0 || hasVehicleStock
+
+            if (!hasAnyStockOrHistory) {
+                openingDao.deleteByProductId(productId)
+                productDao.deleteById(productId)
+                permanentlyDeleted = true
+                OperationResult.Success("Permanently deleted '${product.name}' (no stock or transaction history).")
+            } else {
+                val inactive = product.copy(isActive = false)
+                productDao.update(inactive)
+                deactivatedEntity = inactive
+                OperationResult.Success(
+                    "'${product.name}' has existing stock or transaction history — marked Inactive to preserve all records."
+                )
+            }
+        }
+
+        if (result is OperationResult.Success && cloudSync != null) {
+            if (permanentlyDeleted) {
+                cloudSync.deleteProduct(productId)
+            } else {
+                deactivatedEntity?.let { cloudSync.pushProduct(it) }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Admin-only Product Drag & Drop Ordering.
+     * Persists updated sortOrder atomically in Room and syncs to cloud so Admin, Owner, and Staff
+     * screens immediately display and retain the exact custom order across app restarts.
+     */
+    suspend fun reorderProducts(
+        orderedProductIds: List<Long>,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can rearrange product display order.")
+        }
+        val cleanIds = orderedProductIds.distinct()
+        if (cleanIds.isEmpty()) {
+            return OperationResult.ValidationError("No products supplied for ordering.")
+        }
+
+        val updatedProducts = mutableListOf<ProductEntity>()
+        val result = db.withTransaction {
+            val allProducts = productDao.getAllProductsOnce()
+            val byId = allProducts.associateBy { it.id }
+
+            // Preserve ordering per category base if subset supplied, or assign contiguous order
+            val orderedExisting = cleanIds.mapNotNull { byId[it] }
+            if (orderedExisting.isEmpty()) {
+                return@withTransaction OperationResult.ValidationError("Selected products not found.")
+            }
+
+            val categoriesPresent = orderedExisting.map { it.category }.distinct()
+            if (categoriesPresent.size == 1) {
+                val cat = categoriesPresent.first()
+                val base = cat.sortOrder * 100
+                orderedExisting.forEachIndexed { idx, prod ->
+                    val newOrder = base + idx + 1
+                    if (prod.sortOrder != newOrder) {
+                        val updated = prod.copy(sortOrder = newOrder)
+                        productDao.updateSortOrder(prod.id, newOrder)
+                        updatedProducts.add(updated)
+                    }
+                }
+            } else {
+                // Global reorder across categories: assign sequential sortOrder within each category
+                val perCategoryCounter = mutableMapOf<ProductCategory, Int>()
+                orderedExisting.forEachIndexed { idx, prod ->
+                    val count = (perCategoryCounter[prod.category] ?: 0) + 1
+                    perCategoryCounter[prod.category] = count
+                    val newOrder = idx + 1
+                    if (prod.sortOrder != newOrder) {
+                        val updated = prod.copy(sortOrder = newOrder)
+                        productDao.updateSortOrder(prod.id, newOrder)
+                        updatedProducts.add(updated)
+                    }
+                }
+            }
+            OperationResult.Success("Custom product order saved (${orderedExisting.size} products).")
+        }
+
+        if (result is OperationResult.Success && cloudSync != null) {
+            updatedProducts.forEach { cloudSync.pushProduct(it) }
+        }
+        return result
     }
 
     suspend fun toggleProductActive(product: ProductEntity): OperationResult {
         val updated = product.copy(isActive = !product.isActive)
         productDao.update(updated)
         cloudSync?.pushProduct(updated)
-        val status = if (updated.isActive) "activated" else "archived"
+        val status = if (updated.isActive) "activated" else "marked Inactive"
         return OperationResult.Success("${product.name} $status.")
+    }
+
+    /**
+     * Different Gas Cylinder Return Management (Admin & Staff, NO Admin approval required).
+     * Example: Deliver Oxygen Full (1) + Receive Argon Empty (1), or multiple gas types/quantities
+     * in a single atomic transaction.
+     *
+     * Rules enforced:
+     * - Deducts each delivered gas Full quantity strictly from its exact gas Full Stock.
+     * - Adds each returned gas Empty quantity strictly to its exact returned gas Empty Stock.
+     * - Never mixes gas categories.
+     * - Updates stock immediately after save without requiring Admin approval.
+     * - Prevents duplicate transactions and duplicate stock updates via unique [submissionKey].
+     */
+    suspend fun recordDifferentGasReturn(
+        businessDate: String,
+        deliveredItems: List<CustomerExchangeItem>,
+        returnedItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        actor: UserAccountEntity,
+        customerName: String,
+        customerPhone: String,
+        notes: String = "",
+        submissionKey: String = java.util.UUID.randomUUID().toString()
+    ): OperationResult {
+        if (actor.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Owner View is read-only and cannot record stock transactions.")
+        }
+        val cleanKey = submissionKey.trim().take(120)
+        if (cleanKey.isEmpty()) {
+            return OperationResult.ValidationError("Missing transaction key.")
+        }
+        val cleanCustomer = customerName.trim().take(120)
+        if (cleanCustomer.isEmpty()) {
+            return OperationResult.ValidationError("Please enter customer name.")
+        }
+        val cleanPhone = customerPhone.trim().take(40)
+        val cleanNotes = notes.trim().take(240)
+
+        val mergedDelivered = deliveredItems
+            .filter { it.quantity > 0 }
+            .groupBy { it.productId }
+            .map { (pid, list) -> CustomerExchangeItem(pid, list.sumOf { it.quantity }) }
+
+        val mergedReturned = returnedItems
+            .filter { it.quantity > 0 }
+            .groupBy { it.productId }
+            .map { (pid, list) -> CustomerExchangeItem(pid, list.sumOf { it.quantity }) }
+
+        if (mergedDelivered.isEmpty()) {
+            return OperationResult.ValidationError("Select at least one delivered Full gas cylinder.")
+        }
+        if (mergedReturned.isEmpty()) {
+            return OperationResult.ValidationError("Select at least one returned Empty gas cylinder.")
+        }
+        for (item in mergedDelivered + mergedReturned) {
+            if (item.quantity <= 0 || item.quantity > 100000) {
+                return OperationResult.ValidationError("Cylinder quantity must be between 1 and 100,000.")
+            }
+        }
+
+        val insertedTransactions = mutableListOf<StockTransactionEntity>()
+        var successMessage = ""
+
+        val localResult = db.withTransaction {
+            // Strict idempotency check prevents duplicate saves & duplicate stock updates
+            if (differentGasReturnDao.getBySubmissionKey(cleanKey) != null) {
+                return@withTransaction OperationResult.ValidationError(
+                    "Duplicate transaction prevented — this gas return was already saved."
+                )
+            }
+
+            val vehicle = if (vehicleId != null) {
+                vehicleDao.getVehicleById(vehicleId)
+                    ?: return@withTransaction OperationResult.ValidationError("Selected vehicle not found.")
+            } else {
+                null
+            }
+            if (actor.role == UserRole.STAFF && vehicle == null) {
+                return@withTransaction OperationResult.ValidationError("Staff must have an assigned vehicle for cylinder return.")
+            }
+
+            val productMap = mutableMapOf<Long, ProductEntity>()
+            for (item in mergedDelivered + mergedReturned) {
+                if (!productMap.containsKey(item.productId)) {
+                    val prod = productDao.getProductById(item.productId)
+                        ?: return@withTransaction OperationResult.ValidationError("Selected gas product not found.")
+                    productMap[item.productId] = prod
+                }
+            }
+
+            val openings = openingDao.getAllOpeningsOnce()
+            val allTxs = txDao.getAllTransactionsOnce()
+            val scopeLabel = vehicle?.name ?: "Main Store"
+
+            // Strictly validate Full stock on every delivered gas product without mixing categories
+            for (deliv in mergedDelivered) {
+                val prod = productMap[deliv.productId]!!
+                val (availFull, _) = if (vehicle != null) {
+                    StockCalculator.currentVehicleBalance(vehicle.id, prod.id, openings, allTxs)
+                } else {
+                    StockCalculator.currentStoreBalance(prod.id, openings, allTxs)
+                }
+                if (availFull < deliv.quantity) {
+                    return@withTransaction OperationResult.InsufficientStock(
+                        title = "Insufficient ${if (vehicle != null) "Vehicle" else "Store"} Full Stock",
+                        message = "$scopeLabel does not have enough Full ${prod.category.displayName} • ${prod.name}.\n\nAvailable Full: $availFull, Requested: ${deliv.quantity}"
+                    )
+                }
+            }
+
+            val nowMs = System.currentTimeMillis()
+            var offsetMs = 0L
+
+            val deliveredLines = mergedDelivered.map { item ->
+                val p = productMap[item.productId]!!
+                DifferentGasLineItem(
+                    productId = p.id,
+                    productName = p.name,
+                    categoryName = p.category.displayName,
+                    quantity = item.quantity
+                )
+            }
+            val returnedLines = mergedReturned.map { item ->
+                val p = productMap[item.productId]!!
+                DifferentGasLineItem(
+                    productId = p.id,
+                    productName = p.name,
+                    categoryName = p.category.displayName,
+                    quantity = item.quantity
+                )
+            }
+
+            val deliveredSummary = deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
+            val returnedSummary = returnedLines.joinToString(", ") { "${it.productName} Empty ×${it.quantity}" }
+            val phoneTag = if (cleanPhone.isNotBlank()) " • Tel: $cleanPhone" else ""
+            val noteTag = if (cleanNotes.isNotBlank()) " • $cleanNotes" else ""
+
+            val fullOutType = if (vehicle != null) {
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT
+            } else {
+                TransactionType.STORE_CUSTOMER_CHANGE_FULL_OUT
+            }
+            val emptyInType = if (vehicle != null) {
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_IN
+            } else {
+                TransactionType.STORE_CUSTOMER_CHANGE_EMPTY_IN
+            }
+
+            // 1. Deduct delivered Full quantity strictly from each delivered gas Full stock
+            for (item in mergedDelivered) {
+                val tx = StockTransactionEntity(
+                    businessDate = businessDate,
+                    timestamp = nowMs + offsetMs++,
+                    type = fullOutType,
+                    productId = item.productId,
+                    vehicleId = vehicle?.id,
+                    vehicleName = vehicle?.name,
+                    staffId = actor.id,
+                    staffName = actor.displayName,
+                    quantity = item.quantity,
+                    customerName = cleanCustomer,
+                    notes = "Diff Gas Return • Delivered vs ($returnedSummary)$phoneTag$noteTag".take(300),
+                    remoteId = CloudSyncRepository.generateRemoteTxId()
+                )
+                val rowId = txDao.insert(tx)
+                insertedTransactions.add(tx.copy(id = rowId))
+            }
+
+            // 2. Add returned Empty quantity strictly to each returned gas Empty stock
+            for (item in mergedReturned) {
+                val tx = StockTransactionEntity(
+                    businessDate = businessDate,
+                    timestamp = nowMs + offsetMs++,
+                    type = emptyInType,
+                    productId = item.productId,
+                    vehicleId = vehicle?.id,
+                    vehicleName = vehicle?.name,
+                    staffId = actor.id,
+                    staffName = actor.displayName,
+                    quantity = item.quantity,
+                    customerName = cleanCustomer,
+                    notes = "Diff Gas Return • Returned vs ($deliveredSummary)$phoneTag$noteTag".take(300),
+                    remoteId = CloudSyncRepository.generateRemoteTxId()
+                )
+                val rowId = txDao.insert(tx)
+                insertedTransactions.add(tx.copy(id = rowId))
+            }
+
+            // 3. Persist audit & history record (unique submissionKey guarantees no duplicates)
+            val returnRecord = DifferentGasReturnEntity(
+                submissionKey = cleanKey,
+                businessDate = businessDate,
+                timestamp = nowMs,
+                customerName = cleanCustomer,
+                customerPhone = cleanPhone,
+                staffId = actor.id,
+                staffName = actor.displayName,
+                vehicleId = vehicle?.id,
+                vehicleName = vehicle?.name,
+                deliveredSummary = deliveredSummary,
+                returnedSummary = returnedSummary,
+                deliveredItemsJson = serializeDifferentGasLineItems(deliveredLines),
+                returnedItemsJson = serializeDifferentGasLineItems(returnedLines),
+                totalDeliveredQty = deliveredLines.sumOf { it.quantity },
+                totalReturnedQty = returnedLines.sumOf { it.quantity },
+                notes = cleanNotes
+            )
+            differentGasReturnDao.insert(returnRecord)
+
+            successMessage = "Saved Different Gas Return ($scopeLabel): Delivered $deliveredSummary | Returned $returnedSummary."
+            OperationResult.Success(successMessage)
+        }
+
+        if (localResult is OperationResult.Success && cloudSync != null && insertedTransactions.isNotEmpty()) {
+            var anyFailed = false
+            for (tx in insertedTransactions) {
+                if (cloudSync.pushTransaction(tx).isFailure) {
+                    anyFailed = true
+                }
+            }
+            if (anyFailed) {
+                return OperationResult.Success("$successMessage Saved locally (will sync when online).")
+            }
+        }
+        return localResult
+    }
+
+    private fun serializeDifferentGasLineItems(items: List<DifferentGasLineItem>): String {
+        val arr = org.json.JSONArray()
+        items.forEach { line ->
+            arr.put(org.json.JSONObject().apply {
+                put("productId", line.productId)
+                put("productName", line.productName)
+                put("categoryName", line.categoryName)
+                put("quantity", line.quantity)
+            })
+        }
+        return arr.toString()
     }
 
     /**

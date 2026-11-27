@@ -430,13 +430,23 @@ fun KpiMetricCard(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontFamily = JetBrainsMono,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = accentColor
-                )
+                val numericValue = value.toIntOrNull()
+                if (numericValue != null) {
+                    AnimatedStockCounter(
+                        count = numericValue,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = accentColor
+                    )
+                } else {
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontFamily = JetBrainsMono,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = accentColor
+                    )
+                }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,

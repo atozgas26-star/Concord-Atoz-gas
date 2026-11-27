@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AddBusiness
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Outbox
 import androidx.compose.material.icons.filled.Search
@@ -163,7 +164,9 @@ fun StoreManagementScreen(
     ) -> Unit = { _, _, _, _, _, _ -> },
     onUpdateOpeningStock: (productId: Long, full: Int, empty: Int) -> Unit,
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
-    onDeleteTransaction: (Long) -> Unit
+    onDeleteTransaction: (Long) -> Unit,
+    onOpenDifferentGasReturn: () -> Unit = {},
+    onOpenReturnHistory: () -> Unit = {}
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
@@ -265,6 +268,12 @@ fun StoreManagementScreen(
                     StoreActionChip("Customer Change", Icons.Default.SwapHoriz, Color(0xFFC084FC)) {
                         showCustomerChangeDialog = true
                     }
+                    StoreActionChip("Diff Gas Return", Icons.Default.SwapHoriz, MetallicOrangeBright) {
+                        onOpenDifferentGasReturn()
+                    }
+                    StoreActionChip("Return History", Icons.Default.History, ElectricBlueGlow) {
+                        onOpenReturnHistory()
+                    }
                     StoreActionChip("Full Inward", Icons.AutoMirrored.Filled.Input, BrandGreenLight) {
                         activeModal = StoreModalAction.FULL_INWARD
                     }
@@ -276,6 +285,17 @@ fun StoreManagementScreen(
                     }
                     StoreActionChip("Stock Adjustment", Icons.Default.Tune, ElectricBlueGlow) {
                         showAdjustmentPicker = true
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StoreActionChip("Return History", Icons.Default.History, ElectricBlueGlow) {
+                        onOpenReturnHistory()
                     }
                 }
             }

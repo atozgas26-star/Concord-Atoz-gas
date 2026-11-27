@@ -40,7 +40,8 @@ data class ProductEntity(
     val category: ProductCategory,
     val name: String,
     val sortOrder: Int = 0,
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val cylinderSizeKg: String = ""
 )
 
 @Entity(
@@ -198,3 +199,33 @@ data class ChatMessageEntity(
     val isImportant: Boolean = false,
     val createdAtMs: Long = System.currentTimeMillis()
 )
+
+@Entity(
+    tableName = "different_gas_returns",
+    indices = [
+        Index(value = ["submissionKey"], unique = true),
+        Index(value = ["businessDate"]),
+        Index(value = ["staffId"]),
+        Index(value = ["customerName"])
+    ]
+)
+data class DifferentGasReturnEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val submissionKey: String,
+    val businessDate: String, // ISO yyyy-MM-dd
+    val timestamp: Long = System.currentTimeMillis(),
+    val customerName: String,
+    val customerPhone: String = "",
+    val staffId: Long,
+    val staffName: String,
+    val vehicleId: Long? = null,
+    val vehicleName: String? = null,
+    val deliveredSummary: String,
+    val returnedSummary: String,
+    val deliveredItemsJson: String,
+    val returnedItemsJson: String,
+    val totalDeliveredQty: Int,
+    val totalReturnedQty: Int,
+    val notes: String = ""
+)
+

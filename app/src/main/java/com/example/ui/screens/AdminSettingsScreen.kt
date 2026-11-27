@@ -134,6 +134,13 @@ import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.LuxurySectionHeader
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpenedSectionFolderHeader
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.runtime.LaunchedEffect
+import com.example.ui.components.AdminReorderableProductRow
+import com.example.ui.components.ProductDeleteConfirmDialog
+import com.example.ui.components.ProductEditorDialog
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.categoryVisualStyle
 import com.example.ui.components.luxuryTapScale
@@ -206,7 +213,10 @@ fun AdminSettingsScreen(
     onAddStaffAndVehicle: (staffName: String, vehicleName: String, pin: String) -> Unit = { _, _, _ -> },
     onUpdateStaffName: (userId: Long, newDisplayName: String, newVehicleName: String?) -> Unit = { _, _, _ -> },
     onUpdatePin: (userId: Long, newPin: String) -> Unit,
-    onAddProduct: (ProductCategory, String) -> Unit,
+    onAddProduct: (ProductCategory, String, String) -> Unit,
+    onUpdateProduct: (productId: Long, category: ProductCategory, name: String, cylinderSizeKg: String, isActive: Boolean) -> Unit = { _, _, _, _, _ -> },
+    onDeleteOrDeactivateProduct: (productId: Long) -> Unit = {},
+    onReorderProducts: (orderedProductIds: List<Long>) -> Unit = {},
     onToggleProductActive: (ProductEntity) -> Unit,
     onExportBackupJson: suspend () -> String,
     onRestoreBackupJson: (String) -> Unit,
@@ -223,6 +233,8 @@ fun AdminSettingsScreen(
     var editingNameUser by remember { mutableStateOf<UserAccountEntity?>(null) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
     var showAddProductDialog by remember { mutableStateOf(false) }
+    var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var deletingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var showEditAdminCredentialsDialog by remember { mutableStateOf(false) }
     var showEditOwnerViewPasswordDialog by remember { mutableStateOf(false) }
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
@@ -1085,13 +1097,43 @@ fun AdminSettingsScreen(
             }
         } else {
             val showProducts = selectedProductCategory != null || productSearchQuery.isNotBlank()
-            val matchingProducts = remember(products, selectedProductCategory, productSearchQuery) {
-                products.filter { prod ->
+            val canReorder = selectedProductCategory != null && productSearchQuery.isBlank()
+            val sortedProducts = remember(products) {
+                products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.id }))
+            }
+            val matchingProducts = remember(sortedProducts, selectedProductCategory, productSearchQuery) {
+                sortedProducts.filter { prod ->
                     (selectedProductCategory == null || prod.category == selectedProductCategory) &&
                         (productSearchQuery.isBlank() ||
                             prod.name.contains(productSearchQuery, ignoreCase = true) ||
+                            prod.cylinderSizeKg.contains(productSearchQuery, ignoreCase = true) ||
                             prod.category.displayName.contains(productSearchQuery, ignoreCase = true))
                 }
+            }
+
+            // Local editable order for smooth Admin drag-and-drop & move up/down before saving
+            var editableOrder by remember(selectedProductCategory, products) {
+                mutableStateOf(matchingProducts)
+            }
+            var hasUnsavedOrderChanges by remember(selectedProductCategory, products) {
+                mutableStateOf(false)
+            }
+
+            LaunchedEffect(matchingProducts) {
+                if (!hasUnsavedOrderChanges) {
+                    editableOrder = matchingProducts
+                }
+            }
+
+            val displayedProducts = if (canReorder) editableOrder else matchingProducts
+
+            fun moveProduct(fromIdx: Int, toIdx: Int) {
+                if (fromIdx !in editableOrder.indices || toIdx !in editableOrder.indices || fromIdx == toIdx) return
+                val mutable = editableOrder.toMutableList()
+                val item = mutable.removeAt(fromIdx)
+                mutable.add(toIdx, item)
+                editableOrder = mutable
+                hasUnsavedOrderChanges = true
             }
 
             LazyColumn(
@@ -1103,7 +1145,10 @@ fun AdminSettingsScreen(
                     CategoryFolderGrid(
                         stats = productFolderStats,
                         selectedCategory = selectedProductCategory,
-                        onSelectCategory = { selectedProductCategory = it },
+                        onSelectCategory = {
+                            selectedProductCategory = it
+                            hasUnsavedOrderChanges = false
+                        },
                         sectionTitle = "Product Master Category Folders"
                     )
                 }
@@ -1118,7 +1163,7 @@ fun AdminSettingsScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Add New Gas Product")
+                        Text("Add New Gas Product", fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -1126,7 +1171,7 @@ fun AdminSettingsScreen(
                     OutlinedTextField(
                         value = productSearchQuery,
                         onValueChange = { productSearchQuery = it },
-                        placeholder = { Text("Search gas cylinder or category...") },
+                        placeholder = { Text("Search gas cylinder, size/KG, or category...") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -1138,14 +1183,77 @@ fun AdminSettingsScreen(
                         item(key = "product_master_opened_header_${openCat.name}") {
                             OpenedCategoryFolderHeader(
                                 category = openCat,
-                                itemCount = matchingProducts.size,
-                                subtitle = "${matchingProducts.count { it.isActive }} active • ${matchingProducts.size} products inside folder",
-                                onClose = { selectedProductCategory = null }
+                                itemCount = displayedProducts.size,
+                                subtitle = "${displayedProducts.count { it.isActive }} active • Long-press drag handle or arrows to reorder",
+                                onClose = {
+                                    selectedProductCategory = null
+                                    hasUnsavedOrderChanges = false
+                                }
                             )
                         }
                     }
 
-                    if (matchingProducts.isEmpty()) {
+                    if (canReorder && displayedProducts.size > 1) {
+                        item(key = "product_master_reorder_banner") {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (hasUnsavedOrderChanges) MetallicOrange.copy(alpha = 0.16f) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (hasUnsavedOrderChanges) MetallicOrangeBright else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.DragIndicator,
+                                            contentDescription = null,
+                                            tint = if (hasUnsavedOrderChanges) MetallicOrangeBright else MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = if (hasUnsavedOrderChanges) {
+                                                "Custom order modified — tap Save Order to sync to Staff & Store."
+                                            } else {
+                                                "Admin Product Ordering: Drag handle or use arrows, then Save."
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    if (hasUnsavedOrderChanges) {
+                                        Spacer(Modifier.width(8.dp))
+                                        Button(
+                                            onClick = {
+                                                onReorderProducts(editableOrder.map { it.id })
+                                                hasUnsavedOrderChanges = false
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
+                                            modifier = Modifier.testTag("save_product_order_button")
+                                        ) {
+                                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Save Order", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (displayedProducts.isEmpty()) {
                         item(key = "product_master_empty_notice") {
                             Text(
                                 text = "No matching gas products found.",
@@ -1155,51 +1263,23 @@ fun AdminSettingsScreen(
                             )
                         }
                     } else {
-                        items(matchingProducts, key = { it.id }) { prod ->
-                            val catStyle = categoryVisualStyle(prod.category)
-                            LuxuryGlassCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                accentGlow = if (prod.isActive) catStyle.primaryColor else null
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Inventory2,
-                                            contentDescription = null,
-                                            tint = if (prod.isActive) catStyle.primaryColor else MaterialTheme.colorScheme.outline,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = prod.name,
-                                                style = MaterialTheme.typography.titleSmall
-                                            )
-                                            if (selectedProductCategory == null) {
-                                                Text(
-                                                    text = prod.category.displayName,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = catStyle.primaryColor
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Switch(
-                                        checked = prod.isActive,
-                                        onCheckedChange = { onToggleProductActive(prod) }
-                                    )
-                                }
-                            }
+                        itemsIndexed(displayedProducts, key = { _, prod -> prod.id }) { idx, prod ->
+                            AdminReorderableProductRow(
+                                product = prod,
+                                index = idx,
+                                totalCount = displayedProducts.size,
+                                canReorder = canReorder,
+                                showCategoryLabel = selectedProductCategory == null,
+                                onMoveUp = { moveProduct(idx, idx - 1) },
+                                onMoveDown = { moveProduct(idx, idx + 1) },
+                                onDragSwap = { delta ->
+                                    val target = (idx + delta).coerceIn(0, displayedProducts.lastIndex)
+                                    moveProduct(idx, target)
+                                },
+                                onEdit = { editingProduct = prod },
+                                onDelete = { deletingProduct = prod },
+                                onToggleActive = { onToggleProductActive(prod) }
+                            )
                         }
                     }
                 }
@@ -1248,11 +1328,35 @@ fun AdminSettingsScreen(
     }
 
     if (showAddProductDialog) {
-        AddProductDialog(
+        ProductEditorDialog(
+            existingProduct = null,
+            initialCategory = selectedProductCategory ?: ProductCategory.INDUSTRIAL_GAS,
             onDismiss = { showAddProductDialog = false },
-            onConfirm = { cat, name ->
-                onAddProduct(cat, name)
+            onSave = { cat, name, sizeKg, _ ->
+                onAddProduct(cat, name, sizeKg)
                 showAddProductDialog = false
+            }
+        )
+    }
+
+    editingProduct?.let { prod ->
+        ProductEditorDialog(
+            existingProduct = prod,
+            onDismiss = { editingProduct = null },
+            onSave = { cat, name, sizeKg, active ->
+                onUpdateProduct(prod.id, cat, name, sizeKg, active)
+                editingProduct = null
+            }
+        )
+    }
+
+    deletingProduct?.let { prod ->
+        ProductDeleteConfirmDialog(
+            product = prod,
+            onDismiss = { deletingProduct = null },
+            onConfirmDelete = {
+                onDeleteOrDeactivateProduct(prod.id)
+                deletingProduct = null
             }
         )
     }

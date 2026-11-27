@@ -20,6 +20,7 @@ import com.example.data.local.AdminCredentialsState
 import com.example.data.local.AppNotificationEntity
 import com.example.data.local.BiometricUnlockState
 import com.example.data.local.ChatMessageEntity
+import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.SessionPreferences
@@ -35,6 +36,7 @@ import com.example.data.model.CompanyStockRow
 import com.example.data.model.CustomerChangeMode
 import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
+import com.example.data.model.CustomerReturnHistoryGroup
 import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.LowStockProductItem
@@ -45,6 +47,7 @@ import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ProductSalesRow
 import com.example.data.model.ReportType
+import com.example.data.model.StaffReturnHistoryGroup
 import com.example.data.model.StaffSalesRow
 import com.example.data.model.StockCalculator
 import com.example.data.model.StoreStockRow
@@ -156,6 +159,11 @@ class AppViewModel(
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
+    private val _successFeedbackMessage = MutableStateFlow<String?>(null)
+    val successFeedbackMessage: StateFlow<String?> = _successFeedbackMessage.asStateFlow()
+
+    private val inFlightReturnKeys = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private val _appUpdateState = MutableStateFlow(AppUpdateUiState())
     val appUpdateState: StateFlow<AppUpdateUiState> = _appUpdateState.asStateFlow()
@@ -343,6 +351,15 @@ class AppViewModel(
             val vId = session?.assignedVehicle?.id
             if (vId == null) flowOf(emptyList()) else repository.observeCustomerPendingBalances(vId)
         }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val differentGasReturns: StateFlow<List<DifferentGasReturnEntity>> = repository.differentGasReturnsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val customerReturnHistory: StateFlow<List<CustomerReturnHistoryGroup>> = repository.customerReturnHistoryFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val staffReturnHistory: StateFlow<List<StaffReturnHistoryGroup>> = repository.staffReturnHistoryFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val monthlySalesReport: StateFlow<List<MonthlyDailySaleRow>> = _selectedYearMonth
@@ -3091,12 +3108,106 @@ class AppViewModel(
         }
     }
 
-    fun addProduct(category: ProductCategory, name: String) {
+    fun addProduct(category: ProductCategory, name: String, cylinderSizeKg: String = "") {
         val session = _authSession.value ?: return
-        if (session.user.role != UserRole.ADMIN) return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can add gas products.")
+            return
+        }
         viewModelScope.launch {
-            val result = repository.addProduct(category, name)
+            val result = repository.addProduct(category, name, cylinderSizeKg)
             handleOperationResult(result)
+        }
+    }
+
+    fun updateProduct(
+        productId: Long,
+        category: ProductCategory,
+        name: String,
+        cylinderSizeKg: String,
+        isActive: Boolean
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can edit gas products.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.updateProduct(
+                productId = productId,
+                category = category,
+                name = name,
+                cylinderSizeKg = cylinderSizeKg,
+                isActive = isActive,
+                actor = session.user
+            )
+            handleOperationResult(result)
+        }
+    }
+
+    fun deleteOrDeactivateProduct(productId: Long) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can delete gas products.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.deleteOrDeactivateProduct(productId, session.user)
+            handleOperationResult(result)
+        }
+    }
+
+    fun reorderProducts(orderedProductIds: List<Long>) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can reorder products.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.reorderProducts(orderedProductIds, session.user)
+            handleOperationResult(result)
+        }
+    }
+
+    fun recordDifferentGasReturn(
+        deliveredItems: List<CustomerExchangeItem>,
+        returnedItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        customerName: String,
+        customerPhone: String,
+        notes: String = "",
+        submissionKey: String = java.util.UUID.randomUUID().toString()
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert("Read-Only Access", "Owner View cannot record cylinder returns.")
+            return
+        }
+        val effectiveVehicleId = if (session.user.role == UserRole.STAFF) {
+            session.assignedVehicle?.id
+        } else {
+            vehicleId
+        }
+        if (!inFlightReturnKeys.add(submissionKey)) {
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val result = repository.recordDifferentGasReturn(
+                    businessDate = _selectedDate.value,
+                    deliveredItems = deliveredItems,
+                    returnedItems = returnedItems,
+                    vehicleId = effectiveVehicleId,
+                    actor = session.user,
+                    customerName = customerName,
+                    customerPhone = customerPhone,
+                    notes = notes,
+                    submissionKey = submissionKey
+                )
+                handleOperationResult(result)
+            } finally {
+                inFlightReturnKeys.remove(submissionKey)
+            }
         }
     }
 
@@ -3127,10 +3238,15 @@ class AppViewModel(
         _snackbarMessage.value = msg
     }
 
+    fun clearSuccessFeedback() {
+        _successFeedbackMessage.value = null
+    }
+
     private fun handleOperationResult(result: OperationResult) {
         when (result) {
             is OperationResult.Success -> {
                 _snackbarMessage.value = result.message
+                _successFeedbackMessage.value = result.message
                 scheduleAutoDriveBackup()
             }
             is OperationResult.InsufficientStock -> _warningAlert.value = WarningAlert(result.title, result.message)

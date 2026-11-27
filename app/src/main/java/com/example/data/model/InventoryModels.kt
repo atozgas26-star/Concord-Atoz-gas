@@ -187,3 +187,32 @@ data class CustomerExchangeItem(
     val productId: Long,
     val quantity: Int
 )
+
+data class DifferentGasLineItem(
+    val productId: Long,
+    val productName: String,
+    val categoryName: String,
+    val quantity: Int
+)
+
+data class CustomerReturnHistoryGroup(
+    val customerName: String,
+    val customerPhone: String,
+    val totalTransactions: Int,
+    val totalDeliveredFull: Int,
+    val totalReturnedEmpty: Int,
+    val lastTimestampMs: Long,
+    val records: List<com.example.data.local.DifferentGasReturnEntity>
+)
+
+data class StaffReturnHistoryGroup(
+    val staffId: Long,
+    val staffName: String,
+    val vehicleName: String?,
+    val totalTransactions: Int,
+    val totalDeliveredFull: Int,
+    val totalReturnedEmpty: Int,
+    val lastTimestampMs: Long,
+    val records: List<com.example.data.local.DifferentGasReturnEntity>
+)
+

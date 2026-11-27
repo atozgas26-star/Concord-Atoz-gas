@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.PersonAdd
@@ -320,7 +321,9 @@ fun VehicleDetailScreen(
     ) -> Unit = { _, _, _, _, _, _, _, _ -> },
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onDeleteTransaction: (Long) -> Unit = {},
-    onUpdateVehicleOpening: (vehicleId: Long, productId: Long, oldFull: Int, oldEmpty: Int) -> Unit
+    onUpdateVehicleOpening: (vehicleId: Long, productId: Long, oldFull: Int, oldEmpty: Int) -> Unit,
+    onOpenDifferentGasReturn: () -> Unit = {},
+    onOpenReturnHistory: () -> Unit = {}
 ) {
     androidx.activity.compose.BackHandler(onBack = onBack)
 
@@ -535,6 +538,22 @@ fun VehicleDetailScreen(
                         colors = chipColors,
                         border = chipBorder,
                         modifier = Modifier.testTag("vehicle_detail_customer_change_chip")
+                    )
+                    AssistChip(
+                        onClick = onOpenDifferentGasReturn,
+                        label = { Text("Diff Gas Return") },
+                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = MetallicOrangeBright) },
+                        colors = chipColors,
+                        border = chipBorder,
+                        modifier = Modifier.testTag("vehicle_detail_different_gas_return_chip")
+                    )
+                    AssistChip(
+                        onClick = onOpenReturnHistory,
+                        label = { Text("Return History") },
+                        leadingIcon = { Icon(Icons.Default.History, contentDescription = null, tint = if (isDark) ElectricBlueGlow else BrandGreenPrimary) },
+                        colors = chipColors,
+                        border = chipBorder,
+                        modifier = Modifier.testTag("vehicle_detail_return_history_chip")
                     )
                     if (vehicle != null && allVehicles.any { it.id != vehicle.id }) {
                         AssistChip(

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WarningAmber
@@ -187,6 +188,8 @@ fun AdminDashboardScreen(
     onUpdateLowStockThreshold: (Int) -> Unit = {},
     onDismissLowStockAlert: () -> Unit = {},
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
+    onOpenDifferentGasReturn: () -> Unit = {},
+    onOpenReturnHistory: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
@@ -435,6 +438,38 @@ fun AdminDashboardScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("quick_nav_vehicles")
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (!isReadOnly) {
+                                QuickNavCard(
+                                    title = "Diff Gas Return",
+                                    subtitle = "Deliver & Receive",
+                                    icon = Icons.Default.SwapHoriz,
+                                    accentColor = if (isDarkNav) MetallicOrangeBright else MetallicOrange,
+                                    containerColor = if (isDarkNav) Color(0xFF3A1A0B) else AmberContainer,
+                                    onContainerColor = if (isDarkNav) MetallicOrangeBright else AmberOnContainer,
+                                    onClick = onOpenDifferentGasReturn,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("quick_nav_different_gas_return")
+                                )
+                            }
+                            QuickNavCard(
+                                title = "Return History",
+                                subtitle = "Customer & Staff",
+                                icon = Icons.Default.History,
+                                accentColor = if (isDarkNav) ElectricBlueGlow else RoyalElectricBlue,
+                                containerColor = if (isDarkNav) ObsidianElevated else ElectricBlueSoft,
+                                onContainerColor = if (isDarkNav) ElectricBlueGlow else ElectricBlueOnSoft,
+                                onClick = onOpenReturnHistory,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("quick_nav_return_history")
                             )
                         }
                     }

@@ -89,10 +89,14 @@ import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.AppUpdateDialog
+import com.example.ui.components.DifferentGasReturnDialog
+import com.example.ui.components.DifferentGasReturnHistoryDialog
 import com.example.ui.components.DraggableFloatingCalculatorOverlay
 import com.example.ui.components.InsufficientStockWarningDialog
+import com.example.ui.components.LuxurySuccessCheckOverlay
 import com.example.ui.components.NotificationsBellDialog
 import com.example.ui.components.QuickCalculatorPopupDialog
+import com.example.ui.components.RoleWelcomeOverlay
 import com.example.ui.components.StartupSplashOverlay
 import com.example.ui.components.TeamChatDialog
 import com.example.ui.screens.AdminDashboardScreen
@@ -307,16 +311,39 @@ fun ConcordGasRootApp(
     val adminOwnerChatMessages by viewModel.adminOwnerChatMessages.collectAsStateWithLifecycle()
     val unreadChatCount by viewModel.unreadChatCount.collectAsStateWithLifecycle()
     val activeTypingStatuses by viewModel.activeTypingStatuses.collectAsStateWithLifecycle()
+    val customerReturnHistory by viewModel.customerReturnHistory.collectAsStateWithLifecycle()
+    val staffReturnHistory by viewModel.staffReturnHistory.collectAsStateWithLifecycle()
+    val successFeedbackMessage by viewModel.successFeedbackMessage.collectAsStateWithLifecycle()
 
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
     var showNotificationsBell by rememberSaveable { mutableStateOf(false) }
     var showTeamChat by rememberSaveable { mutableStateOf(false) }
+    var showDifferentGasReturnDialog by rememberSaveable { mutableStateOf(false) }
+    var differentGasReturnLockStore by rememberSaveable { mutableStateOf(false) }
+    var differentGasReturnVehicleId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var showDifferentGasReturnHistory by rememberSaveable { mutableStateOf(false) }
+    var welcomeShownSessionKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var showRoleWelcomeOverlay by remember { mutableStateOf(false) }
     var requestedReportType by rememberSaveable { mutableStateOf(ReportType.DAILY_STORE) }
     var checkedUpdateOnce by rememberSaveable { mutableStateOf(false) }
     var showQuickCalculator by rememberSaveable { mutableStateOf(false) }
     var promptedNotifPermission by rememberSaveable { mutableStateOf(false) }
     var lastUnreadNotificationCount by remember { mutableStateOf(-1) }
     var lastUnreadChatCount by remember { mutableStateOf(-1) }
+
+    LaunchedEffect(authSession?.user?.id, authSession?.user?.role, isSplashVisible) {
+        val active = authSession
+        if (active == null) {
+            welcomeShownSessionKey = null
+            showRoleWelcomeOverlay = false
+        } else if (!isSplashVisible) {
+            val key = "${active.user.id}_${active.user.role.name}"
+            if (welcomeShownSessionKey != key) {
+                welcomeShownSessionKey = key
+                showRoleWelcomeOverlay = true
+            }
+        }
+    }
 
     LaunchedEffect(unreadNotificationCount, authSession != null) {
         if (authSession == null) {
@@ -683,6 +710,14 @@ fun ConcordGasRootApp(
                             viewModel.checkForAppUpdate(silent = false)
                         },
                         onDismissAppUpdateBanner = viewModel::dismissAppUpdateBanner,
+                        onOpenDifferentGasReturn = {
+                            differentGasReturnLockStore = false
+                            differentGasReturnVehicleId = session.assignedVehicle?.id
+                            showDifferentGasReturnDialog = true
+                        },
+                        onOpenReturnHistory = {
+                            showDifferentGasReturnHistory = true
+                        },
                         onLogout = viewModel::logout
                     )
                 }
@@ -881,6 +916,16 @@ fun ConcordGasRootApp(
                                             openingFull = oldFull,
                                             openingEmpty = oldEmpty
                                         )
+                                    },
+                                    onOpenDifferentGasReturn = {
+                                        if (!isReadOnly) {
+                                            differentGasReturnLockStore = false
+                                            differentGasReturnVehicleId = activeVehicle?.id
+                                            showDifferentGasReturnDialog = true
+                                        }
+                                    },
+                                    onOpenReturnHistory = {
+                                        showDifferentGasReturnHistory = true
                                     }
                                 )
                             } else {
@@ -947,6 +992,16 @@ fun ConcordGasRootApp(
                                         onUpdateLowStockThreshold = viewModel::updateLowStockThreshold,
                                         onDismissLowStockAlert = viewModel::dismissLowStockAlert,
                                         onUpdateTransaction = viewModel::updateTransaction,
+                                        onOpenDifferentGasReturn = {
+                                            if (!isReadOnly) {
+                                                differentGasReturnLockStore = false
+                                                differentGasReturnVehicleId = null
+                                                showDifferentGasReturnDialog = true
+                                            }
+                                        },
+                                        onOpenReturnHistory = {
+                                            showDifferentGasReturnHistory = true
+                                        },
                                         onLogout = viewModel::logout
                                     )
 
@@ -985,7 +1040,17 @@ fun ConcordGasRootApp(
                                             )
                                         },
                                         onUpdateTransaction = viewModel::updateTransaction,
-                                        onDeleteTransaction = viewModel::deleteTransaction
+                                        onDeleteTransaction = viewModel::deleteTransaction,
+                                        onOpenDifferentGasReturn = {
+                                            if (!isReadOnly) {
+                                                differentGasReturnLockStore = true
+                                                differentGasReturnVehicleId = null
+                                                showDifferentGasReturnDialog = true
+                                            }
+                                        },
+                                        onOpenReturnHistory = {
+                                            showDifferentGasReturnHistory = true
+                                        }
                                     )
 
                                     AdminNavTab.VEHICLES -> VehicleManagementScreen(
@@ -1072,6 +1137,9 @@ fun ConcordGasRootApp(
                                         onUpdateStaffName = viewModel::updateStaffName,
                                         onUpdatePin = viewModel::updateUserPin,
                                         onAddProduct = viewModel::addProduct,
+                                        onUpdateProduct = viewModel::updateProduct,
+                                        onDeleteOrDeactivateProduct = viewModel::deleteOrDeactivateProduct,
+                                        onReorderProducts = viewModel::reorderProducts,
                                         onToggleProductActive = viewModel::toggleProductActive,
                                         onExportBackupJson = viewModel::exportBackupJson,
                                         onRestoreBackupJson = viewModel::restoreBackupJson,
@@ -1093,6 +1161,76 @@ fun ConcordGasRootApp(
                 SoundEffectsManager.playTapTick(soundEnabled)
                 showQuickCalculator = true
             }
+        )
+
+        // Luxury animated Success Checkmark Overlay after saving entries
+        LuxurySuccessCheckOverlay(
+            message = successFeedbackMessage,
+            onDismiss = viewModel::clearSuccessFeedback,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+        )
+
+        // Role-specific Cinematic Welcome Animation (Owner / Admin / Staff) with Skip button
+        if (showRoleWelcomeOverlay && session != null && !isSplashVisible) {
+            RoleWelcomeOverlay(
+                role = session.user.role,
+                displayName = session.user.displayName,
+                vehicleName = session.assignedVehicle?.name,
+                onFinished = { showRoleWelcomeOverlay = false }
+            )
+        }
+    }
+
+    if (showDifferentGasReturnDialog && session != null && session.user.role != UserRole.OWNER_VIEW) {
+        val isStaffRole = session.user.role == UserRole.STAFF
+        val fixedVeh = when {
+            isStaffRole -> session.assignedVehicle
+            differentGasReturnLockStore -> null
+            differentGasReturnVehicleId != null -> vehicles.firstOrNull { it.id == differentGasReturnVehicleId }
+            else -> null
+        }
+        val allowVehSwitch = !isStaffRole && !differentGasReturnLockStore && differentGasReturnVehicleId == null
+        DifferentGasReturnDialog(
+            products = activeProducts,
+            vehicles = vehicles,
+            fixedVehicle = fixedVeh,
+            lockToStore = differentGasReturnLockStore && !isStaffRole,
+            allowVehicleSwitch = allowVehSwitch,
+            recentCustomerNames = recentCustomerNames,
+            availableFullLookup = { prodId, vehId ->
+                when {
+                    vehId == null -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0
+                    isStaffRole -> staffVehicleRows.firstOrNull { it.product.id == prodId }?.fullBalance ?: 0
+                    vehId == selectedVehicleId -> selectedVehicleRows.firstOrNull { it.product.id == prodId }?.fullBalance ?: 0
+                    else -> companyStockReport.firstOrNull { it.product.id == prodId }?.vehiclesFull ?: 0
+                }
+            },
+            onVehicleSelected = { vehId ->
+                if (vehId != null) viewModel.selectVehicle(vehId)
+            },
+            onDismiss = { showDifferentGasReturnDialog = false },
+            onConfirm = { deliveredItems, returnedItems, vehicleId, custName, custPhone, notes, submissionKey ->
+                viewModel.recordDifferentGasReturn(
+                    deliveredItems = deliveredItems,
+                    returnedItems = returnedItems,
+                    vehicleId = vehicleId,
+                    customerName = custName,
+                    customerPhone = custPhone,
+                    notes = notes,
+                    submissionKey = submissionKey
+                )
+                showDifferentGasReturnDialog = false
+            }
+        )
+    }
+
+    if (showDifferentGasReturnHistory && session != null) {
+        DifferentGasReturnHistoryDialog(
+            customerGroups = customerReturnHistory,
+            staffGroups = staffReturnHistory,
+            onDismiss = { showDifferentGasReturnHistory = false }
         )
     }
 

@@ -181,10 +181,9 @@ fun CurrentInventoryTotalsCard(
                             horizontalAlignment = Alignment.End,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                         ) {
-                            Text(
-                                text = grandTotal.toString(),
+                            AnimatedStockCounter(
+                                count = grandTotal,
                                 style = MaterialTheme.typography.titleLarge,
-                                fontFamily = JetBrainsMono,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = ArcticWhite
                             )
@@ -432,10 +431,10 @@ fun PendingDeliveriesSummaryCard(
                             color = if (summary.pendingDeliveryCylinders > 0) MetallicOrangeBright else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "${summary.pendingDeliveryCylinders} Full",
+                        AnimatedStockCounter(
+                            count = summary.pendingDeliveryCylinders,
+                            suffix = " Full",
                             style = MaterialTheme.typography.titleMedium,
-                            fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -480,10 +479,10 @@ fun PendingDeliveriesSummaryCard(
                             )
                         }
                         Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "$totalPendingEmptyCount Emp",
+                        AnimatedStockCounter(
+                            count = totalPendingEmptyCount,
+                            suffix = " Emp",
                             style = MaterialTheme.typography.titleMedium,
-                            fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )

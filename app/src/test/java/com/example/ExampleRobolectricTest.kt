@@ -1732,8 +1732,8 @@ class ExampleRobolectricTest {
 
     @Test
     fun `app system update manager compares semver, enforces trusted github release urls, and updates viewmodel state`() = runTest {
-        assertEquals("2.0.1", BuildConfig.VERSION_NAME)
-        assertEquals(13, BuildConfig.VERSION_CODE)
+        assertEquals("2.3.0", BuildConfig.VERSION_NAME)
+        assertEquals(14, BuildConfig.VERSION_CODE)
 
         // 1. Semantic version comparisons
         assertTrue(AppUpdateManager.compareSemVer("v2.0.0", "1.9.0") > 0)
@@ -1786,20 +1786,20 @@ class ExampleRobolectricTest {
         var mockedCode = 200
         var mockedBody = """
             {
-              "tag_name": "v2.1.0",
-              "name": "C&A Gas v2.1.0",
+              "tag_name": "v2.4.0",
+              "name": "C&A Gas v2.4.0",
               "body": "Added offline sync enhancements and invoice fixes.",
               "published_at": "2026-12-01T10:00:00Z",
-              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v2.1.0",
+              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v2.4.0",
               "assets": [
                 {
                   "name": "tampered.apk",
-                  "browser_download_url": "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.1.0/tampered.apk",
+                  "browser_download_url": "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.4.0/tampered.apk",
                   "size": 1048576
                 },
                 {
-                  "name": "CA-Gas-v2.1.0.apk",
-                  "browser_download_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.1.0/CA-Gas-v2.1.0.apk",
+                  "name": "CA-Gas-v2.4.0.apk",
+                  "browser_download_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.4.0/CA-Gas-v2.4.0.apk",
                   "size": 31457280
                 }
               ]
@@ -1839,15 +1839,15 @@ class ExampleRobolectricTest {
             }
         }
 
-        // Case A: Newer release v2.1.0 available -> skips tampered asset URL, picks trusted official APK URL
+        // Case A: Newer release v2.4.0 available -> skips tampered asset URL, picks trusted official APK URL
         vm.checkForAppUpdate(silent = false)
         waitUntil { !vm.appUpdateState.value.isChecking && vm.appUpdateState.value.status != AppUpdateStatus.IDLE }
         val available = vm.appUpdateState.value
         assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, available.status)
-        assertEquals("2.1.0", available.latestVersion)
+        assertEquals("2.4.0", available.latestVersion)
         assertTrue(available.shouldShowBanner)
         assertEquals(
-            "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.1.0/CA-Gas-v2.1.0.apk",
+            "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v2.4.0/CA-Gas-v2.4.0.apk",
             available.downloadUrl
         )
         assertEquals(30.0, available.apkSizeMb ?: 0.0, 0.1)
@@ -2241,8 +2241,8 @@ class ExampleRobolectricTest {
     @Test
     fun `launch screen is 3 to 5 seconds and category folders plus role headers use distinct visual color palettes`() {
         val duration = com.example.ui.components.STARTUP_LAUNCH_DURATION_SECONDS
-        assertTrue(duration in 3f..5f)
-        assertEquals(4.2f, duration)
+        assertTrue(duration in 3f..4f)
+        assertEquals(3.8f, duration)
 
         // All 4 gas category folders have unique vibrant primary colors
         val categoryColors = ProductCategory.entries.map {

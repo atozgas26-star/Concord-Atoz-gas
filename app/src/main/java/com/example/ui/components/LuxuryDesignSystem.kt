@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -289,3 +290,175 @@ fun SignatureAccentHairline(
             )
     )
 }
+
+/**
+ * Animated stock number counter with smooth numeric transitions and subtle update pop feedback.
+ * Respects Android reduced-motion settings automatically.
+ */
+@Composable
+fun AnimatedStockCounter(
+    count: Int,
+    prefix: String = "",
+    suffix: String = "",
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleLarge,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    fontWeight: FontWeight = FontWeight.ExtraBold,
+    modifier: Modifier = Modifier
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
+    val animatedCount by androidx.compose.animation.core.animateIntAsState(
+        targetValue = count,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) 0 else 460,
+            easing = FastOutSlowInEasing
+        ),
+        label = "animated_stock_counter"
+    )
+    val pulseScale = remember { Animatable(1f) }
+    LaunchedEffect(count) {
+        if (!reducedMotion) {
+            pulseScale.snapTo(1.06f)
+            pulseScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        }
+    }
+    Text(
+        text = "$prefix$animatedCount$suffix",
+        style = style,
+        fontFamily = com.example.ui.theme.JetBrainsMono,
+        fontWeight = fontWeight,
+        color = color,
+        maxLines = 1,
+        modifier = modifier.graphicsLayer {
+            scaleX = pulseScale.value
+            scaleY = pulseScale.value
+        }
+    )
+}
+
+/**
+ * Lightweight, non-blocking luxury animated Success Checkmark Overlay displayed briefly
+ * after saving stock entries, product updates, or different gas returns.
+ */
+@Composable
+fun LuxurySuccessCheckOverlay(
+    message: String?,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (message == null) return
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
+    val checkProgress = remember(message) { Animatable(if (reducedMotion) 1f else 0f) }
+    val cardAlpha = remember(message) { Animatable(if (reducedMotion) 1f else 0f) }
+
+    LaunchedEffect(message) {
+        if (!reducedMotion) {
+            cardAlpha.animateTo(1f, tween(180))
+            checkProgress.animateTo(1f, tween(340, easing = FastOutSlowInEasing))
+        }
+        delay(1350)
+        cardAlpha.animateTo(0f, tween(if (reducedMotion) 80 else 220))
+        onDismiss()
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .graphicsLayer { alpha = cardAlpha.value },
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = ObsidianMidnight.copy(alpha = 0.96f),
+            shadowElevation = 14.dp,
+            border = BorderStroke(
+                1.2.dp,
+                Brush.horizontalGradient(
+                    listOf(ElectricBlueGlow, Color(0xFF10B981), MetallicOrangeBright)
+                )
+            ),
+            modifier = Modifier
+                .clickable(onClick = onDismiss)
+                .testTag("luxury_success_check_overlay")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(34.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.compose.foundation.Canvas(modifier = Modifier.size(34.dp)) {
+                        val p = checkProgress.value
+                        val r = size.minDimension / 2f
+                        drawCircle(
+                            color = Color(0xFF10B981).copy(alpha = 0.18f),
+                            radius = r
+                        )
+                        drawArc(
+                            brush = Brush.sweepGradient(
+                                listOf(ElectricBlueGlow, Color(0xFF10B981), MetallicOrangeBright)
+                            ),
+                            startAngle = -90f,
+                            sweepAngle = 360f * p,
+                            useCenter = false,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                width = 2.6.dp.toPx(),
+                                cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            )
+                        )
+                        if (p > 0.25f) {
+                            val checkT = ((p - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                            val p1 = Offset(size.width * 0.28f, size.height * 0.52f)
+                            val p2 = Offset(size.width * 0.44f, size.height * 0.68f)
+                            val p3 = Offset(size.width * 0.74f, size.height * 0.35f)
+                            val seg1 = (checkT * 2f).coerceIn(0f, 1f)
+                            drawLine(
+                                color = Color(0xFF34D399),
+                                start = p1,
+                                end = Offset(p1.x + (p2.x - p1.x) * seg1, p1.y + (p2.y - p1.y) * seg1),
+                                strokeWidth = 2.8.dp.toPx(),
+                                cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            )
+                            if (checkT > 0.5f) {
+                                val seg2 = ((checkT - 0.5f) * 2f).coerceIn(0f, 1f)
+                                drawLine(
+                                    color = Color(0xFF34D399),
+                                    start = p2,
+                                    end = Offset(p2.x + (p3.x - p2.x) * seg2, p2.y + (p3.y - p2.y) * seg2),
+                                    strokeWidth = 2.8.dp.toPx(),
+                                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f, fill = false)) {
+                    Text(
+                        text = "Saved Successfully",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF34D399)
+                    )
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = com.example.ui.theme.ArcticWhite,
+                        maxLines = 2
+                    )
+                }
+            }
+        }
+    }
+}
+
