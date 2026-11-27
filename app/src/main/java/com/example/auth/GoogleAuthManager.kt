@@ -53,7 +53,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -79,8 +78,13 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
+import android.graphics.BitmapFactory
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -321,17 +325,44 @@ fun GoogleAuthScreen(
                 .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            val bannerBitmap by produceState<ImageBitmap?>(initialValue = null, context) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        BitmapFactory.decodeResource(
+                            context.resources,
+                            R.drawable.img_company_banner,
+                            opts
+                        )?.asImageBitmap()
+                    }.getOrNull()
+                }
+            }
+            val authLogoBitmap by produceState<ImageBitmap?>(initialValue = null, context) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        BitmapFactory.decodeResource(
+                            context.resources,
+                            R.drawable.ic_ca_red_logo,
+                            opts
+                        )?.asImageBitmap()
+                    }.getOrNull()
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(190.dp)
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_company_banner),
-                    contentDescription = "C&A Gas Banner",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (bannerBitmap != null) {
+                    Image(
+                        bitmap = bannerBitmap!!,
+                        contentDescription = "C&A Gas Banner",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -405,12 +436,23 @@ fun GoogleAuthScreen(
                             border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
                             modifier = Modifier.size(52.dp)
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_ca_red_logo),
-                                contentDescription = "C&A Gas Logo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            if (authLogoBitmap != null) {
+                                Image(
+                                    bitmap = authLogoBitmap!!,
+                                    contentDescription = "C&A Gas Logo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                    Text(
+                                        text = "C&A",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(

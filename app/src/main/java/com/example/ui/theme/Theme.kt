@@ -198,8 +198,8 @@ fun ConcordGasTheme(
 
     val view = LocalView.current
     if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window ?: return@SideEffect
+        androidx.compose.runtime.LaunchedEffect(view, effectiveDark) {
+            val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
             val controller = WindowCompat.getInsetsController(window, view)
             controller.isAppearanceLightStatusBars = !effectiveDark
             controller.isAppearanceLightNavigationBars = !effectiveDark

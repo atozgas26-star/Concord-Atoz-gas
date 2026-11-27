@@ -121,26 +121,31 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         val app = application as ConcordGasApp
         setContent {
-            val themePreset by app.container.sessionPreferences.themePresetFlow
-                .collectAsStateWithLifecycle(initialValue = ThemePreset.EMERALD_CORPORATE)
-            val darkModeEnabled by app.container.sessionPreferences.darkModeEnabledFlow
-                .collectAsStateWithLifecycle(initialValue = false)
-            val soundEnabled by app.container.sessionPreferences.soundEnabledFlow
-                .collectAsStateWithLifecycle(initialValue = true)
-            val startupSoundStyle by app.container.sessionPreferences.startupSoundStyleFlow
-                .collectAsStateWithLifecycle(initialValue = StartupSoundStyle.ROYAL_FANFARE)
+            var themePreset by remember { mutableStateOf(ThemePreset.EMERALD_CORPORATE) }
+            var darkModeEnabled by remember { mutableStateOf(false) }
+            var soundEnabled by remember { mutableStateOf(true) }
+            var startupSoundStyle by remember { mutableStateOf(StartupSoundStyle.ROYAL_FANFARE) }
             val rootScope = rememberCoroutineScope()
             val effectiveDarkMode = darkModeEnabled || themePreset == ThemePreset.MIDNIGHT_DARK
             var showSplash by rememberSaveable { mutableStateOf(true) }
-            // Defer heavy Firebase/Room/ViewModel mounting past the initial splash frame
-            // so WindowManager SurfaceSyncGroup receives the first transaction immediately (<50ms).
+            // Defer DataStore, Firebase, Room, and ViewModel mounting past WindowManager's initial
+            // ~1000ms SurfaceSyncGroup window (wmsSync-VRI[MainActivity] / VRI[MainActivity]) so
+            // Frame 1 commits immediately and never hits the 1000ms transaction-ready timeout.
             var mainContentReady by rememberSaveable { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
+                // Commit the first two splash frames cleanly before doing any container/DataStore work
+                withFrameNanos { }
+                withFrameNanos { }
+                launch {
+                    val prefs = withContext(Dispatchers.IO) { app.container.sessionPreferences }
+                    launch { prefs.themePresetFlow.collect { themePreset = it } }
+                    launch { prefs.darkModeEnabledFlow.collect { darkModeEnabled = it } }
+                    launch { prefs.soundEnabledFlow.collect { soundEnabled = it } }
+                    launch { prefs.startupSoundStyleFlow.collect { startupSoundStyle = it } }
+                }
                 if (!mainContentReady) {
-                    // Let WindowManager finish initial SurfaceSyncGroup (#1/#2) cleanly before mounting heavy app trees
-                    withFrameNanos { }
-                    delay(450)
+                    delay(1250)
                     withContext(Dispatchers.IO) {
                         app.container.warmUp()
                     }
@@ -205,6 +210,7 @@ class MainActivity : FragmentActivity() {
                             soundEnabled = false,
                             startupSoundStyle = startupSoundStyle,
                             onSplashFinished = {
+                                mainContentReady = true
                                 showSplash = false
                             }
                         )

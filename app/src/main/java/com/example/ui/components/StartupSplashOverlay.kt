@@ -65,7 +65,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -77,6 +76,13 @@ import com.example.data.model.ThemePreset
 import com.example.ui.theme.JetBrainsMono
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.graphics.BitmapFactory
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
@@ -490,17 +496,44 @@ fun StartupSplashOverlay(
                                 .fillMaxSize()
                                 .clip(CircleShape)
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_ca_red_logo),
-                                contentDescription = "C&A Gas Animated Logo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        scaleX = 1.12f
-                                        scaleY = 1.12f
-                                    }
-                            )
+                            val splashContext = LocalContext.current
+                            val logoBitmap by produceState<ImageBitmap?>(initialValue = null, splashContext) {
+                                value = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                        BitmapFactory.decodeResource(
+                                            splashContext.resources,
+                                            R.drawable.ic_ca_red_logo,
+                                            opts
+                                        )?.asImageBitmap()
+                                    }.getOrNull()
+                                }
+                            }
+                            if (logoBitmap != null) {
+                                Image(
+                                    bitmap = logoBitmap!!,
+                                    contentDescription = "C&A Gas Animated Logo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            scaleX = 1.12f
+                                            scaleY = 1.12f
+                                        }
+                                )
+                            } else {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Text(
+                                        text = "C&A",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
 
                             // Diagonal specular metallic sheen gliding across the emblem
                             Canvas(modifier = Modifier.fillMaxSize()) {

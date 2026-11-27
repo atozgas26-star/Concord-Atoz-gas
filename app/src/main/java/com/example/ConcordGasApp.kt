@@ -13,6 +13,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class AppContainer(application: Application) {
@@ -60,6 +61,8 @@ class ConcordGasApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         appScope.launch {
+            // Give Activity.onCreate() + Frame 1 Choreographer vsync priority before initializing SDKs
+            delay(150)
             container.warmUp()
         }
     }
