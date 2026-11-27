@@ -118,18 +118,27 @@ import com.example.ui.components.luxuryTapScale
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberOnContainer
 import com.example.ui.theme.AmberWarning
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.DarkGreenContainer
+import com.example.ui.theme.DarkGreenOnContainer
+import com.example.ui.theme.DarkRedContainer
 import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.ElectricBlueOnSoft
 import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.PlatinumSilver
 import com.example.ui.theme.RoyalElectricBlue
 import com.example.ui.theme.SlateContainer
 import com.example.ui.theme.SlateOnContainer
@@ -252,10 +261,14 @@ fun AdminDashboardScreen(
             }
             if (isReadOnly) {
                 item {
+                    val isDarkBanner = LocalIsDarkTheme.current
                     Surface(
-                        color = BrandGreenContainer,
+                        color = if (isDarkBanner) DarkGreenContainer else BrandGreenContainer,
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BrandGreenPrimary.copy(alpha = 0.45f)),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isDarkBanner) ElectricBlueBright.copy(alpha = 0.5f) else BrandGreenPrimary.copy(alpha = 0.45f)
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("owner_view_readonly_banner")
@@ -267,7 +280,7 @@ fun AdminDashboardScreen(
                             Icon(
                                 imageVector = Icons.Default.Visibility,
                                 contentDescription = "Owner Read-Only Mode",
-                                tint = BrandGreenOnContainer,
+                                tint = if (isDarkBanner) ElectricBlueGlow else BrandGreenOnContainer,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(10.dp))
@@ -276,12 +289,12 @@ fun AdminDashboardScreen(
                                     text = "OWNER VIEW • READ ONLY",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
-                                    color = BrandGreenOnContainer
+                                    color = if (isDarkBanner) ArcticWhite else BrandGreenOnContainer
                                 )
                                 Text(
                                     text = "Live monitoring active. Data entry, editing, and settings are locked.",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = BrandGreenOnContainer.copy(alpha = 0.85f)
+                                    color = (if (isDarkBanner) DarkGreenOnContainer else BrandGreenOnContainer).copy(alpha = 0.88f)
                                 )
                             }
                         }
@@ -291,6 +304,7 @@ fun AdminDashboardScreen(
 
             if (latestStaffLoginBanner != null) {
                 item {
+                    val isDarkLoginBanner = LocalIsDarkTheme.current
                     val bannerTime = SimpleDateFormat("hh:mm a", Locale.US)
                         .format(Date(latestStaffLoginBanner.loginTimestampMs))
                     val vehicleSuffix = latestStaffLoginBanner.vehicleName
@@ -302,8 +316,13 @@ fun AdminDashboardScreen(
                             .fillMaxWidth()
                             .testTag("staff_login_alert_banner"),
                         shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),
-                        border = BorderStroke(1.5.dp, BrandGreenPrimary)
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDarkLoginBanner) DarkGreenContainer else BrandGreenContainer
+                        ),
+                        border = BorderStroke(
+                            1.5.dp,
+                            if (isDarkLoginBanner) ElectricBlueBright else BrandGreenPrimary
+                        )
                     ) {
                         Row(
                             modifier = Modifier
@@ -320,7 +339,7 @@ fun AdminDashboardScreen(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .background(BrandGreenPrimary),
+                                        .background(if (isDarkLoginBanner) RoyalElectricBlue else BrandGreenPrimary),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
@@ -336,12 +355,12 @@ fun AdminDashboardScreen(
                                         text = "Staff App Login Notification",
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold,
-                                        color = BrandGreenOnContainer
+                                        color = if (isDarkLoginBanner) ArcticWhite else BrandGreenOnContainer
                                     )
                                     Text(
                                         text = "${latestStaffLoginBanner.staffName}$vehicleSuffix signed in at $bannerTime",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = BrandGreenOnContainer
+                                        color = if (isDarkLoginBanner) DarkGreenOnContainer else BrandGreenOnContainer
                                     )
                                 }
                             }
@@ -352,7 +371,7 @@ fun AdminDashboardScreen(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Dismiss staff login alert",
-                                    tint = BrandGreenOnContainer
+                                    tint = if (isDarkLoginBanner) ArcticWhite else BrandGreenOnContainer
                                 )
                             }
                         }
@@ -376,6 +395,7 @@ fun AdminDashboardScreen(
                             title = "Quick Navigation",
                             accentColor = RoyalElectricBlue
                         )
+                        val isDarkNav = LocalIsDarkTheme.current
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -384,9 +404,9 @@ fun AdminDashboardScreen(
                                 title = "Inventory",
                                 subtitle = summary?.let { "${it.totalFullCylinders} Full • ${it.totalEmptyCylinders} Emp" } ?: "All Cylinders",
                                 icon = Icons.Default.Inventory2,
-                                accentColor = RoyalElectricBlue,
-                                containerColor = ElectricBlueSoft,
-                                onContainerColor = ElectricBlueOnSoft,
+                                accentColor = if (isDarkNav) ElectricBlueGlow else RoyalElectricBlue,
+                                containerColor = if (isDarkNav) ObsidianElevated else ElectricBlueSoft,
+                                onContainerColor = if (isDarkNav) ElectricBlueGlow else ElectricBlueOnSoft,
                                 onClick = onOpenInventory,
                                 modifier = Modifier
                                     .weight(1f)
@@ -396,9 +416,9 @@ fun AdminDashboardScreen(
                                 title = "Store",
                                 subtitle = summary?.let { "${it.storeFullBalance}F / ${it.storeEmptyBalance}E Yard" } ?: "Yard Stock",
                                 icon = Icons.Default.Store,
-                                accentColor = BrandGreenPrimary,
-                                containerColor = BrandGreenContainer,
-                                onContainerColor = BrandGreenOnContainer,
+                                accentColor = if (isDarkNav) DarkGreenOnContainer else BrandGreenPrimary,
+                                containerColor = if (isDarkNav) DarkGreenContainer else BrandGreenContainer,
+                                onContainerColor = if (isDarkNav) DarkGreenOnContainer else BrandGreenOnContainer,
                                 onClick = onOpenStore,
                                 modifier = Modifier
                                     .weight(1f)
@@ -408,9 +428,9 @@ fun AdminDashboardScreen(
                                 title = "Vehicles",
                                 subtitle = summary?.let { "${it.vehicleOverviews.size} Active Fleet" } ?: "All Vehicles",
                                 icon = Icons.Default.LocalShipping,
-                                accentColor = MetallicOrange,
-                                containerColor = AmberContainer,
-                                onContainerColor = AmberOnContainer,
+                                accentColor = if (isDarkNav) MetallicOrangeBright else MetallicOrange,
+                                containerColor = if (isDarkNav) Color(0xFF3A1A0B) else AmberContainer,
+                                onContainerColor = if (isDarkNav) MetallicOrangeBright else AmberOnContainer,
                                 onClick = onOpenVehicles,
                                 modifier = Modifier
                                     .weight(1f)
@@ -527,6 +547,7 @@ fun AdminDashboardScreen(
 
                 // Hero KPIs: Total Full & Total Empty
                 item {
+                    val isDarkKpi = LocalIsDarkTheme.current
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -536,9 +557,9 @@ fun AdminDashboardScreen(
                             value = summary.totalFullCylinders.toString(),
                             subtitle = "Store ${summary.storeFullBalance} + Veh ${summary.allVehiclesFullBalance}",
                             icon = Icons.Default.PropaneTank,
-                            accentColor = BrandGreenPrimary,
-                            containerColor = BrandGreenContainer,
-                            onContainerColor = BrandGreenOnContainer,
+                            accentColor = if (isDarkKpi) ElectricBlueGlow else BrandGreenPrimary,
+                            containerColor = if (isDarkKpi) ObsidianElevated else BrandGreenContainer,
+                            onContainerColor = if (isDarkKpi) ElectricBlueGlow else BrandGreenOnContainer,
                             modifier = Modifier.weight(1f)
                         )
                         KpiMetricCard(
@@ -546,9 +567,9 @@ fun AdminDashboardScreen(
                             value = summary.totalEmptyCylinders.toString(),
                             subtitle = "Store ${summary.storeEmptyBalance} + Veh ${summary.allVehiclesEmptyBalance}",
                             icon = Icons.Default.Recycling,
-                            accentColor = BrandRedSecondary,
-                            containerColor = BrandRedContainer,
-                            onContainerColor = BrandRedOnContainer,
+                            accentColor = if (isDarkKpi) MetallicOrangeBright else BrandRedSecondary,
+                            containerColor = if (isDarkKpi) Color(0xFF3A1A0B) else BrandRedContainer,
+                            onContainerColor = if (isDarkKpi) MetallicOrangeBright else BrandRedOnContainer,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -556,6 +577,7 @@ fun AdminDashboardScreen(
 
                 // Store Balance & Today's Purchases / Dispatch / Sales
                 item {
+                    val isDarkKpi = LocalIsDarkTheme.current
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -565,9 +587,9 @@ fun AdminDashboardScreen(
                             value = "${summary.storeFullBalance}/${summary.storeEmptyBalance}",
                             subtitle = "Full / Empty in Yard",
                             icon = Icons.Default.Store,
-                            accentColor = SlateTertiary,
-                            containerColor = SlateContainer,
-                            onContainerColor = SlateOnContainer,
+                            accentColor = if (isDarkKpi) PlatinumSilver else SlateTertiary,
+                            containerColor = if (isDarkKpi) ObsidianElevated else SlateContainer,
+                            onContainerColor = if (isDarkKpi) ArcticWhite else SlateOnContainer,
                             modifier = Modifier.weight(1f)
                         )
                         KpiMetricCard(
@@ -575,15 +597,16 @@ fun AdminDashboardScreen(
                             value = summary.todaySales.toString(),
                             subtitle = "Cylinders sold today",
                             icon = Icons.Default.Sell,
-                            accentColor = BrandGreenPrimary,
-                            containerColor = BrandGreenContainer,
-                            onContainerColor = BrandGreenOnContainer,
+                            accentColor = if (isDarkKpi) DarkGreenOnContainer else BrandGreenPrimary,
+                            containerColor = if (isDarkKpi) DarkGreenContainer else BrandGreenContainer,
+                            onContainerColor = if (isDarkKpi) DarkGreenOnContainer else BrandGreenOnContainer,
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
 
                 item {
+                    val isDarkKpi = LocalIsDarkTheme.current
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -593,9 +616,9 @@ fun AdminDashboardScreen(
                             value = "${summary.todayFullPurchases + summary.todayEmptyPurchases}",
                             subtitle = "Full ${summary.todayFullPurchases} • Emp ${summary.todayEmptyPurchases}",
                             icon = Icons.Default.AddShoppingCart,
-                            accentColor = AmberWarning,
-                            containerColor = AmberContainer,
-                            onContainerColor = AmberOnContainer,
+                            accentColor = if (isDarkKpi) MetallicOrangeBright else AmberWarning,
+                            containerColor = if (isDarkKpi) Color(0xFF3A1A0B) else AmberContainer,
+                            onContainerColor = if (isDarkKpi) MetallicOrangeBright else AmberOnContainer,
                             modifier = Modifier.weight(1f)
                         )
                         KpiMetricCard(
@@ -603,9 +626,9 @@ fun AdminDashboardScreen(
                             value = "${summary.todayFullDispatch}",
                             subtitle = "Full out • Emp out ${summary.todayEmptyDispatch}",
                             icon = Icons.Default.LocalShipping,
-                            accentColor = BrandRedSecondary,
-                            containerColor = BrandRedContainer,
-                            onContainerColor = BrandRedOnContainer,
+                            accentColor = if (isDarkKpi) Color(0xFFFCA5A5) else BrandRedSecondary,
+                            containerColor = if (isDarkKpi) DarkRedContainer else BrandRedContainer,
+                            onContainerColor = if (isDarkKpi) Color(0xFFFCA5A5) else BrandRedOnContainer,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -668,8 +691,9 @@ fun AdminDashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val isDarkVeh = LocalIsDarkTheme.current
                                     Surface(
-                                        color = ElectricBlueSoft,
+                                        color = if (isDarkVeh) ObsidianElevated else ElectricBlueSoft,
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.size(34.dp)
                                     ) {
@@ -677,7 +701,7 @@ fun AdminDashboardScreen(
                                             Icon(
                                                 Icons.Default.LocalShipping,
                                                 contentDescription = overview.vehicle.name,
-                                                tint = RoyalElectricBlue,
+                                                tint = if (isDarkVeh) ElectricBlueGlow else RoyalElectricBlue,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -792,15 +816,17 @@ fun AdminDashboardScreen(
                                     }
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val isDarkTx = LocalIsDarkTheme.current
                                     Surface(
-                                        color = ElectricBlueSoft,
-                                        shape = RoundedCornerShape(8.dp)
+                                        color = if (isDarkTx) ObsidianMidnight.copy(alpha = 0.72f) else ElectricBlueSoft,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = if (isDarkTx) BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.4f)) else null
                                     ) {
                                         Text(
                                             text = "×${tx.quantity}",
                                             fontFamily = JetBrainsMono,
                                             fontWeight = FontWeight.Bold,
-                                            color = ElectricBlueOnSoft,
+                                            color = if (isDarkTx) ElectricBlueGlow else ElectricBlueOnSoft,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                         )
                                     }
@@ -809,7 +835,7 @@ fun AdminDashboardScreen(
                                             Icon(
                                                 imageVector = Icons.Default.Edit,
                                                 contentDescription = "Edit transaction",
-                                                tint = RoyalElectricBlue,
+                                                tint = if (isDarkTx) MetallicOrangeBright else RoyalElectricBlue,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -903,15 +929,17 @@ private fun StaffLoginActivityCard(
                         fontWeight = FontWeight.Bold
                     )
                 }
+                val isDarkLoginBadge = LocalIsDarkTheme.current
                 Surface(
-                    color = BrandGreenContainer,
-                    shape = RoundedCornerShape(8.dp)
+                    color = if (isDarkLoginBadge) ObsidianMidnight.copy(alpha = 0.72f) else BrandGreenContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    border = if (isDarkLoginBadge) BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.4f)) else null
                 ) {
                     Text(
                         text = "${events.size} Logins",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = BrandGreenOnContainer,
+                        color = if (isDarkLoginBadge) ElectricBlueGlow else BrandGreenOnContainer,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
@@ -964,14 +992,19 @@ private fun LowStockAlertBannerCard(
     var expanded by remember { mutableStateOf(false) }
     val visibleItems = if (expanded) alertState.lowStockItems else alertState.lowStockItems.take(3)
     val hasOutOfStock = alertState.outOfStockCount > 0
+    val isDarkAlert = LocalIsDarkTheme.current
+    val alertCardBg = if (isDarkAlert) Color(0xFF281A08) else AmberContainer
+    val alertTitleColor = if (isDarkAlert) ArcticWhite else AmberOnContainer
+    val alertTextColor = if (isDarkAlert) PlatinumSilver else AmberOnContainer
+    val alertAccent = if (isDarkAlert) MetallicOrangeBright else AmberOnContainer
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("dashboard_low_stock_alert_card"),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = AmberContainer),
-        border = BorderStroke(1.5.dp, if (hasOutOfStock) BrandRedSecondary else AmberWarning)
+        colors = CardDefaults.cardColors(containerColor = alertCardBg),
+        border = BorderStroke(1.5.dp, if (hasOutOfStock) BrandRedSecondary else MetallicOrangeBright)
     ) {
         Column(
             modifier = Modifier
@@ -992,7 +1025,7 @@ private fun LowStockAlertBannerCard(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(if (hasOutOfStock) BrandRedSecondary else AmberWarning),
+                            .background(if (hasOutOfStock) BrandRedSecondary else MetallicOrange),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -1012,10 +1045,10 @@ private fun LowStockAlertBannerCard(
                                 text = "Low Stock Alert",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = AmberOnContainer
+                                color = alertTitleColor
                             )
                             Surface(
-                                color = if (hasOutOfStock) BrandRedSecondary else AmberWarning,
+                                color = if (hasOutOfStock) BrandRedSecondary else MetallicOrange,
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
@@ -1031,7 +1064,7 @@ private fun LowStockAlertBannerCard(
                             text = "Store full stock below ${alertState.threshold} cylinders" +
                                 if (hasOutOfStock) " • ${alertState.outOfStockCount} out of stock" else "",
                             style = MaterialTheme.typography.bodySmall,
-                            color = AmberOnContainer
+                            color = alertTextColor
                         )
                     }
                 }
@@ -1042,12 +1075,12 @@ private fun LowStockAlertBannerCard(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Dismiss low stock alert",
-                        tint = AmberOnContainer
+                        tint = alertAccent
                     )
                 }
             }
 
-            HorizontalDivider(color = AmberWarning.copy(alpha = 0.35f))
+            HorizontalDivider(color = MetallicOrangeBright.copy(alpha = 0.35f))
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 visibleItems.forEach { item ->
@@ -1062,7 +1095,7 @@ private fun LowStockAlertBannerCard(
                                 text = "${item.category.shortCode} • ${item.productName}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = AmberOnContainer,
+                                color = alertTitleColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1070,11 +1103,11 @@ private fun LowStockAlertBannerCard(
                                 text = "Fleet: ${item.vehiclesFullBalance} Full • Total: ${item.totalFullBalance}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = JetBrainsMono,
-                                color = AmberOnContainer.copy(alpha = 0.8f)
+                                color = alertTextColor.copy(alpha = 0.88f)
                             )
                         }
                         Surface(
-                            color = if (isZero) BrandRedSecondary else AmberWarning,
+                            color = if (isZero) BrandRedSecondary else MetallicOrange,
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
@@ -1099,7 +1132,7 @@ private fun LowStockAlertBannerCard(
                     Icon(
                         imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = null,
-                        tint = AmberOnContainer,
+                        tint = alertAccent,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(4.dp))
@@ -1107,7 +1140,7 @@ private fun LowStockAlertBannerCard(
                         text = if (expanded) "Show fewer products" else "Show all ${alertState.lowStockItems.size} low-stock products",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = AmberOnContainer
+                        color = alertAccent
                     )
                 }
             }
@@ -1118,7 +1151,9 @@ private fun LowStockAlertBannerCard(
             ) {
                 Button(
                     onClick = onOpenStore,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isDarkAlert) RoyalElectricBlue else BrandGreenPrimary
+                    ),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("low_stock_restock_button")
@@ -1134,12 +1169,12 @@ private fun LowStockAlertBannerCard(
                 if (!isReadOnly) {
                     OutlinedButton(
                         onClick = onConfigureThreshold,
-                        border = BorderStroke(1.dp, AmberOnContainer.copy(alpha = 0.5f)),
+                        border = BorderStroke(1.dp, alertAccent.copy(alpha = 0.55f)),
                         modifier = Modifier.testTag("low_stock_threshold_button")
                     ) {
-                        Icon(Icons.Default.Tune, contentDescription = null, tint = AmberOnContainer, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Tune, contentDescription = null, tint = alertAccent, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Min: ${alertState.threshold}", color = AmberOnContainer)
+                        Text("Min: ${alertState.threshold}", color = alertAccent)
                     }
                 }
             }

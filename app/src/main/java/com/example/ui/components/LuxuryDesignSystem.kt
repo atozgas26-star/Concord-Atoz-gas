@@ -69,17 +69,18 @@ fun LuxuryGlassCard(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(18.dp),
     accentGlow: Color? = null,
+    forceMidnight: Boolean = false,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isDark = LocalIsDarkTheme.current
+    val isDark = LocalIsDarkTheme.current || forceMidnight
     val surfaceColor = if (isDark) ObsidianSurface else PureWhite
     val borderBrush = if (isDark) {
         Brush.linearGradient(
             listOf(
-                (accentGlow ?: ElectricBlueGlow).copy(alpha = 0.34f),
-                ObsidianBorder.copy(alpha = 0.72f),
-                MetallicOrangeBright.copy(alpha = 0.16f)
+                (accentGlow ?: ElectricBlueGlow).copy(alpha = 0.42f),
+                ObsidianBorder.copy(alpha = 0.85f),
+                MetallicOrangeBright.copy(alpha = 0.24f)
             )
         )
     } else {
@@ -105,7 +106,7 @@ fun LuxuryGlassCard(
             shape = shape,
             color = surfaceColor,
             tonalElevation = if (isDark) 2.dp else 1.dp,
-            shadowElevation = if (isDark) 6.dp else 3.dp,
+            shadowElevation = if (isDark) 8.dp else 3.dp,
             border = BorderStroke(1.dp, borderBrush)
         ) {
             Column(content = content)
@@ -116,7 +117,7 @@ fun LuxuryGlassCard(
             shape = shape,
             color = surfaceColor,
             tonalElevation = if (isDark) 2.dp else 1.dp,
-            shadowElevation = if (isDark) 6.dp else 2.dp,
+            shadowElevation = if (isDark) 8.dp else 2.dp,
             border = BorderStroke(1.dp, borderBrush)
         ) {
             Column(content = content)

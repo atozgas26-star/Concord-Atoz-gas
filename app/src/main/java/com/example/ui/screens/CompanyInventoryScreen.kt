@@ -67,6 +67,7 @@ import com.example.ui.components.StockPill
 import com.example.ui.components.StockZoneScope
 import com.example.ui.components.categoryVisualStyle
 import com.example.ui.components.obsidianRoyalAtmosphere
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -79,7 +80,14 @@ import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.RoyalElectricBlue
+import com.example.ui.theme.SignatureRoyalBackground
+import androidx.compose.material3.OutlinedTextFieldDefaults
 
 @Composable
 fun CompanyInventoryScreen(
@@ -138,7 +146,27 @@ fun CompanyInventoryScreen(
     val storeEmpty = filteredRows.sumOf { it.storeEmpty }
     val vehiclesEmpty = filteredRows.sumOf { it.vehiclesEmpty }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    val isDark = LocalIsDarkTheme.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (isDark) {
+                    Modifier.background(
+                        Brush.verticalGradient(
+                            listOf(
+                                ObsidianMidnight,
+                                ObsidianDeep,
+                                SignatureRoyalBackground,
+                                ObsidianMidnight
+                            )
+                        )
+                    )
+                } else {
+                    Modifier
+                }
+            )
+    ) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Company Inventory (View Only)" else "Company Inventory",
             subtitle = "Inside Store + Outside Fleet Folders" + if (isReadOnly) " • Read-Only" else "",
@@ -164,7 +192,11 @@ fun CompanyInventoryScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item(key = "inv_date") {
-                DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                DateSelectorBar(
+                    selectedDate = selectedDate,
+                    onDateSelected = onDateSelected,
+                    midnightSurface = isDark
+                )
             }
 
             item(key = "inv_kpis") {
@@ -330,7 +362,8 @@ fun CompanyInventoryScreen(
                         "Inside Store Category Folders"
                     } else {
                         "Outside Fleet Category Folders"
-                    }
+                    },
+                    onMidnightBackground = isDark
                 )
             }
 
@@ -339,15 +372,38 @@ fun CompanyInventoryScreen(
                     LuxurySectionHeader(
                         eyebrow = "ENTERPRISE CATALOG",
                         title = "Product Stock Search",
-                        accentColor = RoyalElectricBlue
+                        accentColor = if (isDark) ElectricBlueGlow else RoyalElectricBlue
                     )
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search cylinder or gas category...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        placeholder = {
+                            Text(
+                                "Search cylinder or gas category...",
+                                color = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = if (isDark) ElectricBlueGlow else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp),
+                        colors = if (isDark) {
+                            OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = ObsidianSurface,
+                                unfocusedContainerColor = ObsidianSurface,
+                                focusedBorderColor = ElectricBlueBright,
+                                unfocusedBorderColor = ObsidianBorder,
+                                focusedTextColor = ArcticWhite,
+                                unfocusedTextColor = ArcticWhite
+                            )
+                        } else {
+                            OutlinedTextFieldDefaults.colors()
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -431,7 +487,10 @@ fun CompanyInventoryScreen(
                                         .fillMaxWidth()
                                         .height(6.dp)
                                         .clip(CircleShape)
-                                        .background(BrandRedContainer.copy(alpha = 0.7f))
+                                        .background(
+                                            if (isDark) MetallicOrange.copy(alpha = 0.28f)
+                                            else BrandRedContainer.copy(alpha = 0.7f)
+                                        )
                                 ) {
                                     Box(
                                         modifier = Modifier
@@ -453,28 +512,32 @@ fun CompanyInventoryScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Surface(
-                                        color = BrandGreenContainer.copy(alpha = 0.45f),
+                                        color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f)
+                                        else BrandGreenContainer.copy(alpha = 0.45f),
                                         shape = RoundedCornerShape(10.dp),
+                                        border = if (isDark) BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.35f)) else null,
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
                                             text = "INSIDE Store: ${row.storeFull}F / ${row.storeEmpty}E",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = JetBrainsMono,
-                                            color = BrandGreenOnContainer,
+                                            color = if (isDark) ElectricBlueGlow else BrandGreenOnContainer,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                                         )
                                     }
                                     Surface(
-                                        color = BrandRedContainer.copy(alpha = 0.45f),
+                                        color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f)
+                                        else BrandRedContainer.copy(alpha = 0.45f),
                                         shape = RoundedCornerShape(10.dp),
+                                        border = if (isDark) BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.35f)) else null,
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
                                             text = "OUTSIDE Fleet: ${row.vehiclesFull}F / ${row.vehiclesEmpty}E",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = JetBrainsMono,
-                                            color = BrandRedOnContainer,
+                                            color = if (isDark) MetallicOrangeBright else BrandRedOnContainer,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                                         )
                                     }

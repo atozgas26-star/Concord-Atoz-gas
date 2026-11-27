@@ -72,19 +72,28 @@ import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.SignatureAccentHairline
 import com.example.ui.components.luxuryTapScale
 import com.example.ui.components.obsidianRoyalAtmosphere
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.DarkGreenContainer
+import com.example.ui.theme.DarkGreenOnContainer
+import com.example.ui.theme.DarkRedContainer
+import com.example.ui.theme.DarkRedOnContainer
 import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.ElectricBlueOnSoft
 import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MetallicOrangeOnSoft
 import com.example.ui.theme.MetallicOrangeSoft
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.RoyalElectricBlue
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -550,9 +559,10 @@ fun ReportsScreen(
                                 .horizontalScroll(horizontalScrollState)
                         ) {
                             Column {
+                                val isDarkTable = LocalIsDarkTheme.current
                                 Row(
                                     modifier = Modifier
-                                        .background(ElectricBlueSoft)
+                                        .background(if (isDarkTable) ObsidianElevated else ElectricBlueSoft)
                                         .padding(vertical = 9.dp, horizontal = 8.dp)
                                 ) {
                                     table.headers.forEachIndexed { idx, header ->
@@ -560,7 +570,7 @@ fun ReportsScreen(
                                             text = header,
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = ElectricBlueOnSoft,
+                                            color = if (isDarkTable) ElectricBlueGlow else ElectricBlueOnSoft,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier
@@ -604,9 +614,10 @@ fun ReportsScreen(
                                 }
 
                                 table.footerTotals?.let { totals ->
+                                    val isDarkFooter = LocalIsDarkTheme.current
                                     Row(
                                         modifier = Modifier
-                                            .background(MetallicOrangeSoft)
+                                            .background(if (isDarkFooter) ObsidianMidnight else MetallicOrangeSoft)
                                             .padding(vertical = 10.dp, horizontal = 8.dp)
                                     ) {
                                         totals.forEachIndexed { idx, value ->
@@ -616,7 +627,7 @@ fun ReportsScreen(
                                                 style = MaterialTheme.typography.labelMedium,
                                                 fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.labelMedium.fontFamily,
                                                 fontWeight = FontWeight.Bold,
-                                                color = MetallicOrangeOnSoft,
+                                                color = if (isDarkFooter) MetallicOrangeBright else MetallicOrangeOnSoft,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier

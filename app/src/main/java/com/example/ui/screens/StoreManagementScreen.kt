@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,18 +31,20 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -80,16 +85,24 @@ import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.categoryVisualStyle
-import com.example.ui.theme.BrandGreenContainer
-import com.example.ui.theme.BrandGreenOnContainer
-import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.ArcticWhite
+import com.example.ui.theme.BrandGreenLight
 import com.example.ui.theme.BrandRedBright
-import com.example.ui.theme.BrandRedContainer
-import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumMuted
+import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
+import com.example.ui.theme.SignatureRoyalBackground
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -190,7 +203,20 @@ fun StoreManagementScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        ObsidianMidnight,
+                        ObsidianDeep,
+                        SignatureRoyalBackground,
+                        ObsidianMidnight
+                    )
+                )
+            )
+    ) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Inside Store (View Only)" else "Inside Store • Main Yard",
             subtitle = "Yard Full: $totalFull  •  Yard Empty: $totalEmpty" + if (isReadOnly) " • Read-Only" else "",
@@ -204,7 +230,11 @@ fun StoreManagementScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+            DateSelectorBar(
+                selectedDate = selectedDate,
+                onDateSelected = onDateSelected,
+                midnightSurface = true
+            )
 
             if (!isReadOnly) {
                 // Action Buttons Strip
@@ -214,53 +244,70 @@ fun StoreManagementScreen(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    StoreActionChip("Purchase Full", Icons.Default.AddShoppingCart, BrandGreenPrimary) {
+                    StoreActionChip("Purchase Full", Icons.Default.AddShoppingCart, BrandGreenLight) {
                         activeModal = StoreModalAction.PURCHASE_FULL
                     }
-                    StoreActionChip("Purchase Empty", Icons.Default.AddBusiness, BrandGreenPrimary) {
+                    StoreActionChip("Purchase Empty", Icons.Default.AddBusiness, BrandGreenLight) {
                         activeModal = StoreModalAction.PURCHASE_EMPTY
                     }
-                    StoreActionChip("Complaint Replace", Icons.Default.SwapHoriz, BrandRedSecondary) {
+                    StoreActionChip("Complaint Replace", Icons.Default.SwapHoriz, MetallicOrangeBright) {
                         activeModal = StoreModalAction.PURCHASE_COMPLAINT_REPLACE
                     }
-                    StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, BrandRedSecondary) {
+                    StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, MetallicOrangeBright) {
                         activeModal = StoreModalAction.FULL_DISPATCH_VEHICLE
                     }
-                    StoreActionChip("Full Return (Veh)", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                    StoreActionChip("Full Return (Veh)", Icons.AutoMirrored.Filled.Input, ElectricBlueGlow) {
                         activeModal = StoreModalAction.FULL_RETURN_VEHICLE
                     }
-                    StoreActionChip("Empty Recd (Veh)", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                    StoreActionChip("Empty Recd (Veh)", Icons.AutoMirrored.Filled.Input, ElectricBlueGlow) {
                         activeModal = StoreModalAction.EMPTY_RECEIVED_VEHICLE
                     }
-                    StoreActionChip("Customer Change", Icons.Default.SwapHoriz, Color(0xFF7E22CE)) {
+                    StoreActionChip("Customer Change", Icons.Default.SwapHoriz, Color(0xFFC084FC)) {
                         showCustomerChangeDialog = true
                     }
-                    StoreActionChip("Full Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                    StoreActionChip("Full Inward", Icons.AutoMirrored.Filled.Input, BrandGreenLight) {
                         activeModal = StoreModalAction.FULL_INWARD
                     }
-                    StoreActionChip("Empty Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                    StoreActionChip("Empty Inward", Icons.AutoMirrored.Filled.Input, BrandGreenLight) {
                         activeModal = StoreModalAction.EMPTY_INWARD
                     }
-                    StoreActionChip("Empty Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
+                    StoreActionChip("Empty Dispatch", Icons.Default.Outbox, MetallicOrangeBright) {
                         activeModal = StoreModalAction.EMPTY_DISPATCH_PLANT
                     }
-                    StoreActionChip("Stock Adjustment", Icons.Default.Tune, MaterialTheme.colorScheme.tertiary) {
+                    StoreActionChip("Stock Adjustment", Icons.Default.Tune, ElectricBlueGlow) {
                         showAdjustmentPicker = true
                     }
                 }
             }
         }
 
-        TabRow(selectedTabIndex = activeTab) {
+        TabRow(
+            selectedTabIndex = activeTab,
+            containerColor = ObsidianDeep,
+            contentColor = ArcticWhite,
+            indicator = { tabPositions ->
+                if (activeTab < tabPositions.size) {
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
+                        height = 2.5.dp,
+                        color = MetallicOrangeBright
+                    )
+                }
+            }
+        ) {
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                text = { Text("Folder Balance (${storeRows.size})") }
+                selectedContentColor = ArcticWhite,
+                unselectedContentColor = PlatinumMuted,
+                text = { Text("Folder Balance (${storeRows.size})", fontWeight = FontWeight.SemiBold) }
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
-                text = { Text("Day Ledger (${dayTransactions.size})") }
+                selectedContentColor = ArcticWhite,
+                unselectedContentColor = PlatinumMuted,
+                text = { Text("Day Ledger (${dayTransactions.size})", fontWeight = FontWeight.SemiBold) }
             )
         }
 
@@ -276,16 +323,26 @@ fun StoreManagementScreen(
                         stats = folderStats,
                         selectedCategory = selectedCategory,
                         onSelectCategory = { selectedCategory = it },
-                        sectionTitle = "Inside Store Category Folders"
+                        sectionTitle = "Inside Store Category Folders",
+                        onMidnightBackground = true
                     )
                 }
                 item(key = "store_search_field") {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search cylinder or category...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        placeholder = { Text("Search cylinder or category...", color = PlatinumMuted) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = ElectricBlueGlow) },
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = ObsidianSurface,
+                            unfocusedContainerColor = ObsidianSurface,
+                            focusedBorderColor = ElectricBlueBright,
+                            unfocusedBorderColor = ObsidianBorder,
+                            focusedTextColor = ArcticWhite,
+                            unfocusedTextColor = ArcticWhite
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -305,7 +362,7 @@ fun StoreManagementScreen(
                             Text(
                                 text = "No matching products found.",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = PlatinumSilver,
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
                         }
@@ -331,7 +388,7 @@ fun StoreManagementScreen(
                         Text(
                             text = "No store or vehicle transactions recorded on $selectedDate.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = PlatinumSilver
                         )
                     }
                 } else {
@@ -340,7 +397,8 @@ fun StoreManagementScreen(
                         val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
                         LuxuryGlassCard(
                             shape = RoundedCornerShape(18.dp),
-                            accentGlow = RoyalElectricBlue
+                            accentGlow = RoyalElectricBlue,
+                            forceMidnight = true
                         ) {
                             Row(
                                 modifier = Modifier
@@ -351,20 +409,22 @@ fun StoreManagementScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "${tx.type.label} — ${item.productName}",
-                                        style = MaterialTheme.typography.titleSmall
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = ArcticWhite,
+                                        fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = "${item.productCategory.displayName} • Qty: ${tx.quantity} • By ${tx.staffName}" +
                                             (tx.vehicleName?.let { " • $it" } ?: "") +
                                             " • $timeStr",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = PlatinumSilver
                                     )
                                     if (tx.purchaseCompanyName.isNotBlank()) {
                                         Text(
                                             text = "Company: ${tx.purchaseCompanyName}",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = BrandGreenPrimary,
+                                            color = ElectricBlueGlow,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -372,7 +432,7 @@ fun StoreManagementScreen(
                                         Text(
                                             text = "Customer: ${tx.customerName}",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = BrandRedSecondary,
+                                            color = MetallicOrangeBright,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -380,7 +440,7 @@ fun StoreManagementScreen(
                                         Text(
                                             text = "Note: ${tx.notes}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
+                                            color = ElectricBlueGlow
                                         )
                                     }
                                 }
@@ -392,7 +452,7 @@ fun StoreManagementScreen(
                                         Icon(
                                             imageVector = Icons.Default.Edit,
                                             contentDescription = "Edit transaction",
-                                            tint = BrandGreenPrimary
+                                            tint = MetallicOrangeBright
                                         )
                                     }
                                     IconButton(
@@ -613,10 +673,26 @@ private fun StoreActionChip(
 ) {
     AssistChip(
         onClick = onClick,
-        label = { Text(label, fontWeight = FontWeight.SemiBold) },
+        label = {
+            Text(
+                text = label,
+                fontWeight = FontWeight.SemiBold,
+                color = ArcticWhite
+            )
+        },
         leadingIcon = {
             Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(18.dp))
         },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = ObsidianElevated,
+            labelColor = ArcticWhite,
+            leadingIconContentColor = tint
+        ),
+        border = AssistChipDefaults.assistChipBorder(
+            enabled = true,
+            borderColor = ElectricBlueBright.copy(alpha = 0.42f)
+        ),
+        shape = RoundedCornerShape(12.dp),
         modifier = Modifier.testTag("store_action_${label.lowercase().replace(' ', '_')}")
     )
 }
@@ -630,9 +706,22 @@ private fun StoreProductCard(
     val catStyle = categoryVisualStyle(row.product.category)
     LuxuryGlassCard(
         shape = RoundedCornerShape(18.dp),
-        accentGlow = catStyle.primaryColor
+        accentGlow = catStyle.primaryColor,
+        forceMidnight = true
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            ObsidianSurface,
+                            ObsidianElevated.copy(alpha = 0.72f)
+                        )
+                    )
+                )
+                .padding(14.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -642,21 +731,22 @@ private fun StoreProductCard(
                     Text(
                         text = row.product.category.displayName,
                         style = MaterialTheme.typography.labelSmall,
-                        color = catStyle.primaryColor,
+                        color = ElectricBlueGlow,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = row.product.name,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = ArcticWhite
                     )
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    StockPill(label = "Full", value = row.storeFullBalance, isFull = true)
-                    StockPill(label = "Empty", value = row.storeEmptyBalance, isFull = false)
+                    StockPill(label = "Full", value = row.storeFullBalance, isFull = true, forceMidnight = true)
+                    StockPill(label = "Empty", value = row.storeEmptyBalance, isFull = false, forceMidnight = true)
                     if (canEditOpening) {
                         IconButton(
                             onClick = onEditOpening,
@@ -665,7 +755,7 @@ private fun StoreProductCard(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Edit opening stock",
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = MetallicOrangeBright,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -677,30 +767,32 @@ private fun StoreProductCard(
 
             // Full Breakdown
             Surface(
-                color = BrandGreenContainer.copy(alpha = 0.45f),
-                shape = RoundedCornerShape(8.dp),
+                color = ObsidianMidnight.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(9.dp),
+                border = BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.36f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = "FULL: Op ${row.openingFull} + Pur ${row.fullPurchases} + In ${row.fullReturns} - Disp ${row.fullDispatch} = ${row.storeFullBalance}",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = JetBrainsMono,
-                    color = BrandGreenOnContainer,
+                    color = ElectricBlueGlow,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(5.dp))
             // Empty Breakdown
             Surface(
-                color = BrandRedContainer.copy(alpha = 0.45f),
-                shape = RoundedCornerShape(8.dp),
+                color = ObsidianMidnight.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(9.dp),
+                border = BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.36f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = "EMPTY: Op ${row.openingEmpty} + Pur ${row.emptyPurchases} + Ret ${row.emptyReturnsToStore} - Disp ${row.emptyDispatch} = ${row.storeEmptyBalance}",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = JetBrainsMono,
-                    color = BrandRedOnContainer,
+                    color = MetallicOrangeBright,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }

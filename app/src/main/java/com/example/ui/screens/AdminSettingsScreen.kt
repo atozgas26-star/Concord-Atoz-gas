@@ -87,6 +87,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -99,6 +101,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -135,17 +138,25 @@ import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.categoryVisualStyle
 import com.example.ui.components.luxuryTapScale
 import com.example.update.AppUpdateUiState
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumMuted
+import com.example.ui.theme.PlatinumSilver
 import com.example.ui.theme.PureWhite
+import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -280,19 +291,33 @@ fun AdminSettingsScreen(
             accentBarColor = RoleHeaderPalettes.AdminAccent
         )
 
+        val isDarkTabs = LocalIsDarkTheme.current
         TabRow(
             selectedTabIndex = activeTab,
-            containerColor = if (LocalIsDarkTheme.current) ObsidianSurface else PureWhite,
-            contentColor = MaterialTheme.colorScheme.primary
+            containerColor = if (isDarkTabs) ObsidianDeep else PureWhite,
+            contentColor = if (isDarkTabs) ArcticWhite else MaterialTheme.colorScheme.primary,
+            indicator = { tabPositions ->
+                if (activeTab < tabPositions.size) {
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
+                        height = 2.5.dp,
+                        color = if (isDarkTabs) MetallicOrangeBright else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         ) {
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
+                selectedContentColor = if (isDarkTabs) ArcticWhite else MaterialTheme.colorScheme.primary,
+                unselectedContentColor = if (isDarkTabs) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
                 text = { Text("Settings Folders", fontWeight = FontWeight.SemiBold) }
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
+                selectedContentColor = if (isDarkTabs) ArcticWhite else MaterialTheme.colorScheme.primary,
+                unselectedContentColor = if (isDarkTabs) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
                 text = { Text("Product Master (${products.size})", fontWeight = FontWeight.SemiBold) }
             )
         }
@@ -1731,13 +1756,14 @@ private fun SettingsCategoryFolderGrid(
                 Icon(
                     imageVector = Icons.Default.FolderOpen,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = if (isDark) ElectricBlueGlow else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
                     text = "Settings Category Folders",
                     style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onSurface
                 )
             }
             if (selectedFolder != null) {
@@ -1748,28 +1774,37 @@ private fun SettingsCategoryFolderGrid(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close folder",
+                        tint = MetallicOrangeBright,
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(Modifier.width(3.dp))
-                    Text("Close", fontWeight = FontWeight.Bold)
+                    Text("Close", fontWeight = FontWeight.Bold, color = MetallicOrangeBright)
                 }
             }
         }
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             SettingsFolderSection.entries.forEach { folder ->
                 val isSelected = selectedFolder == folder
-                val bgColor = when {
-                    isSelected -> folder.primaryColor
-                    isDark -> ObsidianSurface
-                    else -> PureWhite
-                }
-                val textColor = when {
-                    isSelected -> Color.White
-                    else -> MaterialTheme.colorScheme.onSurface
+                val cardBrush = if (isSelected) {
+                    Brush.horizontalGradient(
+                        listOf(
+                            RoyalBlueDeep,
+                            RoyalElectricBlue,
+                            folder.primaryColor
+                        )
+                    )
+                } else {
+                    Brush.horizontalGradient(
+                        listOf(
+                            ObsidianSurface,
+                            ObsidianElevated,
+                            RoyalBlueDeep.copy(alpha = 0.72f)
+                        )
+                    )
                 }
                 val badgeText = when (folder) {
                     SettingsFolderSection.SECURITY_PINS -> "$staffCount Staff"
@@ -1780,7 +1815,7 @@ private fun SettingsCategoryFolderGrid(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 52.dp)
+                        .heightIn(min = 54.dp)
                         .luxuryTapScale()
                         .clip(RoundedCornerShape(14.dp))
                         .clickable {
@@ -1792,35 +1827,40 @@ private fun SettingsCategoryFolderGrid(
                         }
                         .testTag("settings_folder_${folder.name.lowercase()}"),
                     shape = RoundedCornerShape(14.dp),
-                    color = bgColor,
+                    color = Color.Transparent,
                     border = BorderStroke(
                         width = if (isSelected) 1.5.dp else 1.dp,
-                        color = if (isSelected) folder.primaryColor else folder.primaryColor.copy(alpha = 0.28f)
+                        brush = Brush.horizontalGradient(
+                            listOf(
+                                if (isSelected) MetallicOrangeBright else ElectricBlueBright.copy(alpha = 0.48f),
+                                if (isSelected) ElectricBlueGlow else MetallicOrange.copy(alpha = 0.34f)
+                            )
+                        )
                     ),
-                    tonalElevation = if (isSelected) 4.dp else 1.dp,
-                    shadowElevation = if (isSelected) 4.dp else 1.dp
+                    shadowElevation = if (isSelected) 6.dp else 3.dp
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                            .background(cardBrush)
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(9.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(30.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(9.dp))
                                 .background(
-                                    if (isSelected) Color.White.copy(alpha = 0.22f)
-                                    else folder.primaryColor.copy(alpha = 0.16f)
+                                    if (isSelected) MetallicOrange.copy(alpha = 0.28f)
+                                    else ObsidianMidnight.copy(alpha = 0.78f)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = folder.icon,
                                 contentDescription = folder.title,
-                                tint = if (isSelected) Color.White else folder.primaryColor,
+                                tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -1829,7 +1869,7 @@ private fun SettingsCategoryFolderGrid(
                                 text = folder.title,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = textColor,
+                                color = ArcticWhite,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1837,28 +1877,32 @@ private fun SettingsCategoryFolderGrid(
                                 text = folder.subtitle,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = 10.sp,
-                                color = textColor.copy(alpha = 0.78f),
+                                color = PlatinumSilver,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                         Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isSelected) Color.White.copy(alpha = 0.22f)
-                            else folder.primaryColor.copy(alpha = 0.14f)
+                            shape = RoundedCornerShape(7.dp),
+                            color = ObsidianMidnight.copy(alpha = 0.72f),
+                            border = BorderStroke(
+                                0.75.dp,
+                                if (isSelected) MetallicOrangeBright.copy(alpha = 0.65f)
+                                else ElectricBlueBright.copy(alpha = 0.36f)
+                            )
                         ) {
                             Text(
                                 text = badgeText,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isSelected) Color.White else folder.primaryColor,
+                                color = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                             )
                         }
                         Icon(
                             imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = if (isSelected) "Collapse folder" else "Open folder",
-                            tint = if (isSelected) Color.White else folder.primaryColor,
+                            tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
                             modifier = Modifier.size(18.dp)
                         )
                     }

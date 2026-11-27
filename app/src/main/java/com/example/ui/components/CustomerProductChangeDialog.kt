@@ -70,6 +70,7 @@ import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.ProductCategory
 import com.example.data.model.StoreStockRow
 import com.example.data.model.VehicleStockRow
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
@@ -77,8 +78,16 @@ import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.DarkGreenContainer
+import com.example.ui.theme.DarkGreenOnContainer
+import com.example.ui.theme.DarkRedContainer
+import com.example.ui.theme.DarkRedOnContainer
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.RoyalElectricBlue
 
 /**
@@ -316,15 +325,22 @@ fun CustomerProductChangeDialog(
                 Spacer(Modifier.height(6.dp))
 
                 // Summary bar
+                val isDarkDialog = LocalIsDarkTheme.current
                 Surface(
-                    color = if (returnedItems.isNotEmpty() || givenItems.isNotEmpty()) BrandGreenContainer.copy(alpha = 0.65f)
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    color = when {
+                        (returnedItems.isNotEmpty() || givenItems.isNotEmpty()) && isDarkDialog -> DarkGreenContainer
+                        (returnedItems.isNotEmpty() || givenItems.isNotEmpty()) -> BrandGreenContainer.copy(alpha = 0.65f)
+                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    },
                     shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(
                         1.dp,
-                        if (hasExceedsStock) BrandRedSecondary
-                        else if (canSubmit) BrandGreenPrimary.copy(alpha = 0.45f)
-                        else MaterialTheme.colorScheme.outlineVariant
+                        when {
+                            hasExceedsStock -> BrandRedSecondary
+                            canSubmit && isDarkDialog -> ElectricBlueBright
+                            canSubmit -> BrandGreenPrimary.copy(alpha = 0.45f)
+                            else -> MaterialTheme.colorScheme.outlineVariant
+                        }
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -345,7 +361,12 @@ fun CustomerProductChangeDialog(
                             },
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (hasExceedsStock) BrandRedOnContainer else BrandGreenOnContainer,
+                            color = when {
+                                hasExceedsStock && isDarkDialog -> DarkRedOnContainer
+                                hasExceedsStock -> BrandRedOnContainer
+                                isDarkDialog -> ArcticWhite
+                                else -> BrandGreenOnContainer
+                            },
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -377,7 +398,7 @@ fun CustomerProductChangeDialog(
                 ) {
                     // Scope pill + Customer Name
                     Surface(
-                        color = BrandGreenContainer.copy(alpha = 0.45f),
+                        color = if (isDarkDialog) DarkGreenContainer else BrandGreenContainer.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -388,7 +409,7 @@ fun CustomerProductChangeDialog(
                             Icon(
                                 imageVector = if (vehicle != null) Icons.Default.LocalShipping else Icons.Default.Store,
                                 contentDescription = null,
-                                tint = BrandGreenOnContainer,
+                                tint = if (isDarkDialog) ElectricBlueGlow else BrandGreenOnContainer,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
@@ -396,7 +417,7 @@ fun CustomerProductChangeDialog(
                                 text = scopeLabel,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandGreenOnContainer
+                                color = if (isDarkDialog) ArcticWhite else BrandGreenOnContainer
                             )
                         }
                     }
@@ -577,11 +598,20 @@ fun CustomerProductChangeDialog(
                     // Live Before -> After Stock Preview Card
                     if (returnedItems.isNotEmpty() || givenItems.isNotEmpty()) {
                         Surface(
-                            color = if (hasExceedsStock) BrandRedContainer.copy(alpha = 0.55f) else BrandGreenContainer.copy(alpha = 0.45f),
+                            color = when {
+                                hasExceedsStock && isDarkDialog -> DarkRedContainer
+                                hasExceedsStock -> BrandRedContainer.copy(alpha = 0.55f)
+                                isDarkDialog -> DarkGreenContainer
+                                else -> BrandGreenContainer.copy(alpha = 0.45f)
+                            },
                             shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(
                                 1.dp,
-                                if (hasExceedsStock) BrandRedSecondary.copy(alpha = 0.5f) else BrandGreenPrimary.copy(alpha = 0.4f)
+                                when {
+                                    hasExceedsStock -> BrandRedSecondary.copy(alpha = 0.5f)
+                                    isDarkDialog -> ElectricBlueBright.copy(alpha = 0.45f)
+                                    else -> BrandGreenPrimary.copy(alpha = 0.4f)
+                                }
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -595,7 +625,12 @@ fun CustomerProductChangeDialog(
                                     text = "Live Exchange Preview (${mode.shortLabel})",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (hasExceedsStock) BrandRedOnContainer else BrandGreenOnContainer
+                                    color = when {
+                                        hasExceedsStock && isDarkDialog -> DarkRedOnContainer
+                                        hasExceedsStock -> BrandRedOnContainer
+                                        isDarkDialog -> ArcticWhite
+                                        else -> BrandGreenOnContainer
+                                    }
                                 )
                                 returnedItems.forEach { item ->
                                     val prod = sortedProducts.firstOrNull { it.id == item.productId }
@@ -605,7 +640,7 @@ fun CustomerProductChangeDialog(
                                             text = "+In ${prod.category.shortCode} ${prod.name} $unitLabel: $before → ${before + item.quantity}",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = JetBrainsMono,
-                                            color = BrandGreenOnContainer
+                                            color = if (isDarkDialog) ElectricBlueGlow else BrandGreenOnContainer
                                         )
                                     }
                                 }
@@ -620,7 +655,11 @@ fun CustomerProductChangeDialog(
                                             text = "-Out ${prod.category.shortCode} ${prod.name} $unitLabel: $effective → $after",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = JetBrainsMono,
-                                            color = if (after < 0) BrandRedBright else BrandRedOnContainer
+                                            color = when {
+                                                after < 0 -> BrandRedBright
+                                                isDarkDialog -> MetallicOrangeBright
+                                                else -> BrandRedOnContainer
+                                            }
                                         )
                                     }
                                 }
@@ -843,11 +882,14 @@ private fun ExchangeProductListBox(
                         val isActive = parsedQty > 0
                         val hasErr = isErrorLine(product, parsedQty)
                         val preview = previewLine(product, parsedQty)
+                        val isDarkRow = LocalIsDarkTheme.current
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = when {
+                                hasErr && isDarkRow -> DarkRedContainer
                                 hasErr -> BrandRedContainer.copy(alpha = 0.45f)
+                                isActive && isDarkRow -> DarkGreenContainer
                                 isActive -> BrandGreenContainer.copy(alpha = 0.42f)
                                 else -> MaterialTheme.colorScheme.surface
                             },
@@ -855,6 +897,7 @@ private fun ExchangeProductListBox(
                                 width = if (isActive) 1.4.dp else 1.dp,
                                 color = when {
                                     hasErr -> BrandRedSecondary
+                                    isActive && isDarkRow -> ElectricBlueBright
                                     isActive -> BrandGreenPrimary
                                     else -> MaterialTheme.colorScheme.outlineVariant
                                 }
@@ -927,7 +970,11 @@ private fun ExchangeProductListBox(
                                         fontSize = 10.sp,
                                         fontFamily = JetBrainsMono,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = if (hasErr) BrandRedBright else BrandGreenOnContainer
+                                        color = when {
+                                            hasErr -> BrandRedBright
+                                            isDarkRow -> ElectricBlueGlow
+                                            else -> BrandGreenOnContainer
+                                        }
                                     )
                                 }
                             }

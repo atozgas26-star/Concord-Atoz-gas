@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -35,6 +36,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -249,16 +251,17 @@ fun BrandHeaderBanner(
 fun DateSelectorBar(
     selectedDate: String,
     onDateSelected: (String) -> Unit,
+    midnightSurface: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var showPicker by remember { mutableStateOf(false) }
-    val isDark = LocalIsDarkTheme.current
+    val isDark = LocalIsDarkTheme.current || midnightSurface
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
+        color = if (isDark) com.example.ui.theme.ObsidianSurface else MaterialTheme.colorScheme.surface,
         tonalElevation = if (isDark) 2.dp else 1.dp,
-        shadowElevation = if (isDark) 4.dp else 1.dp,
+        shadowElevation = if (isDark) 5.dp else 1.dp,
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(
             1.dp,
@@ -279,13 +282,18 @@ fun DateSelectorBar(
                 Icon(
                     Icons.Default.ChevronLeft,
                     contentDescription = "Previous day",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = if (isDark) com.example.ui.theme.ElectricBlueGlow else MaterialTheme.colorScheme.primary
                 )
             }
 
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isDark) 0.55f else 0.72f),
+                color = if (isDark) com.example.ui.theme.ObsidianElevated
+                else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                border = if (isDark) BorderStroke(
+                    0.8.dp,
+                    com.example.ui.theme.ElectricBlueBright.copy(alpha = 0.35f)
+                ) else null,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .clickable { showPicker = true }
@@ -298,7 +306,7 @@ fun DateSelectorBar(
                     Icon(
                         imageVector = Icons.Default.CalendarMonth,
                         contentDescription = "Select date",
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = if (isDark) com.example.ui.theme.MetallicOrangeBright else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(17.dp)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -307,7 +315,7 @@ fun DateSelectorBar(
                         style = MaterialTheme.typography.titleSmall,
                         fontFamily = JetBrainsMono,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = if (isDark) com.example.ui.theme.ArcticWhite else MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
             }
@@ -319,7 +327,7 @@ fun DateSelectorBar(
                 Icon(
                     Icons.Default.ChevronRight,
                     contentDescription = "Next day",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = if (isDark) com.example.ui.theme.ElectricBlueGlow else MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -447,12 +455,13 @@ fun StockPill(
     label: String,
     value: Int,
     isFull: Boolean,
+    forceMidnight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val isDark = LocalIsDarkTheme.current
+    val isDark = LocalIsDarkTheme.current || forceMidnight
     val bg = when {
-        isDark && isFull -> com.example.ui.theme.ElectricBlueBright.copy(alpha = 0.18f)
-        isDark && !isFull -> com.example.ui.theme.MetallicOrangeBright.copy(alpha = 0.18f)
+        isDark && isFull -> com.example.ui.theme.ElectricBlueBright.copy(alpha = 0.2f)
+        isDark && !isFull -> com.example.ui.theme.MetallicOrange.copy(alpha = 0.22f)
         isFull -> BrandGreenContainer
         else -> com.example.ui.theme.MetallicOrangeSoft
     }
@@ -463,6 +472,8 @@ fun StockPill(
         else -> com.example.ui.theme.MetallicOrangeOnSoft
     }
     val border = when {
+        isDark && isFull -> com.example.ui.theme.ElectricBlueBright.copy(alpha = 0.48f)
+        isDark && !isFull -> com.example.ui.theme.MetallicOrangeBright.copy(alpha = 0.52f)
         isFull -> BrandGreenPrimary.copy(alpha = 0.32f)
         else -> com.example.ui.theme.MetallicOrange.copy(alpha = 0.35f)
     }
@@ -470,7 +481,7 @@ fun StockPill(
         modifier = modifier,
         color = bg,
         shape = RoundedCornerShape(9.dp),
-        border = BorderStroke(0.8.dp, border)
+        border = BorderStroke(0.9.dp, border)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
@@ -487,7 +498,7 @@ fun StockPill(
                 style = MaterialTheme.typography.labelMedium,
                 fontFamily = JetBrainsMono,
                 fontWeight = FontWeight.Bold,
-                color = fg
+                color = if (isDark) com.example.ui.theme.ArcticWhite else fg
             )
         }
     }
@@ -699,16 +710,18 @@ fun TransactionEntryDialog(
                     }
                 } else if (fixedVehicle != null) {
                     Spacer(Modifier.height(4.dp))
+                    val isDarkVehBanner = LocalIsDarkTheme.current
                     Surface(
-                        color = BrandGreenContainer,
+                        color = if (isDarkVehBanner) com.example.ui.theme.DarkGreenContainer else BrandGreenContainer,
                         shape = RoundedCornerShape(8.dp),
+                        border = if (isDarkVehBanner) BorderStroke(0.8.dp, com.example.ui.theme.ElectricBlueBright.copy(alpha = 0.42f)) else null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = "Vehicle: ${fixedVehicle.name}",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = BrandGreenOnContainer,
+                            color = if (isDarkVehBanner) com.example.ui.theme.DarkGreenOnContainer else BrandGreenOnContainer,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
@@ -717,14 +730,21 @@ fun TransactionEntryDialog(
                 Spacer(Modifier.height(8.dp))
 
                 // Selected summary bar across ALL 4 categories
+                val isDarkSummary = LocalIsDarkTheme.current
                 Surface(
-                    color = if (selectedEntries.isNotEmpty()) BrandGreenContainer.copy(alpha = 0.72f)
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    color = when {
+                        selectedEntries.isNotEmpty() && isDarkSummary -> com.example.ui.theme.DarkGreenContainer
+                        selectedEntries.isNotEmpty() -> BrandGreenContainer.copy(alpha = 0.72f)
+                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    },
                     shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(
                         1.dp,
-                        if (selectedEntries.isNotEmpty()) BrandGreenPrimary.copy(alpha = 0.45f)
-                        else MaterialTheme.colorScheme.outlineVariant
+                        when {
+                            selectedEntries.isNotEmpty() && isDarkSummary -> com.example.ui.theme.ElectricBlueBright.copy(alpha = 0.55f)
+                            selectedEntries.isNotEmpty() -> BrandGreenPrimary.copy(alpha = 0.45f)
+                            else -> MaterialTheme.colorScheme.outlineVariant
+                        }
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -756,7 +776,11 @@ fun TransactionEntryDialog(
                                 },
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = if (selectedEntries.isNotEmpty()) BrandGreenOnContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = when {
+                                    selectedEntries.isNotEmpty() && isDarkSummary -> com.example.ui.theme.ArcticWhite
+                                    selectedEntries.isNotEmpty() -> BrandGreenOnContainer
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1188,10 +1212,13 @@ private fun BatchProductQtyRow(
 ) {
     val parsedQty = qtyText.toIntOrNull() ?: 0
     val isActive = parsedQty > 0
+    val isDarkRow = LocalIsDarkTheme.current
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = when {
+            isInsufficient && isDarkRow -> com.example.ui.theme.DarkRedContainer
             isInsufficient -> BrandRedContainer.copy(alpha = 0.45f)
+            isActive && isDarkRow -> com.example.ui.theme.DarkGreenContainer
             isActive -> BrandGreenContainer.copy(alpha = 0.42f)
             else -> MaterialTheme.colorScheme.surface
         },
@@ -1199,6 +1226,7 @@ private fun BatchProductQtyRow(
             width = if (isActive) 1.4.dp else 1.dp,
             color = when {
                 isInsufficient -> BrandRedSecondary
+                isActive && isDarkRow -> com.example.ui.theme.ElectricBlueBright
                 isActive -> BrandGreenPrimary
                 else -> MaterialTheme.colorScheme.outlineVariant
             }
@@ -1288,7 +1316,12 @@ private fun BatchProductQtyRow(
                             },
                             style = MaterialTheme.typography.labelSmall,
                             fontSize = 10.sp,
-                            color = if (pendingDiff > 0) BrandRedOnContainer else BrandGreenOnContainer,
+                            color = when {
+                                pendingDiff > 0 && isDarkRow -> com.example.ui.theme.DarkRedOnContainer
+                                pendingDiff > 0 -> BrandRedOnContainer
+                                isDarkRow -> com.example.ui.theme.ElectricBlueGlow
+                                else -> BrandGreenOnContainer
+                            },
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -1307,7 +1340,12 @@ private fun BatchProductQtyRow(
                     fontSize = 10.sp,
                     fontFamily = JetBrainsMono,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isInsufficient) BrandRedOnContainer else BrandGreenOnContainer
+                    color = when {
+                        isInsufficient && isDarkRow -> com.example.ui.theme.DarkRedOnContainer
+                        isInsufficient -> BrandRedOnContainer
+                        isDarkRow -> com.example.ui.theme.ElectricBlueGlow
+                        else -> BrandGreenOnContainer
+                    }
                 )
             }
         }
@@ -1806,9 +1844,15 @@ fun PendingCustomerCard(
                 )
             }
             Spacer(Modifier.width(8.dp))
+            val isDarkPending = LocalIsDarkTheme.current
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Surface(
-                    color = if (isPending) BrandRedContainer else BrandGreenContainer,
+                    color = when {
+                        isPending && isDarkPending -> com.example.ui.theme.DarkRedContainer
+                        isPending -> BrandRedContainer
+                        isDarkPending -> com.example.ui.theme.DarkGreenContainer
+                        else -> BrandGreenContainer
+                    },
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
@@ -1816,7 +1860,12 @@ fun PendingCustomerCard(
                         style = MaterialTheme.typography.labelMedium,
                         fontFamily = JetBrainsMono,
                         fontWeight = FontWeight.Bold,
-                        color = if (isPending) BrandRedOnContainer else BrandGreenOnContainer,
+                        color = when {
+                            isPending && isDarkPending -> com.example.ui.theme.DarkRedOnContainer
+                            isPending -> BrandRedOnContainer
+                            isDarkPending -> com.example.ui.theme.DarkGreenOnContainer
+                            else -> BrandGreenOnContainer
+                        },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -2029,14 +2078,26 @@ fun StockCalculatorDialog(
     val vFull = vehicleFullProvider?.invoke(prodId) ?: 0
     val vEmpty = vehicleEmptyProvider?.invoke(prodId) ?: 0
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            shadowElevation = 12.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            contentAlignment = Alignment.Center
         ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 12.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                    .widthIn(max = 420.dp)
+                    .fillMaxWidth()
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2063,8 +2124,34 @@ fun StockCalculatorDialog(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close calculator")
+                    Surface(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        color = com.example.ui.theme.MetallicOrange,
+                        border = BorderStroke(1.dp, com.example.ui.theme.MetallicOrangeGold.copy(alpha = 0.85f)),
+                        shadowElevation = 4.dp,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("stock_calc_close_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close calculator",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "CLOSE",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
 
@@ -2100,21 +2187,45 @@ fun StockCalculatorDialog(
                 }
 
                 if (filteredProducts.isNotEmpty()) {
-                    ExposedDropdownMenuBox(
-                        expanded = productExpanded,
-                        onExpandedChange = { productExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedProduct?.name ?: "Select Product",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Cylinder") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(productExpanded) },
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Surface(
+                            onClick = { productExpanded = true },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                        )
-                        ExposedDropdownMenu(
+                                .heightIn(min = 52.dp)
+                                .testTag("stock_calc_product_selector")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Cylinder",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = selectedProduct?.name ?: "Select Product",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Select cylinder",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        DropdownMenu(
                             expanded = productExpanded,
                             onDismissRequest = { productExpanded = false }
                         ) {
@@ -2231,10 +2342,14 @@ fun StockCalculatorDialog(
                     }
                 }
 
+                val isDarkCalcRes = LocalIsDarkTheme.current
                 Surface(
-                    color = BrandGreenContainer.copy(alpha = 0.7f),
+                    color = if (isDarkCalcRes) com.example.ui.theme.DarkGreenContainer else BrandGreenContainer.copy(alpha = 0.7f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, BrandGreenPrimary),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isDarkCalcRes) com.example.ui.theme.ElectricBlueBright else BrandGreenPrimary
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -2245,14 +2360,18 @@ fun StockCalculatorDialog(
                             text = "CALCULATED RESULT",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = BrandGreenOnContainer
+                            color = if (isDarkCalcRes) com.example.ui.theme.ElectricBlueGlow else BrandGreenOnContainer
                         )
                         summaryLines.forEach { line ->
                             Text(
                                 text = line,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = JetBrainsMono,
-                                color = if (line.startsWith("Warning")) BrandRedBright else BrandGreenOnContainer,
+                                color = when {
+                                    line.startsWith("Warning") -> BrandRedBright
+                                    isDarkCalcRes -> com.example.ui.theme.ArcticWhite
+                                    else -> BrandGreenOnContainer
+                                },
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -2267,6 +2386,7 @@ fun StockCalculatorDialog(
                     Text("Done")
                 }
             }
+        }
         }
     }
 }

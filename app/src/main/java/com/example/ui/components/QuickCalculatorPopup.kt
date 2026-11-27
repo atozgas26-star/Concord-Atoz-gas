@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -63,17 +64,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.example.ui.theme.BrandGreenContainer
-import com.example.ui.theme.BrandGreenOnContainer
-import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.ElectricBlueBright
-import com.example.ui.theme.ElectricBlueSoft
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.MetallicOrangeGold
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianElevated
 import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
 import java.math.BigDecimal
 import java.math.MathContext
@@ -391,250 +398,315 @@ fun QuickCalculatorPopupDialog(
 
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
+                color = ObsidianSurface,
                 tonalElevation = 8.dp,
-                shadowElevation = 14.dp,
-                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outlineVariant),
+                shadowElevation = 18.dp,
+                border = BorderStroke(
+                    1.4.dp,
+                    Brush.linearGradient(
+                        listOf(
+                            ElectricBlueGlow.copy(alpha = 0.6f),
+                            ObsidianBorder,
+                            MetallicOrangeBright.copy(alpha = 0.55f)
+                        )
+                    )
+                ),
                 modifier = Modifier
-                    .widthIn(max = 360.dp)
+                    .widthIn(max = 368.dp)
                     .fillMaxWidth()
                     .offset { IntOffset(dialogOffsetX.roundToInt(), dialogOffsetY.roundToInt()) }
                     .testTag("quick_calculator_dialog")
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Draggable Top Grip + Header Bar (Drag anywhere on screen comfortably!)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SignatureAccentHairline(height = 2.dp)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                            .pointerInput(maxDragX, maxDragY) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    dialogOffsetX = (dialogOffsetX + dragAmount.x).coerceIn(-maxDragX, maxDragX)
-                                    dialogOffsetY = (dialogOffsetY + dragAmount.y).coerceIn(-maxDragY, maxDragY)
-                                }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .width(38.dp)
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = BrandGreenContainer,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Calculate,
-                                            contentDescription = null,
-                                            tint = BrandGreenPrimary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "Quick Calculator",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Icon(
-                                            imageVector = Icons.Default.DragIndicator,
-                                            contentDescription = "Drag to move calculator",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                    }
-                                    Text(
-                                        text = "Drag header to move anywhere • Scrollable",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = {
-                                        if (!calcState.hasError) {
-                                            clipboardManager.setText(AnnotatedString(calcState.display))
-                                            onResultCopied("Copied ${calcState.display}")
-                                        }
-                                    },
-                                    modifier = Modifier.testTag("calc_copy_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy result",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                IconButton(
-                                    onClick = onDismiss,
-                                    modifier = Modifier.testTag("calc_close_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Close calculator"
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Display Panel
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                        // Draggable Top Grip + Header Bar with Prominent Orange CLOSE (X) Button
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            horizontalAlignment = Alignment.End
-                        ) {
-                            Text(
-                                text = calcState.expression.ifBlank { " " },
-                                style = MaterialTheme.typography.labelMedium,
-                                fontFamily = JetBrainsMono,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.testTag("calc_expression_text")
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = calcState.display,
-                                fontSize = 30.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = JetBrainsMono,
-                                color = if (calcState.hasError) BrandRedSecondary else MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("calc_display_text")
-                            )
-                        }
-                    }
-
-                    // Optional recent history chips (horizontally scrollable)
-                    if (calcState.history.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            calcState.history.forEach { entry ->
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                    modifier = Modifier.clickable {
-                                        calcState = QuickCalculatorEngine.applyHistoryResult(calcState, entry)
-                                    }
-                                ) {
-                                    Text(
-                                        text = entry,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = JetBrainsMono,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(ObsidianMidnight, ObsidianDeep, RoyalBlueDeep.copy(alpha = 0.85f))
                                     )
+                                )
+                                .pointerInput(maxDragX, maxDragY) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        dialogOffsetX = (dialogOffsetX + dragAmount.x).coerceIn(-maxDragX, maxDragX)
+                                        dialogOffsetY = (dialogOffsetY + dragAmount.y).coerceIn(-maxDragY, maxDragY)
+                                    }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(40.dp)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(PlatinumSilver.copy(alpha = 0.42f))
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = ElectricBlueBright.copy(alpha = 0.22f),
+                                        border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.55f)),
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Calculate,
+                                                contentDescription = null,
+                                                tint = ElectricBlueGlow,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Quick Calculator",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ArcticWhite,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.DragIndicator,
+                                                contentDescription = "Drag to move calculator",
+                                                tint = PlatinumSilver,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = "Drag header to move",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = PlatinumSilver,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = {
+                                            if (!calcState.hasError) {
+                                                clipboardManager.setText(AnnotatedString(calcState.display))
+                                                onResultCopied("Copied ${calcState.display}")
+                                            }
+                                        },
+                                        modifier = Modifier.testTag("calc_copy_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy result",
+                                            tint = ElectricBlueGlow,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    // Clearly Visible Premium Metallic Orange CLOSE (X) Button at Top-Right Corner
+                                    Surface(
+                                        onClick = onDismiss,
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MetallicOrange,
+                                        border = BorderStroke(1.2.dp, MetallicOrangeGold.copy(alpha = 0.85f)),
+                                        shadowElevation = 6.dp,
+                                        modifier = Modifier
+                                            .minimumInteractiveComponentSize()
+                                            .luxuryTapScale(pressedScale = 0.94f)
+                                            .testTag("calc_close_button")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .background(
+                                                    Brush.horizontalGradient(
+                                                        listOf(MetallicOrange, MetallicOrangeBright)
+                                                    )
+                                                )
+                                                .padding(horizontal = 11.dp, vertical = 7.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Close calculator",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                            Text(
+                                                text = "CLOSE",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                letterSpacing = 0.6.sp,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // 4x5 Tactile Keypad
-                    val rows = listOf(
-                        listOf("C", "DEL", "%", "÷"),
-                        listOf("7", "8", "9", "×"),
-                        listOf("4", "5", "6", "-"),
-                        listOf("1", "2", "3", "+"),
-                        listOf("±", "0", ".", "=")
-                    )
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rows.forEach { rowKeys ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        // Display Panel
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = ObsidianMidnight,
+                            border = BorderStroke(1.2.dp, ElectricBlueBright.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalAlignment = Alignment.End
                             ) {
-                                rowKeys.forEach { key ->
-                                    val isEquals = key == "="
-                                    val isClear = key == "C"
-                                    val isOperator = key in setOf("÷", "×", "-", "+", "%")
-                                    val containerColor = when {
-                                        isEquals -> RoyalElectricBlue
-                                        isClear -> BrandRedContainer
-                                        isOperator -> MaterialTheme.colorScheme.primaryContainer
-                                        else -> MaterialTheme.colorScheme.surfaceVariant
-                                    }
-                                    val contentColor = when {
-                                        isEquals -> Color.White
-                                        isClear -> BrandRedOnContainer
-                                        isOperator -> MaterialTheme.colorScheme.onPrimaryContainer
-                                        else -> MaterialTheme.colorScheme.onSurface
-                                    }
+                                Text(
+                                    text = calcState.expression.ifBlank { " " },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontFamily = JetBrainsMono,
+                                    color = PlatinumSilver,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.testTag("calc_expression_text")
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = calcState.display,
+                                    fontSize = 30.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = JetBrainsMono,
+                                    color = if (calcState.hasError) MetallicOrangeBright else ArcticWhite,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("calc_display_text")
+                                )
+                            }
+                        }
 
+                        // Optional recent history chips (horizontally scrollable)
+                        if (calcState.history.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                calcState.history.forEach { entry ->
                                     Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = containerColor,
-                                        border = if (!isEquals) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) else null,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(50.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                calcState = QuickCalculatorEngine.onKeyPress(calcState, key)
-                                            }
-                                            .testTag("calc_key_$key")
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = ObsidianElevated,
+                                        border = BorderStroke(1.dp, ObsidianBorder),
+                                        modifier = Modifier.clickable {
+                                            calcState = QuickCalculatorEngine.applyHistoryResult(calcState, entry)
+                                        }
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            if (key == "DEL") {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.Backspace,
-                                                    contentDescription = "Backspace",
-                                                    tint = contentColor,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = key,
-                                                    fontSize = if (isOperator || isEquals) 20.sp else 18.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontFamily = JetBrainsMono,
-                                                    color = contentColor
-                                                )
+                                        Text(
+                                            text = entry,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = JetBrainsMono,
+                                            color = PlatinumSilver,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4x5 Tactile Keypad
+                        val rows = listOf(
+                            listOf("C", "DEL", "%", "÷"),
+                            listOf("7", "8", "9", "×"),
+                            listOf("4", "5", "6", "-"),
+                            listOf("1", "2", "3", "+"),
+                            listOf("±", "0", ".", "=")
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rows.forEach { rowKeys ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    rowKeys.forEach { key ->
+                                        val isEquals = key == "="
+                                        val isClear = key == "C"
+                                        val isOperator = key in setOf("÷", "×", "-", "+", "%")
+                                        val containerColor = when {
+                                            isEquals -> MetallicOrange
+                                            isClear -> BrandRedContainer.copy(alpha = 0.22f)
+                                            isOperator -> RoyalBlueDeep
+                                            else -> ObsidianElevated
+                                        }
+                                        val contentColor = when {
+                                            isEquals -> Color.White
+                                            isClear -> BrandRedOnContainer.let { Color(0xFFFCA5A5) }
+                                            isOperator -> ElectricBlueGlow
+                                            else -> ArcticWhite
+                                        }
+                                        val borderColor = when {
+                                            isEquals -> MetallicOrangeBright
+                                            isClear -> BrandRedSecondary.copy(alpha = 0.6f)
+                                            isOperator -> ElectricBlueBright.copy(alpha = 0.55f)
+                                            else -> ObsidianBorder
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = containerColor,
+                                            border = BorderStroke(1.dp, borderColor),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(50.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .luxuryTapScale(pressedScale = 0.96f)
+                                                .clickable {
+                                                    calcState = QuickCalculatorEngine.onKeyPress(calcState, key)
+                                                }
+                                                .testTag("calc_key_$key")
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                if (key == "DEL") {
+                                                    Icon(
+                                                        imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                                        contentDescription = "Backspace",
+                                                        tint = PlatinumSilver,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                } else {
+                                                    Text(
+                                                        text = key,
+                                                        fontSize = if (isOperator || isEquals) 20.sp else 18.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontFamily = JetBrainsMono,
+                                                        color = contentColor
+                                                    )
+                                                }
                                             }
                                         }
                                     }

@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -59,8 +60,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.ProductCategory
+import com.example.ui.theme.ArcticWhite
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.RoyalBlueDeep
+import com.example.ui.theme.RoyalElectricBlue
 
 /**
  * Distinct Role & Area header palettes so Admin, Owner View, Staff, Inside Store,
@@ -236,17 +250,31 @@ private fun ZoneScopePillCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val bgBrush = if (selected) {
+        Brush.horizontalGradient(
+            listOf(RoyalBlueDeep, accent, MetallicOrange.copy(alpha = 0.72f))
+        )
+    } else {
+        Brush.horizontalGradient(
+            listOf(ObsidianSurface, ObsidianElevated, RoyalBlueDeep.copy(alpha = 0.45f))
+        )
+    }
+    val borderColor = if (selected) MetallicOrangeBright else accent.copy(alpha = 0.5f)
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
+            .luxuryTapScale()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        color = if (selected) accent else softBg.copy(alpha = 0.72f),
-        border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) accent else accent.copy(alpha = 0.4f)),
-        tonalElevation = if (selected) 3.dp else 0.dp
+        color = Color.Transparent,
+        border = BorderStroke(if (selected) 1.6.dp else 1.dp, borderColor),
+        tonalElevation = 0.dp,
+        shadowElevation = if (selected) 6.dp else 2.dp
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier
+                .background(bgBrush)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
@@ -256,14 +284,14 @@ private fun ZoneScopePillCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = title,
-                    tint = if (selected) Color.White else accent,
+                    tint = if (selected) MetallicOrangeBright else ElectricBlueGlow,
                     modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                    color = ArcticWhite,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -274,7 +302,7 @@ private fun ZoneScopePillCard(
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = JetBrainsMono,
                 fontWeight = FontWeight.Bold,
-                color = if (selected) Color.White.copy(alpha = 0.94f) else accent
+                color = if (selected) ArcticWhite else PlatinumSilver
             )
         }
     }
@@ -292,9 +320,10 @@ fun CategoryFolderGrid(
     onSelectCategory: (ProductCategory?) -> Unit,
     sectionTitle: String = "Category Folders",
     headerTrailingAction: (@Composable () -> Unit)? = null,
+    onMidnightBackground: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val isDark = LocalIsDarkTheme.current
+    val isDark = LocalIsDarkTheme.current || onMidnightBackground
     val orderedStats = remember(stats) {
         ProductCategory.entries.map { cat ->
             stats.firstOrNull { it.category == cat } ?: CategoryFolderStat(cat, 0, 0, 0)
@@ -318,13 +347,14 @@ fun CategoryFolderGrid(
                 Icon(
                     imageVector = Icons.Default.FolderOpen,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    tint = MetallicOrangeBright,
+                    modifier = Modifier.size(17.dp)
                 )
                 Text(
                     text = sectionTitle,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
+                    color = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -337,13 +367,15 @@ fun CategoryFolderGrid(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close folder",
+                        tint = MetallicOrangeBright,
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(Modifier.width(3.dp))
                     Text(
                         text = "Close",
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MetallicOrangeBright
                     )
                 }
             } else if (headerTrailingAction != null) {
@@ -351,68 +383,83 @@ fun CategoryFolderGrid(
             }
         }
 
-        // Compact Small-List Style Folder Rows
+        // Compact Small-List Style Folder Rows in Midnight Royal Blue + Electric Blue gradient + Metallic Orange accent
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             orderedStats.forEach { stat ->
                 val style = categoryVisualStyle(stat.category)
                 val isSelected = selectedCategory == stat.category
-                val bgColor = when {
-                    isSelected -> style.primaryColor
-                    isDark -> style.darkContainer.copy(alpha = 0.72f)
-                    else -> style.lightContainer.copy(alpha = 0.72f)
+                val cardGradient = if (isSelected) {
+                    Brush.horizontalGradient(
+                        listOf(RoyalBlueDeep, RoyalElectricBlue, ObsidianElevated)
+                    )
+                } else {
+                    Brush.horizontalGradient(
+                        listOf(ObsidianSurface, ObsidianElevated, RoyalBlueDeep.copy(alpha = 0.62f))
+                    )
                 }
-                val textColor = when {
-                    isSelected -> Color.White
-                    isDark -> style.darkOnContainer
-                    else -> style.lightOnContainer
+                val borderBrush = if (isSelected) {
+                    Brush.horizontalGradient(listOf(ElectricBlueGlow, MetallicOrangeBright))
+                } else {
+                    Brush.linearGradient(
+                        listOf(
+                            ElectricBlueBright.copy(alpha = 0.38f),
+                            ObsidianBorder.copy(alpha = 0.85f),
+                            MetallicOrangeBright.copy(alpha = 0.24f)
+                        )
+                    )
+                }
+                val badgeBg = ObsidianMidnight.copy(alpha = 0.82f)
+                val badgeBorder = if (isSelected) {
+                    MetallicOrangeBright.copy(alpha = 0.85f)
+                } else {
+                    ElectricBlueBright.copy(alpha = 0.42f)
                 }
 
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 50.dp)
-                        .clip(RoundedCornerShape(13.dp))
+                        .heightIn(min = 52.dp)
+                        .clip(RoundedCornerShape(14.dp))
                         .luxuryTapScale()
                         .clickable {
                             onSelectCategory(if (isSelected) null else stat.category)
                         }
                         .testTag("category_folder_${stat.category.name.lowercase()}"),
-                    shape = RoundedCornerShape(13.dp),
-                    color = bgColor,
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color.Transparent,
                     border = BorderStroke(
                         width = if (isSelected) 1.6.dp else 1.dp,
-                        color = if (isSelected) style.primaryColor else style.primaryColor.copy(alpha = 0.36f)
+                        brush = borderBrush
                     ),
-                    shadowElevation = if (isSelected) 4.dp else 1.dp,
-                    tonalElevation = if (isSelected) 3.dp else 0.dp
+                    shadowElevation = if (isSelected) 6.dp else 2.dp,
+                    tonalElevation = 0.dp
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                            .background(cardGradient)
+                            .padding(horizontal = 11.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Colored Folder Icon Badge
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isSelected) Color.White.copy(alpha = 0.22f)
-                                    else style.primaryColor.copy(alpha = 0.16f)
-                                ),
-                            contentAlignment = Alignment.Center
+                        // Midnight Folder Icon Badge (zero white background or wash)
+                        Surface(
+                            shape = RoundedCornerShape(9.dp),
+                            color = badgeBg,
+                            border = BorderStroke(1.dp, badgeBorder),
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            Icon(
-                                imageVector = if (isSelected) Icons.Default.FolderOpen else Icons.Default.Folder,
-                                contentDescription = style.shortTitle,
-                                tint = if (isSelected) Color.White else style.primaryColor,
-                                modifier = Modifier.size(17.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isSelected) Icons.Default.FolderOpen else Icons.Default.Folder,
+                                    contentDescription = style.shortTitle,
+                                    tint = if (isSelected) MetallicOrangeBright else style.darkOnContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
 
                         // Category Name + Item Count
@@ -424,7 +471,7 @@ fun CategoryFolderGrid(
                                 text = style.shortTitle,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = textColor,
+                                color = ArcticWhite,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -432,24 +479,28 @@ fun CategoryFolderGrid(
                                 text = "${stat.category.shortCode} • ${stat.itemCount} items",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = 10.sp,
-                                color = textColor.copy(alpha = 0.78f),
+                                color = PlatinumSilver,
                                 maxLines = 1
                             )
                         }
 
-                        // Compact Full / Empty Mono Pill
+                        // Compact High-Contrast Full / Empty Mono Pill (zero white wash)
                         Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isSelected) Color.White.copy(alpha = 0.22f)
-                            else style.primaryColor.copy(alpha = 0.14f)
+                            shape = RoundedCornerShape(8.dp),
+                            color = badgeBg,
+                            border = BorderStroke(
+                                0.9.dp,
+                                if (isSelected) MetallicOrangeBright.copy(alpha = 0.72f)
+                                else ElectricBlueBright.copy(alpha = 0.36f)
+                            )
                         ) {
                             Text(
                                 text = "F:${stat.fullTotal} E:${stat.emptyTotal}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = JetBrainsMono,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isSelected) Color.White else style.primaryColor,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                color = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
 
@@ -457,7 +508,7 @@ fun CategoryFolderGrid(
                         Icon(
                             imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = if (isSelected) "Collapse folder" else "Open folder",
-                            tint = if (isSelected) Color.White else style.primaryColor,
+                            tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -514,6 +565,7 @@ fun DashboardInsideOutsideFolderCard(
     LuxuryGlassCard(
         shape = RoundedCornerShape(20.dp),
         accentGlow = activeZone.accentColor,
+        forceMidnight = true,
         modifier = modifier
             .fillMaxWidth()
             .testTag("dashboard_inside_outside_folders_card")
@@ -533,12 +585,13 @@ fun DashboardInsideOutsideFolderCard(
                     Text(
                         text = "Inside Store & Outside Fleet Folders",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = ArcticWhite
                     )
                     Text(
                         text = "Separate Inside (Main Store) & Outside (Vehicles) category view",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = PlatinumSilver
                     )
                 }
                 TextButton(
@@ -549,7 +602,7 @@ fun DashboardInsideOutsideFolderCard(
                     Text(
                         text = if (activeZone == StockZoneScope.INSIDE_STORE) "Open Store" else "Open Fleet",
                         fontWeight = FontWeight.Bold,
-                        color = activeZone.accentColor
+                        color = MetallicOrangeBright
                     )
                 }
             }
@@ -569,6 +622,7 @@ fun DashboardInsideOutsideFolderCard(
                 stats = folderStats,
                 selectedCategory = selectedCategory,
                 onSelectCategory = { selectedCategory = it },
+                onMidnightBackground = true,
                 sectionTitle = if (activeZone == StockZoneScope.INSIDE_STORE) {
                     "Inside Main Store Folders"
                 } else {
@@ -581,15 +635,12 @@ fun DashboardInsideOutsideFolderCard(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                val catStyle = selectedCategory?.let { categoryVisualStyle(it) }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            (catStyle?.primaryColor ?: activeZone.accentColor).copy(alpha = 0.08f)
-                        )
-                        .padding(10.dp),
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(ObsidianMidnight.copy(alpha = 0.78f))
+                        .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
@@ -597,9 +648,9 @@ fun DashboardInsideOutsideFolderCard(
                             if (activeZone == StockZoneScope.INSIDE_STORE) "Inside Store Stock" else "Outside Vehicles Stock",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = catStyle?.primaryColor ?: activeZone.accentColor
+                        color = MetallicOrangeBright
                     )
-                    HorizontalDivider(color = (catStyle?.primaryColor ?: activeZone.accentColor).copy(alpha = 0.25f))
+                    HorizontalDivider(color = ElectricBlueBright.copy(alpha = 0.35f))
                     expandedRows.forEach { row ->
                         val fullVal = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeFull else row.vehiclesFull
                         val empVal = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeEmpty else row.vehiclesEmpty
@@ -617,18 +668,19 @@ fun DashboardInsideOutsideFolderCard(
                                     text = row.product.name,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
+                                    color = ArcticWhite,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = "$altLabel Full: $altFull • Total Full: ${row.totalFull}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = PlatinumSilver
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                StockPill(label = "F", value = fullVal, isFull = true)
-                                StockPill(label = "E", value = empVal, isFull = false)
+                                StockPill(label = "F", value = fullVal, isFull = true, forceMidnight = true)
+                                StockPill(label = "E", value = empVal, isFull = false, forceMidnight = true)
                             }
                         }
                     }
@@ -650,17 +702,13 @@ fun OpenedCategoryFolderHeader(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = LocalIsDarkTheme.current
     val style = categoryVisualStyle(category)
-    val containerColor = if (isDark) style.darkContainer else style.lightContainer
-    val onContainerColor = if (isDark) style.darkOnContainer else style.lightOnContainer
-
     OpenedSectionFolderHeader(
         title = category.displayName,
         subtitle = subtitle,
-        accentColor = style.primaryColor,
-        containerColor = containerColor,
-        onContainerColor = onContainerColor,
+        accentColor = ElectricBlueBright,
+        containerColor = ObsidianDeep,
+        onContainerColor = ArcticWhite,
         icon = style.icon,
         onClose = onClose,
         modifier = modifier.testTag("opened_category_folder_header_${category.name.lowercase()}")
@@ -683,34 +731,45 @@ fun OpenedSectionFolderHeader(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(11.dp),
-        color = containerColor,
-        border = BorderStroke(1.2.dp, accentColor)
+        shape = RoundedCornerShape(14.dp),
+        color = Color.Transparent,
+        border = BorderStroke(
+            1.2.dp,
+            Brush.horizontalGradient(listOf(ElectricBlueGlow.copy(alpha = 0.72f), MetallicOrangeBright.copy(alpha = 0.72f)))
+        ),
+        shadowElevation = 4.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(ObsidianMidnight, ObsidianDeep, RoyalBlueDeep.copy(alpha = 0.85f))
+                    )
+                )
+                .padding(horizontal = 12.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
-                        .background(accentColor),
+                        .background(
+                            Brush.linearGradient(listOf(MetallicOrange, MetallicOrangeBright))
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = title,
-                        tint = Color.White,
-                        modifier = Modifier.size(15.dp)
+                        tint = ArcticWhite,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
                 Column(modifier = Modifier.weight(1f)) {
@@ -718,14 +777,14 @@ fun OpenedSectionFolderHeader(
                         text = title,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = onContainerColor,
+                        color = ArcticWhite,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.labelSmall,
-                        color = onContainerColor.copy(alpha = 0.85f),
+                        color = PlatinumSilver,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -734,13 +793,13 @@ fun OpenedSectionFolderHeader(
             Spacer(Modifier.width(6.dp))
             OutlinedButton(
                 onClick = onClose,
-                border = BorderStroke(1.dp, accentColor.copy(alpha = 0.7f)),
+                border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.8f)),
                 modifier = Modifier.testTag("close_opened_folder_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close folder",
-                    tint = onContainerColor,
+                    tint = MetallicOrangeBright,
                     modifier = Modifier.size(15.dp)
                 )
                 Spacer(Modifier.width(3.dp))
@@ -748,7 +807,7 @@ fun OpenedSectionFolderHeader(
                     text = "Close",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = onContainerColor
+                    color = MetallicOrangeBright
                 )
             }
         }

@@ -104,25 +104,39 @@ import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.VehicleTransferDialog
 import com.example.ui.components.categoryVisualStyle
 import com.example.ui.components.luxuryTapScale
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.DarkGreenContainer
+import com.example.ui.theme.DarkGreenOnContainer
+import com.example.ui.theme.DarkRedContainer
+import com.example.ui.theme.DarkRedOnContainer
 import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.ElectricBlueOnSoft
 import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MetallicOrangeOnSoft
 import com.example.ui.theme.MetallicOrangeSoft
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.RoyalElectricBlue
 import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material3.OutlinedTextFieldDefaults
 
 private data class StaffProductSaleSummary(
     val product: ProductEntity,
@@ -391,6 +405,7 @@ fun StaffDashboardScreen(
         )
 
         // Single unified smooth vertical scroll up & down container for entire Staff experience
+        val isDark = LocalIsDarkTheme.current
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -409,7 +424,11 @@ fun StaffDashboardScreen(
             }
 
             item(key = "staff_date_selector") {
-                DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                DateSelectorBar(
+                    selectedDate = selectedDate,
+                    onDateSelected = onDateSelected,
+                    midnightSurface = isDark
+                )
             }
 
             // Live Vehicle Closing Full & Empty KPI Summary
@@ -423,9 +442,9 @@ fun StaffDashboardScreen(
                         value = closingFull.toString(),
                         subtitle = "Recd $totalReceived • Sold $totalSales",
                         icon = Icons.Default.PropaneTank,
-                        accentColor = RoyalElectricBlue,
-                        containerColor = ElectricBlueSoft,
-                        onContainerColor = ElectricBlueOnSoft,
+                        accentColor = if (isDark) ElectricBlueGlow else RoyalElectricBlue,
+                        containerColor = if (isDark) ObsidianElevated else ElectricBlueSoft,
+                        onContainerColor = if (isDark) ElectricBlueGlow else ElectricBlueOnSoft,
                         modifier = Modifier.weight(1f)
                     )
                     KpiMetricCard(
@@ -433,9 +452,9 @@ fun StaffDashboardScreen(
                         value = closingEmpty.toString(),
                         subtitle = "Cust $totalCustEmpty • Ret $totalRetEmpty",
                         icon = Icons.Default.Recycling,
-                        accentColor = MetallicOrange,
-                        containerColor = MetallicOrangeSoft,
-                        onContainerColor = MetallicOrangeOnSoft,
+                        accentColor = if (isDark) MetallicOrangeBright else MetallicOrange,
+                        containerColor = if (isDark) Color(0xFF3A1A0B) else MetallicOrangeSoft,
+                        onContainerColor = if (isDark) MetallicOrangeBright else MetallicOrangeOnSoft,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -742,12 +761,14 @@ fun StaffDashboardScreen(
                 0 -> {
                     val showVehicleProducts = selectedCategory != null || searchQuery.isNotBlank()
                     // 4 Color-Coded My Vehicle Category Folders (Staff sees ONLY assigned vehicle)
+                    val isDarkFolders = isDark
                     item(key = "staff_category_folders") {
                         CategoryFolderGrid(
                             stats = folderStats,
                             selectedCategory = selectedCategory,
                             onSelectCategory = { selectedCategory = it },
-                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Category Folders"
+                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Category Folders",
+                            onMidnightBackground = isDarkFolders
                         )
                     }
 
@@ -756,9 +777,33 @@ fun StaffDashboardScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search cylinder in my vehicle...") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            placeholder = {
+                                Text(
+                                    "Search cylinder in my vehicle...",
+                                    color = if (isDarkFolders) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = if (isDarkFolders) ElectricBlueGlow else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isDarkFolders) {
+                                OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = ObsidianSurface,
+                                    unfocusedContainerColor = ObsidianSurface,
+                                    focusedBorderColor = ElectricBlueBright,
+                                    unfocusedBorderColor = ObsidianBorder,
+                                    focusedTextColor = ArcticWhite,
+                                    unfocusedTextColor = ArcticWhite
+                                )
+                            } else {
+                                OutlinedTextFieldDefaults.colors()
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -826,10 +871,14 @@ fun StaffDashboardScreen(
                         }
                     }
                     item(key = "staff_sales_summary_banner") {
+                        val isDarkSales = LocalIsDarkTheme.current
                         Surface(
-                            color = BrandGreenContainer,
+                            color = if (isDarkSales) DarkGreenContainer else BrandGreenContainer,
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, BrandGreenPrimary.copy(alpha = 0.25f)),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isDarkSales) ElectricBlueBright.copy(alpha = 0.42f) else BrandGreenPrimary.copy(alpha = 0.25f)
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -844,12 +893,12 @@ fun StaffDashboardScreen(
                                     },
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = BrandGreenOnContainer
+                                    color = if (isDarkSales) ArcticWhite else BrandGreenOnContainer
                                 )
                                 Text(
                                     text = "Total Sold: $totalSoldSum (Reg $regSoldSum • New $newSoldSum)  •  Cust Empty: $emptyCollSum  •  Comp.Repl: $compReplSum",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = BrandGreenOnContainer
+                                    color = if (isDarkSales) DarkGreenOnContainer else BrandGreenOnContainer
                                 )
                             }
                         }
@@ -859,7 +908,8 @@ fun StaffDashboardScreen(
                             stats = salesFolderStats,
                             selectedCategory = selectedSalesCategory,
                             onSelectCategory = { selectedSalesCategory = it },
-                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Sales Category Folders"
+                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Sales Category Folders",
+                            onMidnightBackground = LocalIsDarkTheme.current
                         )
                     }
                     if (productSummaries.isEmpty()) {
@@ -937,15 +987,17 @@ fun StaffDashboardScreen(
                                                     fontWeight = FontWeight.SemiBold
                                                 )
                                             }
+                                            val isDarkBadge = LocalIsDarkTheme.current
                                             Surface(
-                                                color = BrandRedContainer,
-                                                shape = RoundedCornerShape(8.dp)
+                                                color = if (isDarkBadge) ObsidianMidnight.copy(alpha = 0.72f) else BrandRedContainer,
+                                                shape = RoundedCornerShape(8.dp),
+                                                border = if (isDarkBadge) BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.45f)) else null
                                             ) {
                                                 Text(
                                                     text = "Sold: ${item.totalSold}",
                                                     style = MaterialTheme.typography.labelLarge,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = BrandRedOnContainer,
+                                                    color = if (isDarkBadge) MetallicOrangeBright else BrandRedOnContainer,
                                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                                 )
                                             }
@@ -1081,15 +1133,17 @@ fun StaffDashboardScreen(
                                             )
                                         }
                                     }
+                                    val isDarkQty = LocalIsDarkTheme.current
                                     Surface(
-                                        color = BrandGreenContainer,
-                                        shape = RoundedCornerShape(8.dp)
+                                        color = if (isDarkQty) ObsidianMidnight.copy(alpha = 0.72f) else BrandGreenContainer,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = if (isDarkQty) BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.45f)) else null
                                     ) {
                                         Text(
                                             text = "×${tx.quantity}",
                                             fontFamily = JetBrainsMono,
                                             fontWeight = FontWeight.Bold,
-                                            color = BrandGreenOnContainer,
+                                            color = if (isDarkQty) ElectricBlueGlow else BrandGreenOnContainer,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                         )
                                     }

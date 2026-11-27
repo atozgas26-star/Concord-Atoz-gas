@@ -54,13 +54,20 @@ import com.example.data.local.ProductEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.ProductCategory
 import com.example.data.model.VehicleStockRow
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.DarkGreenContainer
+import com.example.ui.theme.DarkRedContainer
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.RoyalElectricBlue
 
 /**
@@ -153,8 +160,9 @@ fun VehicleTransferDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Source Vehicle Banner
+                val isDarkTransfer = LocalIsDarkTheme.current
                 Surface(
-                    color = BrandGreenContainer,
+                    color = if (isDarkTransfer) DarkGreenContainer else BrandGreenContainer,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -165,7 +173,7 @@ fun VehicleTransferDialog(
                         Icon(
                             imageVector = Icons.Default.LocalShipping,
                             contentDescription = null,
-                            tint = BrandGreenOnContainer,
+                            tint = if (isDarkTransfer) ElectricBlueGlow else BrandGreenOnContainer,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(8.dp))
@@ -173,7 +181,7 @@ fun VehicleTransferDialog(
                             text = "From Vehicle: ${sourceVehicle.name}",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = BrandGreenOnContainer
+                            color = if (isDarkTransfer) ArcticWhite else BrandGreenOnContainer
                         )
                     }
                 }
@@ -318,15 +326,16 @@ fun VehicleTransferDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Surface(
-                        color = BrandGreenContainer.copy(alpha = 0.7f),
+                        color = if (isDarkTransfer) DarkGreenContainer else BrandGreenContainer.copy(alpha = 0.7f),
                         shape = RoundedCornerShape(10.dp),
+                        border = if (isDarkTransfer) BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.4f)) else null,
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text(
                                 text = "AVAILABLE FULL",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = BrandGreenOnContainer,
+                                color = if (isDarkTransfer) ElectricBlueGlow else BrandGreenOnContainer,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
@@ -334,20 +343,21 @@ fun VehicleTransferDialog(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontFamily = JetBrainsMono,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = BrandGreenOnContainer
+                                color = if (isDarkTransfer) ArcticWhite else BrandGreenOnContainer
                             )
                         }
                     }
                     Surface(
-                        color = BrandRedContainer.copy(alpha = 0.7f),
+                        color = if (isDarkTransfer) DarkRedContainer else BrandRedContainer.copy(alpha = 0.7f),
                         shape = RoundedCornerShape(10.dp),
+                        border = if (isDarkTransfer) BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.4f)) else null,
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text(
                                 text = "AVAILABLE EMPTY",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = BrandRedOnContainer,
+                                color = if (isDarkTransfer) MetallicOrangeBright else BrandRedOnContainer,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
@@ -355,7 +365,7 @@ fun VehicleTransferDialog(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontFamily = JetBrainsMono,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = BrandRedOnContainer
+                                color = if (isDarkTransfer) ArcticWhite else BrandRedOnContainer
                             )
                         }
                     }
@@ -462,7 +472,11 @@ fun VehicleTransferDialog(
                 // Live Auto-Sum Preview + Auto Destination Staff Bell Alert Info
                 if (hasValidQty && selectedTargetVehicle != null && selectedProduct != null) {
                     Surface(
-                        color = if (hasExtra) BrandRedContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant,
+                        color = when {
+                            hasExtra && isDarkTransfer -> DarkRedContainer
+                            hasExtra -> BrandRedContainer.copy(alpha = 0.45f)
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        },
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(
                             1.dp,
@@ -480,7 +494,12 @@ fun VehicleTransferDialog(
                                 text = "${sourceVehicle.name} → ${selectedTargetVehicle!!.name}  •  Auto-Sum Total: $grandTotal",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = if (hasExtra) BrandRedSecondary else BrandGreenPrimary
+                                color = when {
+                                    hasExtra && isDarkTransfer -> MetallicOrangeBright
+                                    hasExtra -> BrandRedSecondary
+                                    isDarkTransfer -> ElectricBlueGlow
+                                    else -> BrandGreenPrimary
+                                }
                             )
                             if (totalFull > 0) {
                                 val fullDetail = if (extraFullQty > 0) "$fullQty + Extra $extraFullQty = $totalFull" else "$totalFull"

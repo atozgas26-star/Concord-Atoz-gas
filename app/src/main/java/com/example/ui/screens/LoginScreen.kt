@@ -110,16 +110,21 @@ import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.DarkGreenContainer
+import com.example.ui.theme.DarkGreenOnContainer
+import com.example.ui.theme.DarkRedContainer
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.ElectricBlueOnSoft
 import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MetallicOrangeOnSoft
 import com.example.ui.theme.MetallicOrangeSoft
 import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianElevated
 import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.RoyalElectricBlue
 import kotlinx.coroutines.Dispatchers
@@ -514,10 +519,11 @@ fun LoginScreen(
                         }
                     }
                 } else if (biometricUnlockState.passwordRequiredAfterLogout) {
+                    val isDarkNotice = LocalIsDarkTheme.current
                     Surface(
-                        color = BrandRedContainer.copy(alpha = 0.55f),
+                        color = if (isDarkNotice) DarkRedContainer.copy(alpha = 0.72f) else BrandRedContainer.copy(alpha = 0.55f),
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BrandRedSecondary.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, BrandRedSecondary.copy(alpha = 0.45f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("biometric_logout_reset_notice")
@@ -576,6 +582,7 @@ fun LoginScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 2.dp)
                     )
+                    val isDarkPortals = LocalIsDarkTheme.current
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -585,8 +592,8 @@ fun LoginScreen(
                             subtitle = if (isStaffRestrictedCloud) "Locked" else "User + Pass",
                             icon = Icons.Default.AdminPanelSettings,
                             accentColor = RoyalElectricBlue,
-                            badgeContainer = ElectricBlueSoft,
-                            badgeTint = ElectricBlueOnSoft,
+                            badgeContainer = if (isDarkPortals) ObsidianElevated else ElectricBlueSoft,
+                            badgeTint = if (isDarkPortals) ElectricBlueGlow else ElectricBlueOnSoft,
                             selected = selectedRole == UserRole.ADMIN,
                             enabled = !isStaffRestrictedCloud,
                             onClick = {
@@ -604,8 +611,8 @@ fun LoginScreen(
                             subtitle = "4-Digit PIN",
                             icon = Icons.Default.VerifiedUser,
                             accentColor = MetallicOrange,
-                            badgeContainer = MetallicOrangeSoft,
-                            badgeTint = MetallicOrangeOnSoft,
+                            badgeContainer = if (isDarkPortals) Color(0xFF3A1A0B) else MetallicOrangeSoft,
+                            badgeTint = if (isDarkPortals) MetallicOrangeBright else MetallicOrangeOnSoft,
                             selected = selectedRole == UserRole.OWNER_VIEW,
                             enabled = !isStaffRestrictedCloud || ownerViewConfigured,
                             onClick = {
@@ -621,8 +628,8 @@ fun LoginScreen(
                             subtitle = "${staffUsers.size} Staff • PIN",
                             icon = Icons.Default.LocalShipping,
                             accentColor = BrandGreenPrimary,
-                            badgeContainer = BrandGreenContainer,
-                            badgeTint = BrandGreenOnContainer,
+                            badgeContainer = if (isDarkPortals) DarkGreenContainer else BrandGreenContainer,
+                            badgeTint = if (isDarkPortals) DarkGreenOnContainer else BrandGreenOnContainer,
                             selected = selectedRole == UserRole.STAFF,
                             enabled = true,
                             onClick = {
@@ -837,14 +844,15 @@ fun LoginScreen(
                                 )
 
                                 if (loginError != null) {
+                                    val isDarkErr = LocalIsDarkTheme.current
                                     Surface(
-                                        color = BrandRedContainer,
+                                        color = if (isDarkErr) DarkRedContainer else BrandRedContainer,
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
                                             text = loginError,
-                                            color = BrandRedBright,
+                                            color = if (isDarkErr) Color(0xFFFECACA) else BrandRedBright,
                                             style = MaterialTheme.typography.bodySmall,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.padding(8.dp)
@@ -958,14 +966,15 @@ fun LoginScreen(
                                 )
 
                                 if (loginError != null) {
+                                    val isDarkErr = LocalIsDarkTheme.current
                                     Surface(
-                                        color = BrandRedContainer,
+                                        color = if (isDarkErr) DarkRedContainer else BrandRedContainer,
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
                                             text = loginError,
-                                            color = BrandRedBright,
+                                            color = if (isDarkErr) Color(0xFFFECACA) else BrandRedBright,
                                             style = MaterialTheme.typography.bodySmall,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.padding(8.dp)
@@ -1085,8 +1094,9 @@ fun LoginScreen(
                                 .padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            val isDarkOwnerBanner = LocalIsDarkTheme.current
                             Surface(
-                                color = BrandGreenContainer,
+                                color = if (isDarkOwnerBanner) DarkGreenContainer else BrandGreenContainer,
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -1097,7 +1107,7 @@ fun LoginScreen(
                                     Icon(
                                         Icons.Default.Visibility,
                                         contentDescription = null,
-                                        tint = BrandGreenOnContainer,
+                                        tint = if (isDarkOwnerBanner) DarkGreenOnContainer else BrandGreenOnContainer,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(Modifier.width(6.dp))
@@ -1105,7 +1115,7 @@ fun LoginScreen(
                                         text = "VIEW ONLY • No Entry or Modification",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = BrandGreenOnContainer
+                                        color = if (isDarkOwnerBanner) DarkGreenOnContainer else BrandGreenOnContainer
                                     )
                                 }
                             }
@@ -1178,14 +1188,15 @@ fun LoginScreen(
                                 )
 
                                 if (loginError != null) {
+                                    val isDarkErr = LocalIsDarkTheme.current
                                     Surface(
-                                        color = BrandRedContainer,
+                                        color = if (isDarkErr) DarkRedContainer else BrandRedContainer,
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
                                             text = loginError,
-                                            color = BrandRedBright,
+                                            color = if (isDarkErr) Color(0xFFFECACA) else BrandRedBright,
                                             style = MaterialTheme.typography.bodySmall,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.padding(8.dp)
@@ -1270,14 +1281,15 @@ fun LoginScreen(
                                 )
 
                                 if (loginError != null) {
+                                    val isDarkErr = LocalIsDarkTheme.current
                                     Surface(
-                                        color = BrandRedContainer,
+                                        color = if (isDarkErr) DarkRedContainer else BrandRedContainer,
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
                                             text = loginError,
-                                            color = BrandRedBright,
+                                            color = if (isDarkErr) Color(0xFFFECACA) else BrandRedBright,
                                             style = MaterialTheme.typography.bodySmall,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.padding(8.dp)
@@ -1333,7 +1345,7 @@ fun LoginScreen(
                                 },
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F766E)
+                                color = if (LocalIsDarkTheme.current) ElectricBlueGlow else Color(0xFF0F766E)
                             )
                             Text(
                                 text = if (workspaceState is WorkspaceConnectionState.Connected) {
@@ -1710,8 +1722,13 @@ private fun CloudSyncStatusBanner(
 
             when (workspaceState) {
                 is WorkspaceConnectionState.Connected -> {
+                    val isDarkSync = LocalIsDarkTheme.current
                     Surface(
-                        color = if (workspaceState.isOwnerOrAdmin) BrandGreenContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        color = when {
+                            workspaceState.isOwnerOrAdmin && isDarkSync -> DarkGreenContainer
+                            workspaceState.isOwnerOrAdmin -> BrandGreenContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        },
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1722,7 +1739,11 @@ private fun CloudSyncStatusBanner(
                                 "Staff Role Active  •  Admin Settings & Financial Reports are restricted"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (workspaceState.isOwnerOrAdmin) BrandGreenOnContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = when {
+                                workspaceState.isOwnerOrAdmin && isDarkSync -> DarkGreenOnContainer
+                                workspaceState.isOwnerOrAdmin -> BrandGreenOnContainer
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }

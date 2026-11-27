@@ -104,8 +104,14 @@ import com.example.ui.screens.StaffDashboardScreen
 import com.example.ui.screens.StoreManagementScreen
 import com.example.ui.screens.VehicleDetailScreen
 import com.example.ui.screens.VehicleManagementScreen
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.ConcordGasTheme
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.ObsidianDeep
 import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.PureWhite
 import com.example.ui.viewmodel.AppViewModel
 import com.google.firebase.Firebase
@@ -705,6 +711,7 @@ fun ConcordGasRootApp(
 
             val showBottomBar = showAdminBottomBar
 
+            val isDarkChrome = LocalIsDarkTheme.current || effectiveDarkMode
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 contentWindowInsets = WindowInsets.safeDrawing,
@@ -716,7 +723,7 @@ fun ConcordGasRootApp(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
                             )
                             NavigationBar(
-                                containerColor = if (effectiveDarkMode) ObsidianSurface else PureWhite,
+                                containerColor = if (isDarkChrome) ObsidianDeep else PureWhite,
                                 tonalElevation = 0.dp
                             ) {
                                 navTabs.forEach { tab ->
@@ -736,11 +743,11 @@ fun ConcordGasRootApp(
                                         },
                                         label = { Text(tab.label, maxLines = 1) },
                                         colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            selectedIconColor = if (isDarkChrome) ElectricBlueGlow else MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = if (isDarkChrome) ArcticWhite else MaterialTheme.colorScheme.primary,
+                                            indicatorColor = if (isDarkChrome) ElectricBlueBright.copy(alpha = 0.24f) else MaterialTheme.colorScheme.primaryContainer,
+                                            unselectedIconColor = if (isDarkChrome) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            unselectedTextColor = if (isDarkChrome) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
                                         ),
                                         modifier = Modifier.testTag("nav_${tab.name.lowercase()}")
                                     )
@@ -757,7 +764,7 @@ fun ConcordGasRootApp(
                     ) {
                         if (useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
                             NavigationRail(
-                                containerColor = if (effectiveDarkMode) ObsidianSurface else PureWhite,
+                                containerColor = if (isDarkChrome) ObsidianDeep else PureWhite,
                                 modifier = Modifier.statusBarsPadding()
                             ) {
                                 navTabs.forEach { tab ->
@@ -777,11 +784,11 @@ fun ConcordGasRootApp(
                                         },
                                         label = { Text(tab.label) },
                                         colors = NavigationRailItemDefaults.colors(
-                                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            selectedIconColor = if (isDarkChrome) ElectricBlueGlow else MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = if (isDarkChrome) ArcticWhite else MaterialTheme.colorScheme.primary,
+                                            indicatorColor = if (isDarkChrome) ElectricBlueBright.copy(alpha = 0.24f) else MaterialTheme.colorScheme.primaryContainer,
+                                            unselectedIconColor = if (isDarkChrome) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            unselectedTextColor = if (isDarkChrome) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
                                         ),
                                         modifier = Modifier.testTag("rail_${tab.name.lowercase()}")
                                     )

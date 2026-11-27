@@ -19,7 +19,36 @@ import com.example.data.model.ThemePreset
 
 val LocalIsDarkTheme = staticCompositionLocalOf { false }
 
-// Signature Flagship Light Scheme: Pure Arctic White, Royal Electric Blue, Signature Metallic Orange, Platinum Silver
+// Signature Flagship Midnight Royal Blue Scheme:
+// Midnight Royal Blue • Electric Blue • Metallic Orange • Arctic White • Platinum Grey
+private val SignatureRoyalColorScheme = darkColorScheme(
+    primary = ElectricBlueBright,
+    onPrimary = PureWhite,
+    primaryContainer = Color(0xFF153273),
+    onPrimaryContainer = Color(0xFFDBEAFE),
+    secondary = MetallicOrangeBright,
+    onSecondary = Color(0xFF2B1002),
+    secondaryContainer = Color(0xFF472009),
+    onSecondaryContainer = Color(0xFFFFEDD5),
+    tertiary = PlatinumSilver,
+    onTertiary = ObsidianMidnight,
+    tertiaryContainer = SignatureRoyalElevated,
+    onTertiaryContainer = PlatinumSilver,
+    background = SignatureRoyalBackground,
+    onBackground = TextPrimaryDark,
+    surface = SignatureRoyalSurface,
+    onSurface = TextPrimaryDark,
+    surfaceVariant = SignatureRoyalElevated,
+    onSurfaceVariant = TextSecondaryDark,
+    outline = SignatureRoyalBorder,
+    outlineVariant = ObsidianBorder,
+    error = DarkRedSecondary,
+    onError = DarkRedOnSecondary,
+    errorContainer = DarkRedContainer,
+    onErrorContainer = DarkRedOnContainer
+)
+
+// Fallback Platinum Light Scheme (unused by default; kept clean)
 private val LightColorScheme = lightColorScheme(
     primary = RoyalElectricBlue,
     onPrimary = PureWhite,
@@ -192,24 +221,25 @@ fun ConcordGasTheme(
     content: @Composable () -> Unit
 ) {
     val effectiveDark = darkTheme || themePreset == ThemePreset.MIDNIGHT_DARK
+    val useMidnightTheme = effectiveDark || themePreset == ThemePreset.EMERALD_CORPORATE
     val colorScheme = when (themePreset) {
         ThemePreset.MIDNIGHT_DARK -> EmeraldDarkColorScheme
         ThemePreset.OCEANIC_TEAL -> if (effectiveDark) OceanicTealDarkColorScheme else OceanicTealColorScheme
         ThemePreset.SUNSET_AMBER -> if (effectiveDark) SunsetAmberDarkColorScheme else SunsetAmberColorScheme
-        ThemePreset.EMERALD_CORPORATE -> if (effectiveDark) EmeraldDarkColorScheme else LightColorScheme
+        ThemePreset.EMERALD_CORPORATE -> if (effectiveDark) EmeraldDarkColorScheme else SignatureRoyalColorScheme
     }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
-        LaunchedEffect(view, effectiveDark) {
+        LaunchedEffect(view, useMidnightTheme) {
             val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
             val controller = WindowCompat.getInsetsController(window, view)
-            controller.isAppearanceLightStatusBars = !effectiveDark
-            controller.isAppearanceLightNavigationBars = !effectiveDark
+            controller.isAppearanceLightStatusBars = !useMidnightTheme
+            controller.isAppearanceLightNavigationBars = !useMidnightTheme
         }
     }
 
-    CompositionLocalProvider(LocalIsDarkTheme provides effectiveDark) {
+    CompositionLocalProvider(LocalIsDarkTheme provides useMidnightTheme) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

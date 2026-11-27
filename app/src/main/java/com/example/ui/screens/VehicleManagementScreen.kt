@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -35,17 +36,19 @@ import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -89,7 +93,9 @@ import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.VehicleTransferDialog
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
+import com.example.ui.theme.BrandGreenLight
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedBright
@@ -97,8 +103,18 @@ import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.RoyalElectricBlue
+import com.example.ui.theme.SignatureRoyalBackground
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -114,7 +130,27 @@ fun VehicleManagementScreen(
 ) {
     var showAddVehicleDialog by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    val isDark = LocalIsDarkTheme.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (isDark) {
+                    Modifier.background(
+                        Brush.verticalGradient(
+                            listOf(
+                                ObsidianMidnight,
+                                ObsidianDeep,
+                                SignatureRoyalBackground,
+                                ObsidianMidnight
+                            )
+                        )
+                    )
+                } else {
+                    Modifier
+                }
+            )
+    ) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Outside Fleet (View Only)" else "Outside Fleet • Vehicles",
             subtitle = "${vehicleOverviews.size} Fleet Accounts • Tap a vehicle for category folders" + if (isReadOnly) " • Read-Only" else "",
@@ -128,7 +164,11 @@ fun VehicleManagementScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                DateSelectorBar(
+                    selectedDate = selectedDate,
+                    onDateSelected = onDateSelected,
+                    midnightSurface = isDark
+                )
             }
 
             if (!isReadOnly) {
@@ -166,7 +206,7 @@ fun VehicleManagementScreen(
                                 Icon(
                                     Icons.Default.LocalShipping,
                                     contentDescription = overview.vehicle.name,
-                                    tint = BrandGreenPrimary,
+                                    tint = if (isDark) ElectricBlueGlow else BrandGreenPrimary,
                                     modifier = Modifier.size(22.dp)
                                 )
                                 Spacer(Modifier.width(8.dp))
@@ -185,29 +225,31 @@ fun VehicleManagementScreen(
                         Spacer(Modifier.height(10.dp))
 
                         Surface(
-                            color = BrandGreenContainer.copy(alpha = 0.45f),
+                            color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f) else BrandGreenContainer.copy(alpha = 0.45f),
                             shape = RoundedCornerShape(8.dp),
+                            border = if (isDark) BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.35f)) else null,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = "FULL: Old ${overview.totalOldFull} + Recd ${overview.totalFullReceived} = Tot ${overview.totalFull} - Sales ${overview.totalCustomerSales} = Bal ${overview.totalFullBalance}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = JetBrainsMono,
-                                color = BrandGreenOnContainer,
+                                color = if (isDark) ElectricBlueGlow else BrandGreenOnContainer,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
                         Spacer(Modifier.height(4.dp))
                         Surface(
-                            color = BrandRedContainer.copy(alpha = 0.45f),
+                            color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f) else BrandRedContainer.copy(alpha = 0.45f),
                             shape = RoundedCornerShape(8.dp),
+                            border = if (isDark) BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.35f)) else null,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = "EMPTY: Old ${overview.totalOldEmpty} + Cust ${overview.totalCustomerEmptyReceived} - Ret ${overview.totalEmptyReturnedToStore} = Bal ${overview.totalEmptyBalance}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = JetBrainsMono,
-                                color = BrandRedOnContainer,
+                                color = if (isDark) MetallicOrangeBright else BrandRedOnContainer,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
@@ -324,7 +366,44 @@ fun VehicleDetailScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    val isDark = LocalIsDarkTheme.current
+    val chipColors = if (isDark) {
+        AssistChipDefaults.assistChipColors(
+            containerColor = ObsidianElevated,
+            labelColor = ArcticWhite
+        )
+    } else {
+        AssistChipDefaults.assistChipColors()
+    }
+    val chipBorder = if (isDark) {
+        AssistChipDefaults.assistChipBorder(
+            enabled = true,
+            borderColor = ElectricBlueBright.copy(alpha = 0.4f)
+        )
+    } else {
+        AssistChipDefaults.assistChipBorder(enabled = true)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (isDark) {
+                    Modifier.background(
+                        Brush.verticalGradient(
+                            listOf(
+                                ObsidianMidnight,
+                                ObsidianDeep,
+                                SignatureRoyalBackground,
+                                ObsidianMidnight
+                            )
+                        )
+                    )
+                } else {
+                    Modifier
+                }
+            )
+    ) {
         BrandHeaderBanner(
             title = "Outside Vehicle: ${vehicle?.name ?: ""}" + if (isReadOnly) " (View Only)" else "",
             subtitle = "Full Bal: ${rows.sumOf { it.fullBalance }}  •  Empty Bal: ${rows.sumOf { it.emptyBalance }}",
@@ -347,7 +426,11 @@ fun VehicleDetailScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+            DateSelectorBar(
+                selectedDate = selectedDate,
+                onDateSelected = onDateSelected,
+                midnightSurface = isDark
+            )
 
             if (!isReadOnly) {
                 Row(
@@ -363,7 +446,9 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
                         },
                         label = { Text("Receive Full from Store") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Input, contentDescription = null, tint = BrandGreenPrimary) }
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Input, contentDescription = null, tint = if (isDark) BrandGreenLight else BrandGreenPrimary) },
+                        colors = chipColors,
+                        border = chipBorder
                     )
                     AssistChip(
                         onClick = {
@@ -372,7 +457,9 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
                         },
                         label = { Text("Customer Sale") },
-                        leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null, tint = BrandRedSecondary) }
+                        leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null, tint = if (isDark) MetallicOrangeBright else BrandRedSecondary) },
+                        colors = chipColors,
+                        border = chipBorder
                     )
                     AssistChip(
                         onClick = {
@@ -381,7 +468,9 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
                         },
                         label = { Text("New Cust Sale") },
-                        leadingIcon = { Icon(Icons.Default.PersonAddAlt1, contentDescription = null, tint = BrandGreenPrimary) }
+                        leadingIcon = { Icon(Icons.Default.PersonAddAlt1, contentDescription = null, tint = if (isDark) ElectricBlueGlow else BrandGreenPrimary) },
+                        colors = chipColors,
+                        border = chipBorder
                     )
                     AssistChip(
                         onClick = {
@@ -390,7 +479,9 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
                         },
                         label = { Text("Complaint Replace") },
-                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = BrandRedSecondary) }
+                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = if (isDark) MetallicOrangeBright else BrandRedSecondary) },
+                        colors = chipColors,
+                        border = chipBorder
                     )
                     AssistChip(
                         onClick = {
@@ -399,7 +490,9 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
                         },
                         label = { Text("Customer Empty Recd") },
-                        leadingIcon = { Icon(Icons.Default.Recycling, contentDescription = null, tint = BrandGreenPrimary) }
+                        leadingIcon = { Icon(Icons.Default.Recycling, contentDescription = null, tint = if (isDark) ElectricBlueGlow else BrandGreenPrimary) },
+                        colors = chipColors,
+                        border = chipBorder
                     )
                     AssistChip(
                         onClick = {
@@ -408,7 +501,9 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.CUSTOMER_EMPTY_PENDING_ADD
                         },
                         label = { Text("+ Add Pending") },
-                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = BrandRedSecondary) }
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = if (isDark) MetallicOrangeBright else BrandRedSecondary) },
+                        colors = chipColors,
+                        border = chipBorder
                     )
                     AssistChip(
                         onClick = {
@@ -417,7 +512,9 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.VEHICLE_FULL_RETURN_TO_STORE
                         },
                         label = { Text("Return Full to Store") },
-                        leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = BrandGreenPrimary) },
+                        leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = if (isDark) BrandGreenLight else BrandGreenPrimary) },
+                        colors = chipColors,
+                        border = chipBorder,
                         modifier = Modifier.testTag("vehicle_detail_return_full_chip")
                     )
                     AssistChip(
@@ -427,19 +524,25 @@ fun VehicleDetailScreen(
                             activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
                         },
                         label = { Text("Return Empty to Store") },
-                        leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = BrandRedSecondary) }
+                        leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = if (isDark) MetallicOrangeBright else BrandRedSecondary) },
+                        colors = chipColors,
+                        border = chipBorder
                     )
                     AssistChip(
                         onClick = { showCustomerChangeDialog = true },
                         label = { Text("Customer Change") },
-                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFF7E22CE)) },
+                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFFC084FC)) },
+                        colors = chipColors,
+                        border = chipBorder,
                         modifier = Modifier.testTag("vehicle_detail_customer_change_chip")
                     )
                     if (vehicle != null && allVehicles.any { it.id != vehicle.id }) {
                         AssistChip(
                             onClick = { showVehicleTransferDialog = true },
                             label = { Text("Vehicle → Vehicle") },
-                            leadingIcon = { Icon(Icons.Default.CompareArrows, contentDescription = null, tint = BrandGreenPrimary) },
+                            leadingIcon = { Icon(Icons.Default.CompareArrows, contentDescription = null, tint = if (isDark) ElectricBlueGlow else BrandGreenPrimary) },
+                            colors = chipColors,
+                            border = chipBorder,
                             modifier = Modifier.testTag("vehicle_detail_transfer_chip")
                         )
                     }
@@ -447,20 +550,39 @@ fun VehicleDetailScreen(
             }
         }
 
-        TabRow(selectedTabIndex = activeTab) {
+        TabRow(
+            selectedTabIndex = activeTab,
+            containerColor = if (isDark) ObsidianDeep else MaterialTheme.colorScheme.surface,
+            contentColor = if (isDark) ArcticWhite else MaterialTheme.colorScheme.primary,
+            indicator = { tabPositions ->
+                if (activeTab < tabPositions.size) {
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
+                        height = 2.5.dp,
+                        color = if (isDark) MetallicOrangeBright else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        ) {
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
+                selectedContentColor = if (isDark) ArcticWhite else MaterialTheme.colorScheme.primary,
+                unselectedContentColor = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
                 text = { Text("Stock") }
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
+                selectedContentColor = if (isDark) ArcticWhite else MaterialTheme.colorScheme.primary,
+                unselectedContentColor = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
                 text = { Text("Pending ($pendingActiveCount)") }
             )
             Tab(
                 selected = activeTab == 2,
                 onClick = { activeTab = 2 },
+                selectedContentColor = if (isDark) ArcticWhite else MaterialTheme.colorScheme.primary,
+                unselectedContentColor = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
                 text = { Text("Activity (${dayTransactions.size})") }
             )
         }
@@ -478,16 +600,41 @@ fun VehicleDetailScreen(
                             stats = vehicleFolderStats,
                             selectedCategory = selectedCategory,
                             onSelectCategory = { selectedCategory = it },
-                            sectionTitle = "Outside Vehicle Category Folders"
+                            sectionTitle = "Outside Vehicle Category Folders",
+                            onMidnightBackground = isDark
                         )
                     }
                     item(key = "vehicle_search_field") {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search cylinder in ${vehicle?.name ?: "vehicle"}...") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            placeholder = {
+                                Text(
+                                    "Search cylinder in ${vehicle?.name ?: "vehicle"}...",
+                                    color = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = if (isDark) ElectricBlueGlow else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isDark) {
+                                OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = ObsidianSurface,
+                                    unfocusedContainerColor = ObsidianSurface,
+                                    focusedBorderColor = ElectricBlueBright,
+                                    unfocusedBorderColor = ObsidianBorder,
+                                    focusedTextColor = ArcticWhite,
+                                    unfocusedTextColor = ArcticWhite
+                                )
+                            } else {
+                                OutlinedTextFieldDefaults.colors()
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -826,6 +973,7 @@ fun VehicleProductRowCard(
     canEditOpening: Boolean,
     onEditOpening: (() -> Unit)? = null
 ) {
+    val isDark = LocalIsDarkTheme.current
     LuxuryGlassCard(
         shape = RoundedCornerShape(18.dp),
         accentGlow = RoyalElectricBlue
@@ -840,7 +988,7 @@ fun VehicleProductRowCard(
                     Text(
                         text = row.product.category.displayName,
                         style = MaterialTheme.typography.labelSmall,
-                        color = BrandGreenPrimary,
+                        color = if (isDark) ElectricBlueGlow else BrandGreenPrimary,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
@@ -860,7 +1008,7 @@ fun VehicleProductRowCard(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Edit old stock",
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = if (isDark) MetallicOrangeBright else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -875,8 +1023,9 @@ fun VehicleProductRowCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Surface(
-                    color = BrandGreenContainer.copy(alpha = 0.4f),
+                    color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f) else BrandGreenContainer.copy(alpha = 0.4f),
                     shape = RoundedCornerShape(8.dp),
+                    border = if (isDark) BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.35f)) else null,
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(modifier = Modifier.padding(8.dp)) {
@@ -884,7 +1033,7 @@ fun VehicleProductRowCard(
                             text = "FULL CYLINDERS",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = BrandGreenOnContainer
+                            color = if (isDark) ElectricBlueGlow else BrandGreenOnContainer
                         )
                         val replFull = if (row.complaintReplaced > 0) " • Repl: -${row.complaintReplaced}" else ""
                         val retStoreFull = if (row.fullReturnedToStore > 0) " • Ret: -${row.fullReturnedToStore}" else ""
@@ -894,13 +1043,14 @@ fun VehicleProductRowCard(
                             text = "Old: ${row.oldFull}  •  Recd: ${row.fullReceived}\nTot: ${row.totalFull}  •  Sale: ${row.customerSales}$replFull$retStoreFull$chgFull$xferFull\nBal: ${row.fullBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
-                            color = BrandGreenOnContainer
+                            color = if (isDark) ArcticWhite else BrandGreenOnContainer
                         )
                     }
                 }
                 Surface(
-                    color = BrandRedContainer.copy(alpha = 0.4f),
+                    color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f) else BrandRedContainer.copy(alpha = 0.4f),
                     shape = RoundedCornerShape(8.dp),
+                    border = if (isDark) BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.35f)) else null,
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(modifier = Modifier.padding(8.dp)) {
@@ -908,7 +1058,7 @@ fun VehicleProductRowCard(
                             text = "EMPTY CYLINDERS",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = BrandRedOnContainer
+                            color = if (isDark) MetallicOrangeBright else BrandRedOnContainer
                         )
                         val replEmp = if (row.complaintReplaced > 0) " • Repl: +${row.complaintReplaced}" else ""
                         val chgEmp = if (row.emptyChangedOut > 0) " • Chg: -${row.emptyChangedOut}" else ""
@@ -917,7 +1067,7 @@ fun VehicleProductRowCard(
                             text = "Old: ${row.oldEmpty}  •  Cust: ${row.customerEmptyReceived}$replEmp\nRet Store: ${row.emptyReturnedToStore}$chgEmp$xferEmp\nBal: ${row.emptyBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
-                            color = BrandRedOnContainer
+                            color = if (isDark) ArcticWhite else BrandRedOnContainer
                         )
                     }
                 }
