@@ -67,25 +67,25 @@ import com.example.ui.theme.LocalIsDarkTheme
  * and Outside Fleet screens are immediately recognizable at a glance.
  */
 object RoleHeaderPalettes {
-    // Admin: Royal Navy & Crimson
-    val AdminGradient = listOf(Color(0xFF092C6C), Color(0xFF1E3A8A))
-    val AdminAccent = Color(0xFFDC2626)
+    // Admin: Obsidian Midnight & Royal Electric Blue with Signature Metallic Orange Accent
+    val AdminGradient = listOf(Color(0xFF050D1F), Color(0xFF0A1D47), Color(0xFF13347A))
+    val AdminAccent = Color(0xFFFF7A2F)
 
-    // Owner View (Read-Only): Executive Deep Indigo & Amber Gold
-    val OwnerGradient = listOf(Color(0xFF312E81), Color(0xFF4338CA))
+    // Owner View (Read-Only): Executive Obsidian & Platinum Sapphire with Amber Gold Accent
+    val OwnerGradient = listOf(Color(0xFF080E24), Color(0xFF1B2452), Color(0xFF2E3A78))
     val OwnerAccent = Color(0xFFF59E0B)
 
-    // Staff: Energetic Deep Teal & Emerald
-    val StaffGradient = listOf(Color(0xFF064E3B), Color(0xFF0F766E))
-    val StaffAccent = Color(0xFF10B981)
+    // Staff: Obsidian & Electric Cyan-Blue Field Command
+    val StaffGradient = listOf(Color(0xFF051329), Color(0xFF0B2A57), Color(0xFF0F4C81))
+    val StaffAccent = Color(0xFF38BDF8)
 
-    // Inside (Main Store / Yard): Deep Emerald
-    val InsideStoreGradient = listOf(Color(0xFF065F46), Color(0xFF047857))
-    val InsideStoreAccent = Color(0xFF34D399)
+    // Inside (Main Store / Yard): Royal Electric Blue
+    val InsideStoreGradient = listOf(Color(0xFF061638), Color(0xFF0E2F73), Color(0xFF1D4ED8))
+    val InsideStoreAccent = Color(0xFF60A5FA)
 
-    // Outside (Vehicles / Fleet): Rich Crimson-Slate
-    val OutsideFleetGradient = listOf(Color(0xFF7C2D12), Color(0xFFB91C1C))
-    val OutsideFleetAccent = Color(0xFFF59E0B)
+    // Outside (Vehicles / Fleet): Obsidian & Signature Metallic Orange
+    val OutsideFleetGradient = listOf(Color(0xFF1A0D0A), Color(0xFF531E09), Color(0xFF9A3412))
+    val OutsideFleetAccent = Color(0xFFFF7A2F)
 }
 
 enum class StockZoneScope(
@@ -99,18 +99,18 @@ enum class StockZoneScope(
     INSIDE_STORE(
         title = "INSIDE • Store",
         badge = "Main Yard",
-        accentColor = Color(0xFF0F766E),
-        softLightBg = Color(0xFFCCFBF1),
-        softDarkBg = Color(0xFF0F2D2B),
-        darkTextColor = Color(0xFF115E59)
+        accentColor = Color(0xFF1D4ED8),
+        softLightBg = Color(0xFFEAF1FF),
+        softDarkBg = Color(0xFF10224D),
+        darkTextColor = Color(0xFF0A2463)
     ),
     OUTSIDE_FLEET(
         title = "OUTSIDE • Vehicles",
         badge = "Fleet / Route",
-        accentColor = Color(0xFFC2410C),
-        softLightBg = Color(0xFFFFEDD5),
-        softDarkBg = Color(0xFF331B0E),
-        darkTextColor = Color(0xFF9A3412)
+        accentColor = Color(0xFFEA580C),
+        softLightBg = Color(0xFFFFF1E8),
+        softDarkBg = Color(0xFF3A1A0B),
+        darkTextColor = Color(0xFF7C2D12)
     )
 }
 
@@ -129,41 +129,41 @@ fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (
     ProductCategory.INDUSTRIAL_GAS -> CategoryVisualStyle(
         category = category,
         shortTitle = "Industrial Gas",
-        primaryColor = Color(0xFF1D4ED8), // Royal Blue
-        lightContainer = Color(0xFFDBEAFE),
-        darkContainer = Color(0xFF172554),
-        lightOnContainer = Color(0xFF1E3A8A),
-        darkOnContainer = Color(0xFFBFDBFE),
+        primaryColor = Color(0xFF1D4ED8), // Royal Electric Blue
+        lightContainer = Color(0xFFEAF1FF),
+        darkContainer = Color(0xFF112454),
+        lightOnContainer = Color(0xFF0A2463),
+        darkOnContainer = Color(0xFFDBEAFE),
         icon = Icons.Default.PrecisionManufacturing
     )
     ProductCategory.SMALL_48_CFT -> CategoryVisualStyle(
         category = category,
         shortTitle = "Small 48 CFT",
-        primaryColor = Color(0xFF0F766E), // Vivid Teal
-        lightContainer = Color(0xFFCCFBF1),
-        darkContainer = Color(0xFF134E4A),
-        lightOnContainer = Color(0xFF115E59),
-        darkOnContainer = Color(0xFF99F6E4),
+        primaryColor = Color(0xFF0284C7), // Precision Arctic Azure
+        lightContainer = Color(0xFFE0F2FE),
+        darkContainer = Color(0xFF0C2D48),
+        lightOnContainer = Color(0xFF075985),
+        darkOnContainer = Color(0xFFBAE6FD),
         icon = Icons.Default.PropaneTank
     )
     ProductCategory.COOKING_GAS -> CategoryVisualStyle(
         category = category,
         shortTitle = "Cooking Gas",
-        primaryColor = Color(0xFFC2410C), // Fiery Orange
-        lightContainer = Color(0xFFFFEDD5),
-        darkContainer = Color(0xFF431407),
+        primaryColor = Color(0xFFEA580C), // Signature Metallic Orange
+        lightContainer = Color(0xFFFFF1E8),
+        darkContainer = Color(0xFF3E1908),
         lightOnContainer = Color(0xFF7C2D12),
-        darkOnContainer = Color(0xFFFED7AA),
+        darkOnContainer = Color(0xFFFFEDD5),
         icon = Icons.Default.LocalFireDepartment
     )
     ProductCategory.MCG_CUTTING_GAS -> CategoryVisualStyle(
         category = category,
         shortTitle = "MCG Cutting Gas",
-        primaryColor = Color(0xFF7E22CE), // Royal Purple
-        lightContainer = Color(0xFFF3E8FF),
-        darkContainer = Color(0xFF3B0764),
-        lightOnContainer = Color(0xFF581C87),
-        darkOnContainer = Color(0xFFE9D5FF),
+        primaryColor = Color(0xFF475569), // Platinum Titanium Slate
+        lightContainer = Color(0xFFEFF3F8),
+        darkContainer = Color(0xFF1B273F),
+        lightOnContainer = Color(0xFF1E293B),
+        darkOnContainer = Color(0xFFE2E8F0),
         icon = Icons.Default.Build
     )
 }
@@ -373,18 +373,20 @@ fun CategoryFolderGrid(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(11.dp))
+                        .heightIn(min = 50.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .luxuryTapScale()
                         .clickable {
                             onSelectCategory(if (isSelected) null else stat.category)
                         }
                         .testTag("category_folder_${stat.category.name.lowercase()}"),
-                    shape = RoundedCornerShape(11.dp),
+                    shape = RoundedCornerShape(13.dp),
                     color = bgColor,
                     border = BorderStroke(
                         width = if (isSelected) 1.6.dp else 1.dp,
-                        color = if (isSelected) style.primaryColor else style.primaryColor.copy(alpha = 0.42f)
+                        color = if (isSelected) style.primaryColor else style.primaryColor.copy(alpha = 0.36f)
                     ),
+                    shadowElevation = if (isSelected) 4.dp else 1.dp,
                     tonalElevation = if (isSelected) 3.dp else 0.dp
                 ) {
                     Row(
@@ -509,19 +511,17 @@ fun DashboardInsideOutsideFolderCard(
         else companyStockRows.filter { it.product.category == selectedCategory }
     }
 
-    Card(
+    LuxuryGlassCard(
+        shape = RoundedCornerShape(20.dp),
+        accentGlow = activeZone.accentColor,
         modifier = modifier
             .fillMaxWidth()
-            .testTag("dashboard_inside_outside_folders_card"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.2.dp, activeZone.accentColor.copy(alpha = 0.45f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            .testTag("dashboard_inside_outside_folders_card")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(

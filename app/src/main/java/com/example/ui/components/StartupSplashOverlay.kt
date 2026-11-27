@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -34,12 +35,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -60,10 +58,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -73,27 +75,44 @@ import com.example.R
 import com.example.audio.SoundEffectsManager
 import com.example.audio.StartupSoundStyle
 import com.example.data.model.ThemePreset
+import com.example.ui.theme.ArcticWhite
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.MetallicOrangeGold
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.RoyalBlueDeep
+import com.example.ui.theme.RoyalElectricBlue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import android.graphics.BitmapFactory
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-const val STARTUP_LAUNCH_DURATION_SECONDS = 6f
+const val STARTUP_LAUNCH_DURATION_SECONDS = 4.2f
+
+private data class SplashEnergyParticle(
+    val xFactor: Float,
+    val yFactor: Float,
+    val zDepth: Float,
+    val radiusDp: Float,
+    val driftSpeed: Float,
+    val phaseRad: Float,
+    val isMetallicOrange: Boolean
+)
 
 /**
- * Choreographed 6-second silent cinematic app-open launch screen for Concord & Atoz Gas Trading LLC.
- * Harmonizes with the Red & Blue C&A cylinder emblem with repeating ignition ripples, dual orbital
- * pressure rings, metallic light shimmer sweeps, rotating system-ready phases, and smooth exit fade.
+ * 4.2-second Signature Cinematic Opening for C&A GAS.
+ * Features an Obsidian Midnight Blue & Royal Electric Blue volumetric field, 3D drifting
+ * electric-blue & metallic-orange light particles, counter-revolving elliptical light trails,
+ * specular metallic reflections over the existing C&A emblem, and an editorial brand reveal.
  */
 @Composable
 fun StartupSplashOverlay(
@@ -105,12 +124,12 @@ fun StartupSplashOverlay(
     val scope = rememberCoroutineScope()
     var isExiting by remember { mutableStateOf(false) }
 
-    // Choreographed animation states
-    val emblemScale = remember { Animatable(0.38f) }
-    val emblemRotation = remember { Animatable(-18f) }
+    val emblemScale = remember { Animatable(0.44f) }
+    val emblemRotation = remember { Animatable(-12f) }
     val emblemAlpha = remember { Animatable(0f) }
+    val darknessVeilAlpha = remember { Animatable(0.85f) }
     val orbitalSweep = remember { Animatable(0f) }
-    val shimmerOffset = remember { Animatable(-1.4f) }
+    val shimmerOffset = remember { Animatable(-1.5f) }
     val badgeProgress = remember { Animatable(0f) }
     val titleProgress = remember { Animatable(0f) }
     val dividerScaleX = remember { Animatable(0f) }
@@ -119,33 +138,49 @@ fun StartupSplashOverlay(
     val exitAlpha = remember { Animatable(1f) }
     val exitScale = remember { Animatable(1f) }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "logo_living_motion")
-    val glowPulseState = infiniteTransition.animateFloat(
-        initialValue = 0.86f,
-        targetValue = 1.15f,
+    // Pre-allocated deterministic 3D depth particles (zero allocations per frame)
+    val particles = remember {
+        List(28) { idx ->
+            val t = idx / 28f
+            SplashEnergyParticle(
+                xFactor = ((idx * 37) % 100) / 100f,
+                yFactor = ((idx * 53 + 17) % 100) / 100f,
+                zDepth = 0.35f + ((idx * 19) % 65) / 100f,
+                radiusDp = 1.4f + ((idx * 7) % 4) * 0.85f,
+                driftSpeed = 0.6f + (idx % 5) * 0.22f,
+                phaseRad = (t * 2.0 * PI).toFloat(),
+                isMetallicOrange = idx % 3 == 0
+            )
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "ca_signature_motion")
+    val orbitAngleState = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 3600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "trail_orbit"
+    )
+    val energyPhaseState = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 4200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "energy_phase"
+    )
+    val glowPulseState = infiniteTransition.animateFloat(
+        initialValue = 0.88f,
+        targetValue = 1.14f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "glow_pulse"
-    )
-    val counterOrbitAngleState = infiniteTransition.animateFloat(
-        initialValue = 360f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "counter_orbit"
-    )
-    val rippleCycleState = infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "ignition_ripple_cycle"
     )
 
     fun triggerSmoothExit() {
@@ -155,7 +190,7 @@ fun StartupSplashOverlay(
         scope.launch {
             launch {
                 exitScale.animateTo(
-                    targetValue = 1.06f,
+                    targetValue = 1.045f,
                     animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
                 )
             }
@@ -168,17 +203,21 @@ fun StartupSplashOverlay(
     }
 
     LaunchedEffect(Unit) {
-        // Let the first frame commit to SurfaceFlinger before starting choreography
+        // Commit Frame 1 immediately to SurfaceFlinger before running choreography
         withFrameNanos { }
-        // Stage 1: Red C&A Emblem spring entrance
+
+        // Stage 1: Darkness lifts & C&A emblem emerges with metallic precision
         launch {
-            emblemAlpha.animateTo(1f, tween(durationMillis = 420))
+            darknessVeilAlpha.animateTo(0f, tween(durationMillis = 850, easing = FastOutSlowInEasing))
+        }
+        launch {
+            emblemAlpha.animateTo(1f, tween(durationMillis = 620, easing = FastOutSlowInEasing))
         }
         launch {
             emblemScale.animateTo(
                 targetValue = 1f,
                 animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    dampingRatio = Spring.DampingRatioNoBouncy,
                     stiffness = Spring.StiffnessLow
                 )
             )
@@ -187,65 +226,58 @@ fun StartupSplashOverlay(
             emblemRotation.animateTo(
                 targetValue = 0f,
                 animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    dampingRatio = Spring.DampingRatioLowBouncy,
                     stiffness = Spring.StiffnessLow
                 )
             )
         }
 
-        // Stage 2: Precision orbital gauge sweep + repeating metallic sheen sweeps over 10s
+        // Stage 2: Precision orbital ring & metallic specular reflections
         launch {
             delay(180)
-            orbitalSweep.animateTo(360f, tween(durationMillis = 1600, easing = FastOutSlowInEasing))
+            orbitalSweep.animateTo(360f, tween(durationMillis = 1400, easing = FastOutSlowInEasing))
         }
         launch {
-            delay(650)
-            repeat(4) {
-                shimmerOffset.snapTo(-1.4f)
-                shimmerOffset.animateTo(1.8f, tween(durationMillis = 900, easing = FastOutSlowInEasing))
-                delay(1450)
+            delay(500)
+            repeat(2) {
+                shimmerOffset.snapTo(-1.5f)
+                shimmerOffset.animateTo(1.9f, tween(durationMillis = 980, easing = FastOutSlowInEasing))
+                delay(750)
             }
         }
 
-        // Stage 3: Staggered typography & credit reveal
+        // Stage 3: Editorial brand name reveal
         launch {
-            delay(360)
-            badgeProgress.animateTo(1f, tween(durationMillis = 460, easing = FastOutSlowInEasing))
+            delay(380)
+            badgeProgress.animateTo(1f, tween(durationMillis = 480, easing = FastOutSlowInEasing))
         }
         launch {
-            delay(520)
-            titleProgress.animateTo(1f, tween(durationMillis = 560, easing = FastOutSlowInEasing))
+            delay(560)
+            titleProgress.animateTo(1f, tween(durationMillis = 620, easing = FastOutSlowInEasing))
         }
         launch {
-            delay(700)
+            delay(760)
             dividerScaleX.animateTo(1f, tween(durationMillis = 520, easing = FastOutSlowInEasing))
         }
         launch {
-            delay(600)
-            footerAlpha.animateTo(1f, tween(durationMillis = 480))
+            delay(680)
+            footerAlpha.animateTo(1f, tween(durationMillis = 480, easing = FastOutSlowInEasing))
         }
 
-        // Overall 6-second silent launch progression (5.7s progress + 0.3s smooth exit = 6.0s)
+        // Overall 4.2s luxury launch sequence (3.9s progress + 0.3s exit)
         launchProgress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 5700, easing = LinearEasing)
+            animationSpec = tween(durationMillis = 3900, easing = LinearEasing)
         )
         triggerSmoothExit()
     }
-
-    val crimsonPrimary = Color(0xFFB31B1A)
-    val crimsonBright = Color(0xFFFF4D4D)
-    val royalBlue = Color(0xFF1E88E5)
-    val goldAccent = Color(0xFFF6C667)
-    val warmEmber = Color(0xFFFF8A4C)
 
     val phaseMessage by remember {
         derivedStateOf {
             val progress = launchProgress.value
             when {
-                progress < 0.25f -> "Igniting C&A Gas Fleet System..."
-                progress < 0.50f -> "Syncing Store, Vehicles & Duty Punches..."
-                progress < 0.75f -> "Loading Live Alerts, Chat & Reports..."
+                progress < 0.34f -> "Initializing C&A Signature Core..."
+                progress < 0.68f -> "Synchronizing Store, Fleet & Telemetry..."
                 else -> "Ready • Concord & Atoz Gas Trading LLC"
             }
         }
@@ -262,32 +294,85 @@ fun StartupSplashOverlay(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF061A42),
-                        Color(0xFF092C6C),
-                        Color(0xFF3E0B14),
-                        Color(0xFF150610)
+                        ObsidianMidnight,
+                        ObsidianDeep,
+                        RoyalBlueDeep.copy(alpha = 0.85f),
+                        ObsidianMidnight
                     )
                 )
             )
             .testTag("startup_splash_overlay")
     ) {
-        // Atmospheric radial red-and-blue spotlight behind the animated logo
+        // Volumetric 3D Energy Field, Electric-Blue & Metallic-Orange Light Particles
         Canvas(modifier = Modifier.fillMaxSize()) {
             val glowPulse = glowPulseState.value
-            val center = Offset(size.width * 0.5f, size.height * 0.43f)
-            val maxRadius = size.minDimension * 0.62f * glowPulse
+            val energyPhase = energyPhaseState.value
+            val emblemVis = emblemAlpha.value
+            val focalCenter = Offset(size.width * 0.5f, size.height * 0.42f)
+
+            // Deep Royal Electric Blue atmospheric dome
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        crimsonBright.copy(alpha = 0.28f),
-                        royalBlue.copy(alpha = 0.22f),
+                        ElectricBlueBright.copy(alpha = 0.28f * emblemVis),
+                        RoyalElectricBlue.copy(alpha = 0.14f * emblemVis),
                         Color.Transparent
                     ),
-                    center = center,
-                    radius = maxRadius
+                    center = focalCenter,
+                    radius = size.minDimension * 0.72f * glowPulse
                 ),
-                radius = maxRadius,
-                center = center
+                radius = size.minDimension * 0.72f * glowPulse,
+                center = focalCenter
+            )
+
+            // Warm Metallic Orange ambient depth accent
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        MetallicOrangeBright.copy(alpha = 0.18f * emblemVis),
+                        MetallicOrange.copy(alpha = 0.06f * emblemVis),
+                        Color.Transparent
+                    ),
+                    center = Offset(size.width * 0.54f, size.height * 0.46f),
+                    radius = size.minDimension * 0.48f * glowPulse
+                ),
+                radius = size.minDimension * 0.48f * glowPulse,
+                center = Offset(size.width * 0.54f, size.height * 0.46f)
+            )
+
+            // 3D Energy Light Particles drifting across depth planes
+            particles.forEach { p ->
+                val drift = sin(energyPhase * p.driftSpeed + p.phaseRad)
+                val rise = cos(energyPhase * p.driftSpeed * 0.75f + p.phaseRad)
+                val px = (p.xFactor * size.width) + drift * 22.dp.toPx() * p.zDepth
+                val py = (p.yFactor * size.height) + rise * 28.dp.toPx() * p.zDepth
+                val particleAlpha = (0.30f + 0.55f * p.zDepth) *
+                    (0.65f + 0.35f * sin(energyPhase + p.phaseRad)) *
+                    (0.35f + 0.65f * emblemVis)
+                val particleColor = if (p.isMetallicOrange) MetallicOrangeBright else ElectricBlueGlow
+                val baseRadius = p.radiusDp.dp.toPx() * (0.65f + 0.75f * p.zDepth)
+
+                // Soft outer aura
+                drawCircle(
+                    color = particleColor.copy(alpha = particleAlpha * 0.32f),
+                    radius = baseRadius * 3.1f,
+                    center = Offset(px, py)
+                )
+                // Crisp luminous core
+                drawCircle(
+                    color = if (p.isMetallicOrange) PlatinumSilver.copy(alpha = particleAlpha) else ArcticWhite.copy(alpha = particleAlpha),
+                    radius = baseRadius,
+                    center = Offset(px, py)
+                )
+            }
+        }
+
+        // Subtle opening darkness veil fading out as logo illuminates
+        if (darknessVeilAlpha.value > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = darknessVeilAlpha.value * 0.65f))
             )
         }
 
@@ -300,7 +385,7 @@ fun StartupSplashOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top theme & sound style status pills
+            // Top Minimal Architectural Status Pills
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -309,9 +394,9 @@ fun StartupSplashOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = Color.White.copy(alpha = 0.12f),
+                    color = ObsidianMidnight.copy(alpha = 0.55f),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.24f))
+                    border = BorderStroke(1.dp, PlatinumSilver.copy(alpha = 0.22f))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -320,33 +405,35 @@ fun StartupSplashOverlay(
                         Icon(
                             imageVector = Icons.Default.Palette,
                             contentDescription = "Active Theme",
-                            tint = Color.White,
+                            tint = ElectricBlueGlow,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
                             text = themePreset.title,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White
+                            color = ArcticWhite
                         )
                     }
                 }
 
                 Surface(
-                    color = Color.White.copy(alpha = 0.12f),
+                    color = ObsidianMidnight.copy(alpha = 0.55f),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.35f))
+                    border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.42f))
                 ) {
                     Text(
-                        text = "6s Launch",
+                        text = "C&A ENTERPRISE",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
+                        letterSpacing = 1.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PlatinumSilver,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
             }
 
-            // Centerpiece Animated Brand Logo + Wordmark
+            // Centerpiece 3D Orbital Trails + Existing C&A Gas Logo + Brand Reveal
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
@@ -354,44 +441,23 @@ fun StartupSplashOverlay(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(234.dp)
+                        .size(252.dp)
                         .testTag("animated_logo_emblem")
                 ) {
-                    // Canvas Layer: Repeating Ignition Ripples, Orbital Gauge Arc, Counter-Rotating Arcs & Spark
+                    // Revolving 3D Elliptical Light Trails & Precision Telemetry Gauge
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        val rippleCycle = rippleCycleState.value
+                        val orbitAngle = orbitAngleState.value
                         val glowPulse = glowPulseState.value
-                        val counterOrbitAngle = counterOrbitAngleState.value
-                        val emblemAlphaValue = emblemAlpha.value
+                        val emblemVis = emblemAlpha.value
                         val center = Offset(size.width / 2f, size.height / 2f)
-                        val baseRadius = size.minDimension * 0.34f
 
-                        // Continuous ignition ripple 1 (Gold-Crimson)
-                        val r1 = baseRadius + (size.minDimension * 0.21f) * rippleCycle
-                        drawCircle(
-                            color = goldAccent.copy(alpha = (1f - rippleCycle) * 0.58f * emblemAlphaValue),
-                            radius = r1,
-                            center = center,
-                            style = Stroke(width = 3.dp.toPx() * (1f - rippleCycle * 0.45f))
-                        )
-
-                        // Offset ignition ripple 2 (Crimson-Ember)
-                        val ripple2 = (rippleCycle + 0.5f) % 1f
-                        val r2 = baseRadius + (size.minDimension * 0.22f) * ripple2
-                        drawCircle(
-                            color = crimsonBright.copy(alpha = (1f - ripple2) * 0.50f * emblemAlphaValue),
-                            radius = r2,
-                            center = center,
-                            style = Stroke(width = 2.4.dp.toPx() * (1f - ripple2 * 0.45f))
-                        )
-
-                        // Subtle living outer halo
-                        val haloRadius = size.minDimension * 0.44f * glowPulse
+                        // Halo illumination behind emblem
+                        val haloRadius = size.minDimension * 0.46f * glowPulse
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    crimsonBright.copy(alpha = 0.28f * emblemAlphaValue),
-                                    goldAccent.copy(alpha = 0.14f * emblemAlphaValue),
+                                    ElectricBlueBright.copy(alpha = 0.34f * emblemVis),
+                                    MetallicOrangeBright.copy(alpha = 0.16f * emblemVis),
                                     Color.Transparent
                                 ),
                                 center = center,
@@ -401,40 +467,104 @@ fun StartupSplashOverlay(
                             center = center
                         )
 
-                        // Counter-rotating inner precision gauge arc
-                        val innerArcInset = 24.dp.toPx()
-                        val innerArcSize = Size(size.width - innerArcInset * 2f, size.height - innerArcInset * 2f)
-                        drawArc(
-                            color = goldAccent.copy(alpha = 0.52f * emblemAlphaValue),
-                            startAngle = counterOrbitAngle,
-                            sweepAngle = 78f,
-                            useCenter = false,
-                            topLeft = Offset(innerArcInset, innerArcInset),
-                            size = innerArcSize,
-                            style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-                        )
-                        drawArc(
-                            color = crimsonBright.copy(alpha = 0.65f * emblemAlphaValue),
-                            startAngle = counterOrbitAngle + 180f,
-                            sweepAngle = 60f,
-                            useCenter = false,
-                            topLeft = Offset(innerArcInset, innerArcInset),
-                            size = innerArcSize,
-                            style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-                        )
+                        // Revolving 3D Foreshortened Orbital Trail #1 (Electric Blue)
+                        val rx = size.width * 0.44f
+                        val ry = size.height * 0.24f
+                        rotate(degrees = -24f, pivot = center) {
+                            drawOval(
+                                color = ElectricBlueGlow.copy(alpha = 0.22f * emblemVis),
+                                topLeft = Offset(center.x - rx, center.y - ry),
+                                size = Size(rx * 2f, ry * 2f),
+                                style = Stroke(width = 1.4.dp.toPx())
+                            )
+                            drawArc(
+                                brush = Brush.sweepGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        ElectricBlueBright.copy(alpha = 0.88f * emblemVis),
+                                        ArcticWhite.copy(alpha = 0.95f * emblemVis),
+                                        Color.Transparent
+                                    ),
+                                    center = center
+                                ),
+                                startAngle = orbitAngle,
+                                sweepAngle = 115f,
+                                useCenter = false,
+                                topLeft = Offset(center.x - rx, center.y - ry),
+                                size = Size(rx * 2f, ry * 2f),
+                                style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                            val headRad1 = ((orbitAngle + 115f) * PI / 180.0)
+                            val headPos1 = Offset(
+                                x = center.x + (rx * cos(headRad1)).toFloat(),
+                                y = center.y + (ry * sin(headRad1)).toFloat()
+                            )
+                            drawCircle(
+                                color = ElectricBlueGlow.copy(alpha = 0.55f * emblemVis),
+                                radius = 6.5.dp.toPx(),
+                                center = headPos1
+                            )
+                            drawCircle(
+                                color = ArcticWhite.copy(alpha = emblemVis),
+                                radius = 2.6.dp.toPx(),
+                                center = headPos1
+                            )
+                        }
 
-                        // Outer orbital sweep gauge arc (0° -> 360°)
-                        val outerInset = 14.dp.toPx()
+                        // Revolving 3D Foreshortened Orbital Trail #2 (Signature Metallic Orange)
+                        rotate(degrees = 26f, pivot = center) {
+                            drawOval(
+                                color = MetallicOrangeBright.copy(alpha = 0.20f * emblemVis),
+                                topLeft = Offset(center.x - rx, center.y - ry),
+                                size = Size(rx * 2f, ry * 2f),
+                                style = Stroke(width = 1.4.dp.toPx())
+                            )
+                            drawArc(
+                                brush = Brush.sweepGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        MetallicOrange.copy(alpha = 0.85f * emblemVis),
+                                        MetallicOrangeGold.copy(alpha = 0.95f * emblemVis),
+                                        Color.Transparent
+                                    ),
+                                    center = center
+                                ),
+                                startAngle = 360f - orbitAngle + 140f,
+                                sweepAngle = 105f,
+                                useCenter = false,
+                                topLeft = Offset(center.x - rx, center.y - ry),
+                                size = Size(rx * 2f, ry * 2f),
+                                style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                            val headRad2 = (((360f - orbitAngle + 140f) + 105f) * PI / 180.0)
+                            val headPos2 = Offset(
+                                x = center.x + (rx * cos(headRad2)).toFloat(),
+                                y = center.y + (ry * sin(headRad2)).toFloat()
+                            )
+                            drawCircle(
+                                color = MetallicOrangeBright.copy(alpha = 0.55f * emblemVis),
+                                radius = 6.5.dp.toPx(),
+                                center = headPos2
+                            )
+                            drawCircle(
+                                color = PlatinumSilver.copy(alpha = emblemVis),
+                                radius = 2.5.dp.toPx(),
+                                center = headPos2
+                            )
+                        }
+
+                        // Outer architectural precision ring sweep
+                        val outerInset = 18.dp.toPx()
                         val outerSize = Size(size.width - outerInset * 2f, size.height - outerInset * 2f)
                         val sweep = orbitalSweep.value
                         if (sweep > 1f) {
                             drawArc(
                                 brush = Brush.sweepGradient(
                                     colors = listOf(
-                                        crimsonBright,
-                                        goldAccent,
-                                        warmEmber,
-                                        crimsonBright
+                                        ElectricBlueBright,
+                                        PlatinumSilver,
+                                        MetallicOrangeBright,
+                                        ElectricBlueBright
                                     ),
                                     center = center
                                 ),
@@ -443,47 +573,29 @@ fun StartupSplashOverlay(
                                 useCenter = false,
                                 topLeft = Offset(outerInset, outerInset),
                                 size = outerSize,
-                                style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
-                            )
-
-                            // Bright traveling spark dot rotating cleanly around the ring
-                            val liveSparkAngle = if (sweep >= 359f) -90f + (360f - counterOrbitAngle) else -90f + sweep
-                            val tipAngleRad = (liveSparkAngle * PI / 180.0)
-                            val arcRadius = outerSize.width / 2f
-                            val sparkPos = Offset(
-                                x = center.x + (arcRadius * cos(tipAngleRad)).toFloat(),
-                                y = center.y + (arcRadius * sin(tipAngleRad)).toFloat()
-                            )
-                            drawCircle(
-                                color = goldAccent.copy(alpha = 0.45f),
-                                radius = 7.dp.toPx(),
-                                center = sparkPos
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = 3.2.dp.toPx(),
-                                center = sparkPos
+                                style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round)
                             )
                         }
                     }
 
-                    // Circular Red & Blue Emblem Medallion with Shimmer Sweep
+                    // Existing C&A Gas Medallion Emerging with Metallic Platinum-Orange Rim & Specular Reflection
                     Surface(
                         shape = CircleShape,
-                        color = Color(0xFF092C6C),
+                        color = ObsidianMidnight,
                         border = BorderStroke(
-                            width = 2.8.dp,
+                            width = 2.6.dp,
                             brush = Brush.linearGradient(
                                 listOf(
-                                    crimsonBright.copy(alpha = 0.95f),
-                                    Color.White.copy(alpha = 0.85f),
-                                    royalBlue.copy(alpha = 0.95f)
+                                    PlatinumSilver.copy(alpha = 0.92f),
+                                    ElectricBlueGlow.copy(alpha = 0.85f),
+                                    MetallicOrangeBright.copy(alpha = 0.90f),
+                                    PlatinumSilver.copy(alpha = 0.75f)
                                 )
                             )
                         ),
-                        shadowElevation = 16.dp,
+                        shadowElevation = 20.dp,
                         modifier = Modifier
-                            .size(150.dp)
+                            .size(148.dp)
                             .graphicsLayer {
                                 alpha = emblemAlpha.value
                                 scaleX = emblemScale.value
@@ -530,24 +642,24 @@ fun StartupSplashOverlay(
                                         text = "C&A",
                                         style = MaterialTheme.typography.headlineMedium,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = Color.White
+                                        color = ArcticWhite
                                     )
                                 }
                             }
 
-                            // Diagonal specular metallic sheen gliding across the emblem
+                            // Metallic Diagonal Specular Reflection Sweep
                             Canvas(modifier = Modifier.fillMaxSize()) {
                                 val shiftX = size.width * shimmerOffset.value
                                 drawRect(
                                     brush = Brush.linearGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            Color.White.copy(alpha = 0.36f),
-                                            goldAccent.copy(alpha = 0.24f),
+                                            PlatinumSilver.copy(alpha = 0.42f),
+                                            MetallicOrangeBright.copy(alpha = 0.24f),
                                             Color.Transparent
                                         ),
-                                        start = Offset(shiftX - size.width * 0.45f, 0f),
-                                        end = Offset(shiftX + size.width * 0.25f, size.height)
+                                        start = Offset(shiftX - size.width * 0.48f, 0f),
+                                        end = Offset(shiftX + size.width * 0.24f, size.height)
                                     )
                                 )
                             }
@@ -557,112 +669,135 @@ fun StartupSplashOverlay(
 
                 Spacer(Modifier.height(14.dp))
 
-                // Staggered Pill Badge
+                // Luxury Badge Pill
                 Surface(
-                    color = crimsonPrimary,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.45f)),
+                    color = RoyalElectricBlue.copy(alpha = 0.28f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        Brush.horizontalGradient(
+                            listOf(ElectricBlueGlow.copy(alpha = 0.65f), MetallicOrangeBright.copy(alpha = 0.65f))
+                        )
+                    ),
                     modifier = Modifier.graphicsLayer {
                         alpha = badgeProgress.value
-                        translationY = (1f - badgeProgress.value) * 18.dp.toPx()
+                        translationY = (1f - badgeProgress.value) * 16.dp.toPx()
                     }
                 ) {
                     Text(
-                        text = "C&A GAS • INDUSTRIAL & LPG FLEET",
+                        text = "C&A GAS  •  INDUSTRIAL & LPG FLEET",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
+                        color = PlatinumSilver,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                // Staggered Headline Reveal
-                Text(
-                    text = "CONCORD & ATOZ\nGAS TRADING LLC",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 32.sp,
-                    modifier = Modifier
-                        .testTag("splash_company_headline")
-                        .graphicsLayer {
-                            alpha = titleProgress.value
-                            translationY = (1f - titleProgress.value) * 22.dp.toPx()
-                        }
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                // Expanding Crimson -> Gold -> Amber Brand Accent Bar
-                Box(
-                    modifier = Modifier
-                        .width(144.dp)
-                        .height(3.dp)
-                        .graphicsLayer {
-                            scaleX = dividerScaleX.value
-                            alpha = dividerScaleX.value
-                        }
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(crimsonBright, goldAccent, warmEmber)
-                            )
-                        )
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                // Dynamic 10-second animated phase subtitle
-                AnimatedContent(
-                    targetState = phaseMessage,
-                    transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(250)) },
-                    label = "splash_phase_text"
-                ) { msg ->
-                    Text(
-                        text = msg,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.90f),
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center
+                        letterSpacing = 1.4.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
                 }
 
                 Spacer(Modifier.height(14.dp))
 
-                LinearProgressIndicator(
-                    progress = { launchProgress.value },
-                    color = goldAccent,
-                    trackColor = Color.White.copy(alpha = 0.22f),
+                // Editorial Brand Name Reveal
+                Text(
+                    text = "CONCORD & ATOZ\nGAS TRADING LLC",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = ArcticWhite,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 32.sp,
+                    letterSpacing = 0.4.sp,
                     modifier = Modifier
-                        .width(230.dp)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .testTag("splash_company_headline")
+                        .graphicsLayer {
+                            alpha = titleProgress.value
+                            translationY = (1f - titleProgress.value) * 20.dp.toPx()
+                        }
                 )
+
+                Spacer(Modifier.height(10.dp))
+
+                // Illuminated Electric-Blue -> Platinum -> Metallic-Orange Hairline
+                Box(
+                    modifier = Modifier
+                        .width(160.dp)
+                        .height(2.5.dp)
+                        .graphicsLayer {
+                            scaleX = dividerScaleX.value
+                            alpha = dividerScaleX.value
+                        }
+                        .clip(CircleShape)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(ElectricBlueBright, PlatinumSilver, MetallicOrangeBright)
+                            )
+                        )
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                AnimatedContent(
+                    targetState = phaseMessage,
+                    transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(220)) },
+                    label = "splash_phase_text"
+                ) { msg ->
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PlatinumSilver.copy(alpha = 0.9f),
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Sleek Precision Linear Progress Track
+                Box(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(PlatinumSilver.copy(alpha = 0.16f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(launchProgress.value.coerceIn(0f, 1f))
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(ElectricBlueBright, ElectricBlueGlow, MetallicOrangeBright)
+                                )
+                            )
+                    )
+                }
+
                 Spacer(Modifier.height(8.dp))
                 SplashCountdownLabel(progressProvider = { launchProgress.value })
             }
 
-            // Bottom "Built by Ragavan" Credit + Smooth Skip action
+            // Bottom Platinum Signature Badge + Skip Action
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.graphicsLayer { alpha = footerAlpha.value }
             ) {
                 Surface(
-                    color = Color.White.copy(alpha = 0.14f),
+                    color = ObsidianMidnight.copy(alpha = 0.65f),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.45f))
+                    border = BorderStroke(
+                        1.dp,
+                        Brush.horizontalGradient(
+                            listOf(PlatinumSilver.copy(alpha = 0.3f), MetallicOrangeBright.copy(alpha = 0.45f))
+                        )
+                    )
                 ) {
                     Text(
                         text = "Built by Ragavan",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                        color = ArcticWhite,
+                        letterSpacing = 0.6.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 9.dp)
                     )
                 }
                 TextButton(
@@ -671,7 +806,7 @@ fun StartupSplashOverlay(
                 ) {
                     Text(
                         text = "Tap to Skip",
-                        color = Color.White.copy(alpha = 0.88f),
+                        color = PlatinumSilver.copy(alpha = 0.86f),
                         style = MaterialTheme.typography.labelLarge
                     )
                 }
@@ -690,10 +825,10 @@ private fun SplashCountdownLabel(progressProvider: () -> Float) {
         }
     }
     Text(
-        text = String.format(Locale.US, "Launching workspace... %.1fs", tenthsRemaining / 10f),
+        text = String.format(Locale.US, "Entering C&A Workspace... %.1fs", tenthsRemaining / 10f),
         style = MaterialTheme.typography.labelSmall,
         fontFamily = JetBrainsMono,
-        color = Color.White.copy(alpha = 0.82f),
+        color = PlatinumSilver.copy(alpha = 0.78f),
         modifier = Modifier.testTag("splash_countdown_label")
     )
 }

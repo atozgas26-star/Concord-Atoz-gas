@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -29,8 +31,6 @@ import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -40,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,28 +50,36 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.local.StockTransactionEntity
 import com.example.data.model.DashboardSummary
 import com.example.data.model.TransactionType
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberOnContainer
-import com.example.ui.theme.AmberWarning
+import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
-import com.example.ui.theme.BrandRedSecondary
-import com.example.ui.theme.DarkHeaderEnd
-import com.example.ui.theme.DarkHeaderStart
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.MetallicOrangeSoft
+import com.example.ui.theme.MetallicOrangeOnSoft
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumSilver
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Summary Card 1: Current Inventory Totals across Store Yard + Active Fleet.
+ * Executive Command Card 1: Current Inventory Totals across Store Yard + Active Fleet.
+ * Styled with C&A GAS Obsidian Midnight Blue, Royal Electric Blue & Signature Metallic Orange accents.
  */
 @Composable
 fun CurrentInventoryTotalsCard(
@@ -79,187 +88,225 @@ fun CurrentInventoryTotalsCard(
     modifier: Modifier = Modifier
 ) {
     val grandTotal = summary.totalFullCylinders + summary.totalEmptyCylinders
-    val fullRatio = if (grandTotal > 0) {
+    val targetRatio = if (grandTotal > 0) {
         (summary.totalFullCylinders.toFloat() / grandTotal.toFloat()).coerceIn(0f, 1f)
     } else {
         0.5f
     }
+    val fullRatio by animateFloatAsState(
+        targetValue = targetRatio,
+        animationSpec = tween(durationMillis = 480),
+        label = "dashboard_full_ratio"
+    )
+    val isDark = LocalIsDarkTheme.current
 
-    ElevatedCard(
+    Surface(
         onClick = onOpenInventory,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = if (isDark) ObsidianSurface else Color.White,
+        shadowElevation = if (isDark) 10.dp else 5.dp,
+        border = BorderStroke(
+            1.2.dp,
+            Brush.linearGradient(
+                listOf(
+                    ElectricBlueGlow.copy(alpha = 0.52f),
+                    if (isDark) ObsidianBorder else PlatinumSilver,
+                    MetallicOrangeBright.copy(alpha = 0.42f)
+                )
+            )
+        ),
         modifier = modifier
             .fillMaxWidth()
+            .luxuryTapScale()
             .testTag("dashboard_inventory_totals_card")
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            val isDark = LocalIsDarkTheme.current
-            // Branded emerald header strip
+            // Obsidian-Royal Atmospheric Executive Strip
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.horizontalGradient(
-                            if (isDark) {
-                                listOf(DarkHeaderStart, DarkHeaderEnd)
-                            } else {
-                                listOf(
-                                    MaterialTheme.colorScheme.primary,
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.82f)
-                                )
-                            }
-                        )
-                    )
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .obsidianRoyalAtmosphere()
+                    .padding(horizontal = 16.dp, vertical = 15.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ElectricBlueBright.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.45f)),
+                            modifier = Modifier.size(42.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Inventory2,
-                                contentDescription = "Current Inventory Totals",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Inventory2,
+                                    contentDescription = "Current Inventory Totals",
+                                    tint = ArcticWhite,
+                                    modifier = Modifier.size(21.dp)
+                                )
+                            }
                         }
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(12.dp))
                         Column {
+                            Text(
+                                text = "ENTERPRISE STOCK COMMAND",
+                                style = MaterialTheme.typography.labelSmall,
+                                letterSpacing = 1.1.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ElectricBlueGlow
+                            )
                             Text(
                                 text = "Current Inventory Totals",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = ArcticWhite
                             )
                             Text(
                                 text = "Store Yard + ${summary.vehicleOverviews.size} Fleet Vehicles",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.85f)
+                                color = PlatinumSilver.copy(alpha = 0.85f)
                             )
                         }
                     }
 
                     Surface(
-                        color = Color.White.copy(alpha = 0.18f),
-                        shape = RoundedCornerShape(10.dp)
+                        color = ObsidianMidnight.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.48f))
                     ) {
                         Column(
                             horizontalAlignment = Alignment.End,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                         ) {
                             Text(
                                 text = grandTotal.toString(),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontFamily = JetBrainsMono,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color.White
+                                color = ArcticWhite
                             )
                             Text(
                                 text = "TOTAL CYL",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.85f)
+                                letterSpacing = 0.8.sp,
+                                color = MetallicOrangeBright
                             )
                         }
                     }
                 }
             }
 
+            SignatureAccentHairline(height = 2.dp)
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Full vs Empty ratio bar
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                // Full vs Empty high-precision ratio bar
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Full: ${summary.totalFullCylinders}",
+                            text = "FULL  ${summary.totalFullCylinders}",
                             style = MaterialTheme.typography.labelMedium,
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.Bold,
-                            color = BrandGreenPrimary
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Empty: ${summary.totalEmptyCylinders}",
+                            text = "EMPTY  ${summary.totalEmptyCylinders}",
                             style = MaterialTheme.typography.labelMedium,
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.Bold,
-                            color = BrandRedSecondary
+                            color = MetallicOrangeBright
                         )
                     }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(BrandRedContainer)
+                            .height(9.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isDark) MetallicOrangeBright.copy(alpha = 0.25f)
+                                else MetallicOrangeSoft
+                            )
                     ) {
                         if (grandTotal > 0 && fullRatio > 0f) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth(fullRatio)
                                     .fillMaxHeight()
-                                    .background(BrandGreenPrimary)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                MaterialTheme.colorScheme.primary,
+                                                ElectricBlueGlow
+                                            )
+                                        )
+                                    )
                             )
                         }
                     }
                 }
 
-                // Store vs Fleet Breakdown Pills
+                // Store Yard vs Active Fleet Architectural Sub-Panels
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Surface(
-                        color = BrandGreenContainer.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(12.dp),
+                        color = if (isDark) ObsidianElevated else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                        ),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Text(
                                 text = "STORE YARD",
                                 style = MaterialTheme.typography.labelSmall,
+                                letterSpacing = 0.8.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandGreenOnContainer
+                                color = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(4.dp))
                             Text(
                                 text = "${summary.storeFullBalance} Full  •  ${summary.storeEmptyBalance} Emp",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = JetBrainsMono,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandGreenOnContainer
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                        shape = RoundedCornerShape(12.dp),
+                        color = if (isDark) ObsidianElevated else MetallicOrangeSoft.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            MetallicOrange.copy(alpha = 0.28f)
+                        ),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Text(
                                 text = "ON VEHICLES",
                                 style = MaterialTheme.typography.labelSmall,
+                                letterSpacing = 0.8.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isDark) MetallicOrangeBright else MetallicOrangeOnSoft
                             )
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(4.dp))
                             Text(
                                 text = "${summary.allVehiclesFullBalance} Full  •  ${summary.allVehiclesEmptyBalance} Emp",
                                 style = MaterialTheme.typography.bodySmall,
@@ -276,8 +323,7 @@ fun CurrentInventoryTotalsCard(
 }
 
 /**
- * Summary Card 2: Pending Deliveries (undelivered full cylinders loaded on vehicles +
- * pending customer empty returns awaiting pickup).
+ * Summary Card 2: Pending Deliveries & Empty Pickups.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -294,11 +340,11 @@ fun PendingDeliveriesSummaryCard(
         .filter { it.totalFullBalance > 0 }
         .sortedByDescending { it.totalFullBalance }
     val hasPendingDeliveries = summary.pendingDeliveryCylinders > 0 || totalPendingEmptyCount > 0
+    val isDark = LocalIsDarkTheme.current
 
-    ElevatedCard(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+    LuxuryGlassCard(
+        shape = RoundedCornerShape(20.dp),
+        accentGlow = if (hasPendingDeliveries) MetallicOrangeBright else ElectricBlueGlow,
         modifier = modifier
             .fillMaxWidth()
             .testTag("dashboard_pending_deliveries_card")
@@ -306,8 +352,8 @@ fun PendingDeliveriesSummaryCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -317,15 +363,18 @@ fun PendingDeliveriesSummaryCard(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(if (hasPendingDeliveries) AmberContainer else BrandGreenContainer),
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (hasPendingDeliveries) MetallicOrange.copy(alpha = 0.16f)
+                                else BrandGreenPrimary.copy(alpha = 0.16f)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (hasPendingDeliveries) Icons.Default.LocalShipping else Icons.Default.CheckCircle,
                             contentDescription = "Pending Deliveries",
-                            tint = if (hasPendingDeliveries) AmberOnContainer else BrandGreenOnContainer,
+                            tint = if (hasPendingDeliveries) MetallicOrangeBright else BrandGreenPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -338,9 +387,9 @@ fun PendingDeliveriesSummaryCard(
                         )
                         Text(
                             text = if (summary.activeDeliveryVehiclesCount > 0) {
-                                "${summary.activeDeliveryVehiclesCount} vehicles out on route • ${summary.todaySales} delivered today"
+                                "${summary.activeDeliveryVehiclesCount} vehicles on route • ${summary.todaySales} sold today"
                             } else {
-                                "All vehicle routes clear • ${summary.todaySales} delivered today"
+                                "All vehicle routes clear • ${summary.todaySales} sold today"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -353,35 +402,42 @@ fun PendingDeliveriesSummaryCard(
                     modifier = Modifier.testTag("pending_deliveries_open_vehicles")
                 ) {
                     Text("Fleet", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(2.dp))
+                    Spacer(Modifier.width(3.dp))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
             }
 
-            // Two key pending metrics side-by-side
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Surface(
-                    color = if (summary.pendingDeliveryCylinders > 0) AmberContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = if (summary.pendingDeliveryCylinders > 0) BorderStroke(1.dp, AmberWarning.copy(alpha = 0.5f)) else null,
+                    color = if (summary.pendingDeliveryCylinders > 0) {
+                        if (isDark) ObsidianElevated else MetallicOrangeSoft
+                    } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (summary.pendingDeliveryCylinders > 0) MetallicOrangeBright.copy(alpha = 0.45f)
+                        else MaterialTheme.colorScheme.outlineVariant
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Text(
                             text = "OUT FOR DELIVERY",
                             style = MaterialTheme.typography.labelSmall,
+                            letterSpacing = 0.6.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (summary.pendingDeliveryCylinders > 0) AmberOnContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (summary.pendingDeliveryCylinders > 0) MetallicOrangeBright else MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(Modifier.height(2.dp))
                         Text(
                             text = "${summary.pendingDeliveryCylinders} Full",
                             style = MaterialTheme.typography.titleMedium,
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.ExtraBold,
-                            color = if (summary.pendingDeliveryCylinders > 0) AmberOnContainer else MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = "${summary.activeDeliveryVehiclesCount} active vehicles",
@@ -393,35 +449,43 @@ fun PendingDeliveriesSummaryCard(
 
                 Surface(
                     onClick = onOpenReports,
-                    color = if (totalPendingEmptyCount > 0) BrandRedContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = if (totalPendingEmptyCount > 0) BorderStroke(1.dp, BrandRedSecondary.copy(alpha = 0.45f)) else null,
+                    color = if (totalPendingEmptyCount > 0) {
+                        if (isDark) Color(0xFF2B1220) else BrandRedContainer.copy(alpha = 0.68f)
+                    } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (totalPendingEmptyCount > 0) MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+                        else MaterialTheme.colorScheme.outlineVariant
+                    ),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("pending_empty_returns_tile")
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.Recycling,
                                 contentDescription = null,
-                                tint = if (totalPendingEmptyCount > 0) BrandRedOnContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (totalPendingEmptyCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(13.dp)
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 text = "EMPTY PICKUPS",
                                 style = MaterialTheme.typography.labelSmall,
+                                letterSpacing = 0.6.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (totalPendingEmptyCount > 0) BrandRedOnContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (totalPendingEmptyCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        Spacer(Modifier.height(2.dp))
                         Text(
                             text = "$totalPendingEmptyCount Emp",
                             style = MaterialTheme.typography.titleMedium,
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.ExtraBold,
-                            color = if (totalPendingEmptyCount > 0) BrandRedOnContainer else MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = if (pendingCustomerCount > 0) "$pendingCustomerCount customers owe" else "No overdue empties",
@@ -432,7 +496,6 @@ fun PendingDeliveriesSummaryCard(
                 }
             }
 
-            // Quick tap chips for loaded delivery vehicles
             if (activeRouteVehicles.isNotEmpty()) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -450,10 +513,10 @@ fun PendingDeliveriesSummaryCard(
                                 )
                             },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = BrandGreenContainer.copy(alpha = 0.65f),
-                                labelColor = BrandGreenOnContainer
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isDark) 0.5f else 0.78f),
+                                labelColor = MaterialTheme.colorScheme.onPrimaryContainer
                             ),
-                            border = BorderStroke(1.dp, BrandGreenPrimary.copy(alpha = 0.35f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
                             modifier = Modifier.testTag("pending_vehicle_chip_${overview.vehicle.name}")
                         )
                     }
@@ -475,10 +538,10 @@ fun RecentStoreActivityCard(
     onEditTransaction: (StockTransactionEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+    val isDark = LocalIsDarkTheme.current
+    LuxuryGlassCard(
+        shape = RoundedCornerShape(20.dp),
+        accentGlow = ElectricBlueBright,
         modifier = modifier
             .fillMaxWidth()
             .testTag("dashboard_recent_store_activity_card")
@@ -486,8 +549,8 @@ fun RecentStoreActivityCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -497,15 +560,15 @@ fun RecentStoreActivityCard(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(BrandGreenContainer),
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Storefront,
                             contentDescription = "Recent Store Activity",
-                            tint = BrandGreenOnContainer,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -529,12 +592,11 @@ fun RecentStoreActivityCard(
                     modifier = Modifier.testTag("recent_store_open_store")
                 ) {
                     Text("Store", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(2.dp))
+                    Spacer(Modifier.width(3.dp))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
             }
 
-            // Compact Store Movement Strip
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -542,22 +604,22 @@ fun RecentStoreActivityCard(
                 StoreMiniStatPill(
                     label = "Purchased",
                     value = "${summary.todayFullPurchases + summary.todayEmptyPurchases}",
-                    container = BrandGreenContainer.copy(alpha = 0.6f),
-                    content = BrandGreenOnContainer,
+                    container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isDark) 0.55f else 0.78f),
+                    content = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.weight(1f)
                 )
                 StoreMiniStatPill(
                     label = "Full Disp",
                     value = "${summary.todayFullDispatch}",
-                    container = BrandRedContainer.copy(alpha = 0.6f),
-                    content = BrandRedOnContainer,
+                    container = if (isDark) Color(0xFF2B1220) else BrandRedContainer.copy(alpha = 0.72f),
+                    content = if (isDark) Color(0xFFFECACA) else BrandRedOnContainer,
                     modifier = Modifier.weight(1f)
                 )
                 StoreMiniStatPill(
                     label = "Empty Out",
                     value = "${summary.todayEmptyDispatch}",
-                    container = AmberContainer.copy(alpha = 0.7f),
-                    content = AmberOnContainer,
+                    container = if (isDark) Color(0xFF3A1A0B) else MetallicOrangeSoft,
+                    content = if (isDark) MetallicOrangeBright else MetallicOrangeOnSoft,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -565,7 +627,7 @@ fun RecentStoreActivityCard(
             if (summary.recentStoreActivity.isEmpty()) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -639,16 +701,24 @@ fun RecentStoreActivityCard(
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
-                                    color = if (isOutward) BrandRedContainer else BrandGreenContainer,
-                                    shape = RoundedCornerShape(8.dp)
+                                    color = if (isOutward) {
+                                        if (isDark) Color(0xFF3A1A0B) else MetallicOrangeSoft
+                                    } else {
+                                        if (isDark) Color(0xFF13295A) else BrandGreenContainer
+                                    },
+                                    shape = RoundedCornerShape(9.dp)
                                 ) {
                                     Text(
                                         text = "${if (isOutward) "-" else "+"}${tx.quantity}",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontFamily = JetBrainsMono,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isOutward) BrandRedOnContainer else BrandGreenOnContainer,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        color = if (isOutward) {
+                                            if (isDark) MetallicOrangeBright else MetallicOrangeOnSoft
+                                        } else {
+                                            if (isDark) ElectricBlueGlow else BrandGreenOnContainer
+                                        },
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                     )
                                 }
                                 if (canEdit) {
@@ -685,12 +755,12 @@ private fun StoreMiniStatPill(
 ) {
     Surface(
         color = container,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         modifier = modifier
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp)
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 8.dp)
         ) {
             Text(
                 text = value,

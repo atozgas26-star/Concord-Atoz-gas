@@ -61,6 +61,7 @@ import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.RoyalElectricBlue
 
 /**
  * Interactive Vehicle-to-Vehicle cylinder transfer dialog allowing Staff or Admin
@@ -128,11 +129,12 @@ fun VehicleTransferDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
         icon = {
             Icon(
                 imageVector = Icons.Default.CompareArrows,
                 contentDescription = "Vehicle to Vehicle Transfer",
-                tint = BrandGreenPrimary,
+                tint = RoyalElectricBlue,
                 modifier = Modifier.size(28.dp)
             )
         },

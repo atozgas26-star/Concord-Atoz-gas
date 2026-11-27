@@ -61,13 +61,16 @@ import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.model.NotificationCategory
 import com.example.data.model.StoreTransferDirection
 import com.example.data.model.UserRole
+import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.RoyalElectricBlue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 private val AlertRedDot = Color(0xFFDC2626)
-private val BrandBlue = Color(0xFF0B3A8C)
-private val ApproveGreen = Color(0xFF15803D)
+private val BrandBlue = RoyalElectricBlue
+private val ApproveGreen = BrandGreenPrimary
 
 @Composable
 fun HeaderBellIconButton(
@@ -219,16 +222,18 @@ fun NotificationsBellDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 24.dp),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Header banner
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(BrandBlue)
+                        .obsidianRoyalAtmosphere()
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -283,6 +288,7 @@ fun NotificationsBellDialog(
                         )
                     }
                 }
+                SignatureAccentHairline(height = 2.dp)
 
                 LazyColumn(
                     modifier = Modifier
@@ -407,11 +413,11 @@ fun PendingStoreTransferCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("pending_store_transfer_card_${request.id}"),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = AlertRedDot.copy(alpha = 0.06f)
+            containerColor = MetallicOrange.copy(alpha = 0.08f)
         ),
-        border = BorderStroke(1.dp, AlertRedDot.copy(alpha = 0.35f))
+        border = BorderStroke(1.dp, MetallicOrange.copy(alpha = 0.42f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -535,15 +541,18 @@ private fun NotificationItemCard(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .testTag("notification_item_${notification.id}"),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (!notification.isRead) {
-                accent.copy(alpha = 0.08f)
+                accent.copy(alpha = 0.09f)
             } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                MaterialTheme.colorScheme.surface
             }
         ),
-        border = if (!notification.isRead) BorderStroke(1.dp, accent.copy(alpha = 0.35f)) else null
+        border = BorderStroke(
+            1.dp,
+            if (!notification.isRead) accent.copy(alpha = 0.36f) else MaterialTheme.colorScheme.outlineVariant
+        )
     ) {
         Row(
             modifier = Modifier

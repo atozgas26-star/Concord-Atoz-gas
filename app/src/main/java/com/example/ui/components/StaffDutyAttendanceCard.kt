@@ -45,14 +45,18 @@ import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.UserRole
+import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.RoyalElectricBlue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val DutyBlue = Color(0xFF0B3A8C)
-private val DutyRed = Color(0xFFDC2626)
-private val DutyGreen = Color(0xFF15803D)
-private val DutyAmber = Color(0xFFB45309)
+private val DutyBlue = RoyalElectricBlue
+private val DutyRed = BrandRedSecondary
+private val DutyGreen = BrandGreenPrimary
+private val DutyAmber = MetallicOrange
 
 private fun formatDutyTime(ms: Long): String {
     if (ms <= 0L) return "--:--"
@@ -87,14 +91,12 @@ fun StaffDutyAttendanceCard(
         else -> DutyRed
     }
 
-    Card(
+    LuxuryGlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("staff_duty_attendance_card"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, DutyBlue.copy(alpha = 0.25f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(18.dp),
+        accentGlow = DutyBlue
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -342,14 +344,12 @@ fun AdminDailyWorkHoursCard(
     val punchedInCount = attendanceList.count { it.dutyStartMs > 0L }
     val totalWorkMinutes = attendanceList.sumOf { it.netWorkMinutes() }
 
-    Card(
+    LuxuryGlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("admin_daily_work_hours_card"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, DutyBlue.copy(alpha = 0.25f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(18.dp),
+        accentGlow = DutyBlue
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(

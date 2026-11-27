@@ -86,6 +86,7 @@ import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.viewmodel.WarningAlert
 import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.example.R
@@ -130,21 +131,36 @@ fun BrandHeaderBanner(
 ) {
     val isDark = LocalIsDarkTheme.current
     val gradientColors = headerGradient ?: listOf(
-        if (isDark) DarkHeaderStart else MaterialTheme.colorScheme.primary,
-        if (isDark) DarkHeaderEnd else MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+        com.example.ui.theme.ObsidianMidnight,
+        com.example.ui.theme.ObsidianDeep,
+        com.example.ui.theme.RoyalBlueDeep
     )
-    val contentColor = Color.White
-    val accentLine = accentBarColor
-        ?: if (isDark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    val contentColor = com.example.ui.theme.ArcticWhite
+    val accentLine = accentBarColor ?: com.example.ui.theme.MetallicOrangeBright
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val emblemBitmap by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+        initialValue = null,
+        context
+    ) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                android.graphics.BitmapFactory.decodeResource(
+                    context.resources,
+                    R.drawable.ic_ca_red_logo,
+                    opts
+                )?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.horizontalGradient(gradientColors)
-                )
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .background(Brush.horizontalGradient(gradientColors))
+                .padding(horizontal = 16.dp, vertical = 13.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -156,23 +172,44 @@ fun BrandHeaderBanner(
                     modifier = Modifier.weight(1f)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFF092C6C),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f)),
-                        modifier = Modifier.size(38.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        color = com.example.ui.theme.ObsidianMidnight,
+                        border = BorderStroke(
+                            1.2.dp,
+                            Brush.linearGradient(
+                                listOf(
+                                    com.example.ui.theme.PlatinumSilver.copy(alpha = 0.7f),
+                                    accentLine.copy(alpha = 0.85f)
+                                )
+                            )
+                        ),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier.size(40.dp)
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_ca_red_logo),
-                            contentDescription = "C&A Gas Logo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.clip(RoundedCornerShape(10.dp))
-                        )
+                        if (emblemBitmap != null) {
+                            Image(
+                                bitmap = emblemBitmap!!,
+                                contentDescription = "C&A Gas Logo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                            )
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "C&A",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = contentColor
+                                )
+                            }
+                        }
                     }
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
                             color = contentColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -180,7 +217,7 @@ fun BrandHeaderBanner(
                         Text(
                             text = subtitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = contentColor.copy(alpha = 0.85f),
+                            color = com.example.ui.theme.PlatinumSilver.copy(alpha = 0.88f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -193,8 +230,16 @@ fun BrandHeaderBanner(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(3.dp)
-                .background(accentLine)
+                .height(2.5.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            com.example.ui.theme.ElectricBlueBright,
+                            accentLine,
+                            com.example.ui.theme.MetallicOrangeGold.copy(alpha = 0.85f)
+                        )
+                    )
+                )
         )
     }
 }
@@ -207,18 +252,23 @@ fun DateSelectorBar(
     modifier: Modifier = Modifier
 ) {
     var showPicker by remember { mutableStateOf(false) }
+    val isDark = LocalIsDarkTheme.current
 
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        tonalElevation = if (isDark) 2.dp else 1.dp,
+        shadowElevation = if (isDark) 4.dp else 1.dp,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(
+            1.dp,
+            if (isDark) com.example.ui.theme.ObsidianBorder else com.example.ui.theme.PlatinumSilver
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 6.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -226,36 +276,51 @@ fun DateSelectorBar(
                 onClick = { onDateSelected(shiftIsoDate(selectedDate, -1)) },
                 modifier = Modifier.testTag("date_prev_button")
             ) {
-                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous day")
+                Icon(
+                    Icons.Default.ChevronLeft,
+                    contentDescription = "Previous day",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
 
-            Row(
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isDark) 0.55f else 0.72f),
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .clickable { showPicker = true }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .testTag("date_picker_trigger"),
-                verticalAlignment = Alignment.CenterVertically
+                    .testTag("date_picker_trigger")
             ) {
-                Icon(
-                    imageVector = Icons.Default.CalendarMonth,
-                    contentDescription = "Select date",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = formatDisplayDate(selectedDate),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontFamily = JetBrainsMono
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = "Select date",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = formatDisplayDate(selectedDate),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontFamily = JetBrainsMono,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
 
             IconButton(
                 onClick = { onDateSelected(shiftIsoDate(selectedDate, 1)) },
                 modifier = Modifier.testTag("date_next_button")
             ) {
-                Icon(Icons.Default.ChevronRight, contentDescription = "Next day")
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = "Next day",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -297,55 +362,82 @@ fun KpiMetricCard(
     onContainerColor: Color,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    val isDark = LocalIsDarkTheme.current
+    Surface(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = if (isDark) 2.dp else 1.dp,
+        shadowElevation = if (isDark) 4.dp else 2.dp,
+        border = BorderStroke(
+            1.dp,
+            Brush.linearGradient(
+                listOf(
+                    accentColor.copy(alpha = if (isDark) 0.38f else 0.25f),
+                    MaterialTheme.colorScheme.outlineVariant
+                )
+            )
+        )
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.5.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(accentColor, accentColor.copy(alpha = 0.2f))
+                        )
+                    )
+            )
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelSmall,
+                        letterSpacing = 0.8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(containerColor.copy(alpha = if (isDark) 0.25f else 0.9f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = title,
+                            tint = if (isDark) accentColor else onContainerColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium,
+                    text = value,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontFamily = JetBrainsMono,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = accentColor
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    overflow = TextOverflow.Ellipsis
                 )
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(containerColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = title,
-                        tint = onContainerColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineMedium,
-                fontFamily = JetBrainsMono,
-                color = accentColor
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
@@ -357,20 +449,37 @@ fun StockPill(
     isFull: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val bg = if (isFull) BrandGreenContainer else BrandRedContainer
-    val fg = if (isFull) BrandGreenOnContainer else BrandRedOnContainer
+    val isDark = LocalIsDarkTheme.current
+    val bg = when {
+        isDark && isFull -> com.example.ui.theme.ElectricBlueBright.copy(alpha = 0.18f)
+        isDark && !isFull -> com.example.ui.theme.MetallicOrangeBright.copy(alpha = 0.18f)
+        isFull -> BrandGreenContainer
+        else -> com.example.ui.theme.MetallicOrangeSoft
+    }
+    val fg = when {
+        isDark && isFull -> com.example.ui.theme.ElectricBlueGlow
+        isDark && !isFull -> com.example.ui.theme.MetallicOrangeBright
+        isFull -> BrandGreenOnContainer
+        else -> com.example.ui.theme.MetallicOrangeOnSoft
+    }
+    val border = when {
+        isFull -> BrandGreenPrimary.copy(alpha = 0.32f)
+        else -> com.example.ui.theme.MetallicOrange.copy(alpha = 0.35f)
+    }
     Surface(
         modifier = modifier,
         color = bg,
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(9.dp),
+        border = BorderStroke(0.8.dp, border)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "$label: ",
                 style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
                 color = fg
             )
             Text(
@@ -399,20 +508,20 @@ fun CategoryFilterRow(
         FilterChip(
             selected = selectedCategory == null,
             onClick = { onCategorySelected(null) },
-            label = { Text("All Gases") },
+            label = { Text("All Gases", fontWeight = FontWeight.SemiBold) },
             colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = BrandGreenPrimary,
-                selectedLabelColor = Color.White
+                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
             )
         )
         ProductCategory.entries.forEach { category ->
             FilterChip(
                 selected = selectedCategory == category,
                 onClick = { onCategorySelected(category) },
-                label = { Text(category.displayName) },
+                label = { Text(category.displayName, fontWeight = FontWeight.Medium) },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = BrandGreenPrimary,
-                    selectedLabelColor = Color.White
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
@@ -512,19 +621,23 @@ fun TransactionEntryDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier
                 .fillMaxWidth(0.95f)
                 .widthIn(max = 580.dp)
                 .heightIn(max = 720.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SignatureAccentHairline(height = 2.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
                 // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1054,6 +1167,7 @@ fun TransactionEntryDialog(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -1343,9 +1457,11 @@ fun EditTransactionDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
                 modifier = Modifier
@@ -1561,6 +1677,7 @@ fun AddStaffVehicleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
         title = { Text("Add Staff & Vehicle (#$nextVehicleNumber)") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1657,10 +1774,10 @@ fun PendingCustomerCard(
     showCollectAction: Boolean = true
 ) {
     val isPending = row.pendingEmptyBalance > 0
-    Card(
+    LuxuryGlassCard(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        shape = RoundedCornerShape(16.dp),
+        accentGlow = if (isPending) BrandRedSecondary else BrandGreenPrimary
     ) {
         Row(
             modifier = Modifier
@@ -1734,6 +1851,7 @@ fun OpeningStockEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1793,6 +1911,7 @@ fun InsufficientStockWarningDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
         icon = {
             Icon(
                 imageVector = Icons.Default.Warning,
@@ -1912,9 +2031,11 @@ fun StockCalculatorDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
                 modifier = Modifier

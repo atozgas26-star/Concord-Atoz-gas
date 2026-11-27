@@ -66,15 +66,26 @@ import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
+import com.example.ui.components.SignatureAccentHairline
+import com.example.ui.components.luxuryTapScale
+import com.example.ui.components.obsidianRoyalAtmosphere
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueOnSoft
+import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeOnSoft
+import com.example.ui.theme.MetallicOrangeSoft
+import com.example.ui.theme.RoyalElectricBlue
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -399,25 +410,24 @@ fun ReportsScreen(
 
             // Compact Small-Icon Export Toolbar (PDF Save/Share, Excel Save/Share, Cloud & Drive)
             item(key = "report_export_actions") {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                LuxuryGlassCard(
+                    shape = RoundedCornerShape(16.dp),
+                    accentGlow = RoyalElectricBlue,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         CompactReportIconAction(
                             icon = Icons.Default.PictureAsPdf,
                             label = "PDF",
                             contentDescription = "Save PDF",
-                            accentColor = BrandRedSecondary,
+                            accentColor = MetallicOrange,
                             filled = true,
                             onClick = { savePdfLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.pdf") },
                             modifier = Modifier.testTag("export_pdf_save")
@@ -426,7 +436,7 @@ fun ReportsScreen(
                             icon = Icons.Default.Share,
                             label = "Share",
                             contentDescription = "Share PDF",
-                            accentColor = BrandRedSecondary,
+                            accentColor = MetallicOrange,
                             filled = false,
                             onClick = { shareFile(isPdf = true) },
                             modifier = Modifier.testTag("export_pdf_share")
@@ -435,7 +445,7 @@ fun ReportsScreen(
                             icon = Icons.Default.TableView,
                             label = "Excel",
                             contentDescription = "Save Excel",
-                            accentColor = BrandGreenPrimary,
+                            accentColor = RoyalElectricBlue,
                             filled = true,
                             onClick = { saveExcelLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.xlsx") },
                             modifier = Modifier.testTag("export_excel_save")
@@ -444,7 +454,7 @@ fun ReportsScreen(
                             icon = Icons.Default.Download,
                             label = "Share",
                             contentDescription = "Share Excel",
-                            accentColor = BrandGreenPrimary,
+                            accentColor = RoyalElectricBlue,
                             filled = false,
                             onClick = { shareFile(isPdf = false) },
                             modifier = Modifier.testTag("export_excel_share")
@@ -507,29 +517,31 @@ fun ReportsScreen(
 
                 // Report Preview Header + Horizontally Scrollable Table Card
                 item(key = "report_preview_table") {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    LuxuryGlassCard(
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = RoyalElectricBlue,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .obsidianRoyalAtmosphere()
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Text(
                                     text = table.reportTitle,
                                     style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = table.subtitle,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = Color.White.copy(alpha = 0.8f)
                                 )
                             }
+                            SignatureAccentHairline(height = 2.dp)
                         }
 
                         Box(
@@ -540,15 +552,15 @@ fun ReportsScreen(
                             Column {
                                 Row(
                                     modifier = Modifier
-                                        .background(BrandGreenContainer)
-                                        .padding(vertical = 8.dp, horizontal = 8.dp)
+                                        .background(ElectricBlueSoft)
+                                        .padding(vertical = 9.dp, horizontal = 8.dp)
                                 ) {
                                     table.headers.forEachIndexed { idx, header ->
                                         Text(
                                             text = header,
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = BrandGreenOnContainer,
+                                            color = ElectricBlueOnSoft,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier
@@ -568,7 +580,7 @@ fun ReportsScreen(
                                 } else {
                                     table.rows.forEachIndexed { rowIdx, row ->
                                         val bg = if (rowIdx % 2 == 0) MaterialTheme.colorScheme.surface
-                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
                                         Row(
                                             modifier = Modifier
                                                 .background(bg)
@@ -594,7 +606,7 @@ fun ReportsScreen(
                                 table.footerTotals?.let { totals ->
                                     Row(
                                         modifier = Modifier
-                                            .background(BrandRedContainer)
+                                            .background(MetallicOrangeSoft)
                                             .padding(vertical = 10.dp, horizontal = 8.dp)
                                     ) {
                                         totals.forEachIndexed { idx, value ->
@@ -604,7 +616,7 @@ fun ReportsScreen(
                                                 style = MaterialTheme.typography.labelMedium,
                                                 fontFamily = if (isNumericCol) JetBrainsMono else MaterialTheme.typography.labelMedium.fontFamily,
                                                 fontWeight = FontWeight.Bold,
-                                                color = BrandRedOnContainer,
+                                                color = MetallicOrangeOnSoft,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier
@@ -777,11 +789,12 @@ private fun CompactReportIconAction(
 ) {
     Surface(
         modifier = modifier
+            .luxuryTapScale()
             .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        color = if (filled) accentColor else accentColor.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(12.dp),
+        color = if (filled) accentColor else accentColor.copy(alpha = 0.12f),
         border = if (filled) null else BorderStroke(1.dp, accentColor.copy(alpha = 0.45f))
     ) {
         Column(

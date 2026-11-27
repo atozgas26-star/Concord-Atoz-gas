@@ -25,8 +25,6 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -51,6 +49,8 @@ import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.RoyalElectricBlue
 import com.example.update.AppUpdateManager
 import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
@@ -68,8 +68,9 @@ fun AppUpdateBanner(
     if (!state.shouldShowBanner) return
     Surface(
         color = BrandRedContainer,
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, BrandRedSecondary.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.5f)),
+        shadowElevation = 2.dp,
         modifier = modifier
             .fillMaxWidth()
             .testTag("app_update_available_banner")
@@ -130,18 +131,16 @@ fun AppUpdateSettingsCard(
 ) {
     val context = LocalContext.current
     val isUpdateAvailable = state.status == AppUpdateStatus.UPDATE_AVAILABLE
-    val cardContainer = if (isUpdateAvailable) BrandRedContainer else MaterialTheme.colorScheme.surface
-    val cardBorder = if (isUpdateAvailable) BrandRedSecondary else MaterialTheme.colorScheme.outlineVariant
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = cardContainer),
-        border = BorderStroke(1.dp, cardBorder),
+    LuxuryGlassCard(
+        shape = RoundedCornerShape(18.dp),
+        accentGlow = if (isUpdateAvailable) MetallicOrangeBright else RoyalElectricBlue,
         modifier = modifier
             .fillMaxWidth()
             .testTag("settings_app_update_card")
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
@@ -265,6 +264,7 @@ fun AppUpdateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
         icon = {
             Icon(
                 imageVector = when (state.status) {

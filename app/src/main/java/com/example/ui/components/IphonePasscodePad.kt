@@ -83,7 +83,11 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.UserAccountEntity
 import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
-import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueSoft
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.RoyalElectricBlue
 import kotlin.math.roundToInt
 
 private data class IphoneKeySpec(
@@ -97,7 +101,7 @@ private val IPHONE_KEY_ROWS = listOf(
     listOf(IphoneKeySpec("7", "PQRS"), IphoneKeySpec("8", "TUV"), IphoneKeySpec("9", "WXYZ"))
 )
 
-private val CrimsonAccent = Color(0xFFB31B1A)
+private val CrimsonAccent = RoyalElectricBlue
 
 /**
  * One-click staff selector card displayed on the Staff Login portal.
@@ -118,11 +122,12 @@ fun StaffOneClickSelectorCard(
         onClick = onOpenStaffList,
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.5.dp, CrimsonAccent.copy(alpha = 0.45f)),
+        border = BorderStroke(1.25.dp, RoyalElectricBlue.copy(alpha = 0.45f)),
         tonalElevation = 2.dp,
-        shadowElevation = 2.dp,
+        shadowElevation = 3.dp,
         modifier = modifier
             .fillMaxWidth()
+            .luxuryTapScale()
             .testTag("staff_picker_open_button")
     ) {
         Row(
@@ -138,7 +143,7 @@ fun StaffOneClickSelectorCard(
                     .clip(CircleShape)
                     .background(
                         Brush.linearGradient(
-                            listOf(CrimsonAccent, BrandRedSecondary)
+                            listOf(RoyalElectricBlue, ElectricBlueBright, MetallicOrangeBright)
                         )
                     ),
                 contentAlignment = Alignment.Center
@@ -192,7 +197,7 @@ fun StaffOneClickSelectorCard(
 
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = BrandRedContainer
+                color = ElectricBlueSoft
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -331,7 +336,7 @@ fun StaffListPickerSheet(
                             onClick = { onSelectStaff(staff) },
                             shape = RoundedCornerShape(16.dp),
                             color = if (isSelected) {
-                                BrandRedContainer.copy(alpha = 0.72f)
+                                ElectricBlueSoft.copy(alpha = 0.85f)
                             } else {
                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                             },
@@ -341,6 +346,7 @@ fun StaffListPickerSheet(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .luxuryTapScale()
                                 .testTag("staff_list_item_${staff.username}")
                         ) {
                             Row(
@@ -462,13 +468,9 @@ fun IphonePasscodePad(
         }
     }
 
-    Card(
+    LuxuryGlassCard(
         shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.85f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        accentGlow = CrimsonAccent,
         modifier = modifier
             .fillMaxWidth()
             .testTag("iphone_passcode_pad")
@@ -479,9 +481,9 @@ fun IphonePasscodePad(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            CrimsonAccent.copy(alpha = 0.06f),
+                            CrimsonAccent.copy(alpha = 0.08f),
                             Color.Transparent,
-                            CrimsonAccent.copy(alpha = 0.03f)
+                            MetallicOrange.copy(alpha = 0.04f)
                         )
                     )
                 )

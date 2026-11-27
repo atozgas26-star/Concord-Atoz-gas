@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,11 +28,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
@@ -53,11 +51,8 @@ import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +66,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,9 +74,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -100,16 +98,32 @@ import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.AdminRecoveryDialog
+import com.example.ui.components.LuxuryGlassCard
+import com.example.ui.components.SignatureAccentHairline
 import com.example.ui.components.StaffListPickerSheet
 import com.example.ui.components.StaffOneClickSelectorCard
+import com.example.ui.components.luxuryTapScale
+import com.example.ui.components.obsidianRoyalAtmosphere
 import com.example.ui.theme.BrandGreenContainer
-import com.example.ui.theme.BrandGreenDark
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueOnSoft
+import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.MetallicOrangeOnSoft
+import com.example.ui.theme.MetallicOrangeSoft
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.RoyalElectricBlue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -231,26 +245,56 @@ fun LoginScreen(
                 .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            val context = LocalContext.current
+            val bannerBitmap by produceState<ImageBitmap?>(initialValue = null, context) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        BitmapFactory.decodeResource(
+                            context.resources,
+                            R.drawable.img_company_banner,
+                            opts
+                        )?.asImageBitmap()
+                    }.getOrNull()
+                }
+            }
+            val logoBitmap by produceState<ImageBitmap?>(initialValue = null, context) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        BitmapFactory.decodeResource(
+                            context.resources,
+                            R.drawable.ic_ca_red_logo,
+                            opts
+                        )?.asImageBitmap()
+                    }.getOrNull()
+                }
+            }
+
             // Hero Company Banner
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(172.dp)
+                    .height(186.dp)
+                    .obsidianRoyalAtmosphere()
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_company_banner),
-                    contentDescription = "C&A Gas Industrial Cylinders",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (bannerBitmap != null) {
+                    Image(
+                        bitmap = bannerBitmap!!,
+                        contentDescription = "C&A Gas Industrial Cylinders",
+                        contentScale = ContentScale.Crop,
+                        alpha = 0.22f,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    BrandGreenDark.copy(alpha = 0.78f),
-                                    BrandGreenDark.copy(alpha = 0.92f)
+                                    ObsidianMidnight.copy(alpha = 0.72f),
+                                    ObsidianDeep.copy(alpha = 0.90f)
                                 )
                             )
                         )
@@ -258,7 +302,7 @@ fun LoginScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
                     Row(
@@ -268,7 +312,7 @@ fun LoginScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                color = BrandRedSecondary,
+                                color = MetallicOrange,
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
@@ -276,12 +320,13 @@ fun LoginScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                 )
                             }
                             Spacer(Modifier.width(8.dp))
                             Surface(
-                                color = Color.White.copy(alpha = 0.16f),
+                                color = Color.White.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.35f)),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
@@ -293,38 +338,58 @@ fun LoginScreen(
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                 )
                             }
                         }
-                        IconButton(
-                            onClick = onToggleDarkMode,
-                            modifier = Modifier.testTag("login_dark_mode_toggle")
+                        Surface(
+                            color = Color.White.copy(alpha = 0.10f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
                         ) {
-                            Icon(
-                                imageVector = if (darkModeEnabled) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                contentDescription = if (darkModeEnabled) "Switch to Light Mode" else "Switch to Warehouse Dark Mode",
-                                tint = Color.White
-                            )
+                            IconButton(
+                                onClick = onToggleDarkMode,
+                                modifier = Modifier.testTag("login_dark_mode_toggle")
+                            ) {
+                                Icon(
+                                    imageVector = if (darkModeEnabled) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = if (darkModeEnabled) "Switch to Light Mode" else "Switch to Warehouse Dark Mode",
+                                    tint = Color.White
+                                )
+                            }
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF092C6C),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.45f)),
-                            modifier = Modifier.size(50.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            color = ObsidianMidnight.copy(alpha = 0.85f),
+                            border = BorderStroke(
+                                1.5.dp,
+                                Brush.linearGradient(listOf(ElectricBlueGlow, MetallicOrangeBright))
+                            ),
+                            modifier = Modifier.size(54.dp)
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_ca_red_logo),
-                                contentDescription = "C&A Gas Logo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            if (logoBitmap != null) {
+                                Image(
+                                    bitmap = logoBitmap!!,
+                                    contentDescription = "C&A Gas Logo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                    Text(
+                                        text = "C&A",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -337,18 +402,13 @@ fun LoginScreen(
                             Text(
                                 text = "C&A Gas • Store, Vehicle & Sales Management",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.88f)
+                                color = Color.White.copy(alpha = 0.84f)
                             )
                         }
                     }
                 }
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .background(BrandRedSecondary)
-            )
+            SignatureAccentHairline(height = 2.5.dp)
 
             // Main Login Card
             Column(
@@ -379,9 +439,9 @@ fun LoginScreen(
                         UserRole.STAFF -> "Staff"
                         null -> ""
                     }
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),
-                        border = BorderStroke(1.5.dp, BrandGreenPrimary),
+                    LuxuryGlassCard(
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = BrandGreenPrimary,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("biometric_quick_unlock_card")
@@ -524,9 +584,9 @@ fun LoginScreen(
                             title = "Admin",
                             subtitle = if (isStaffRestrictedCloud) "Locked" else "User + Pass",
                             icon = Icons.Default.AdminPanelSettings,
-                            accentColor = Color(0xFF1D4ED8),
-                            badgeContainer = Color(0xFFDBEAFE),
-                            badgeTint = Color(0xFF1E3A8A),
+                            accentColor = RoyalElectricBlue,
+                            badgeContainer = ElectricBlueSoft,
+                            badgeTint = ElectricBlueOnSoft,
                             selected = selectedRole == UserRole.ADMIN,
                             enabled = !isStaffRestrictedCloud,
                             onClick = {
@@ -543,9 +603,9 @@ fun LoginScreen(
                             title = "Owner View",
                             subtitle = "4-Digit PIN",
                             icon = Icons.Default.VerifiedUser,
-                            accentColor = Color(0xFF4338CA),
-                            badgeContainer = Color(0xFFE0E7FF),
-                            badgeTint = Color(0xFF312E81),
+                            accentColor = MetallicOrange,
+                            badgeContainer = MetallicOrangeSoft,
+                            badgeTint = MetallicOrangeOnSoft,
                             selected = selectedRole == UserRole.OWNER_VIEW,
                             enabled = !isStaffRestrictedCloud || ownerViewConfigured,
                             onClick = {
@@ -560,9 +620,9 @@ fun LoginScreen(
                             title = "Staff",
                             subtitle = "${staffUsers.size} Staff • PIN",
                             icon = Icons.Default.LocalShipping,
-                            accentColor = Color(0xFF0F766E),
-                            badgeContainer = Color(0xFFCCFBF1),
-                            badgeTint = Color(0xFF115E59),
+                            accentColor = BrandGreenPrimary,
+                            badgeContainer = BrandGreenContainer,
+                            badgeTint = BrandGreenOnContainer,
                             selected = selectedRole == UserRole.STAFF,
                             enabled = true,
                             onClick = {
@@ -587,13 +647,9 @@ fun LoginScreen(
                         onOpenStaffList = { showStaffListSheet = true }
                     )
                 } else {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(
-                            1.dp,
-                            if (selectedRole == UserRole.ADMIN) Color(0xFF1D4ED8).copy(alpha = 0.35f)
-                            else Color(0xFF4338CA).copy(alpha = 0.35f)
-                        )
+                    LuxuryGlassCard(
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = if (selectedRole == UserRole.ADMIN) RoyalElectricBlue else MetallicOrange
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             if (selectedRole == UserRole.ADMIN) {
@@ -669,9 +725,9 @@ fun LoginScreen(
 
                 if (selectedRole == UserRole.ADMIN) {
                     // Admin Username & Password Card (First-run Setup or Returning Login)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        shape = RoundedCornerShape(20.dp),
+                        accentGlow = RoyalElectricBlue
                     ) {
                         Column(
                             modifier = Modifier
@@ -1019,9 +1075,9 @@ fun LoginScreen(
                     }
                 } else if (selectedRole == UserRole.OWNER_VIEW) {
                     // Owner View One-Password Card (Strictly Read-Only — No Entry or Modification)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        shape = RoundedCornerShape(20.dp),
+                        accentGlow = MetallicOrange
                     ) {
                         Column(
                             modifier = Modifier
@@ -1259,9 +1315,9 @@ fun LoginScreen(
                     }
                 } else {
                     // Staff Native Mobile Keyboard 4-Digit PIN Card
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, Color(0xFF0F766E).copy(alpha = 0.4f))
+                    LuxuryGlassCard(
+                        shape = RoundedCornerShape(20.dp),
+                        accentGlow = BrandGreenPrimary
                     ) {
                         Column(
                             modifier = Modifier
@@ -1503,20 +1559,21 @@ private fun RolePortalCard(
 ) {
     Surface(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .luxuryTapScale()
+            .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         color = when {
             !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
             selected -> accentColor
             else -> MaterialTheme.colorScheme.surface
         },
         border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
+            width = if (selected) 1.5.dp else 1.dp,
             color = if (selected) accentColor else MaterialTheme.colorScheme.outlineVariant
         ),
         tonalElevation = if (selected) 4.dp else 1.dp,
-        shadowElevation = if (selected) 4.dp else 0.dp
+        shadowElevation = if (selected) 6.dp else 1.dp
     ) {
         Column(
             modifier = Modifier
@@ -1588,14 +1645,14 @@ private fun CloudSyncStatusBanner(
 ) {
     var inviteCodeInput by remember { mutableStateOf("CONCORD2026") }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    LuxuryGlassCard(
+        shape = RoundedCornerShape(18.dp),
+        accentGlow = RoyalElectricBlue
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(

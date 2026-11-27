@@ -2239,8 +2239,10 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `launch screen is 6 seconds and category folders plus role headers use distinct visual color palettes`() {
-        assertEquals(6f, com.example.ui.components.STARTUP_LAUNCH_DURATION_SECONDS)
+    fun `launch screen is 3 to 5 seconds and category folders plus role headers use distinct visual color palettes`() {
+        val duration = com.example.ui.components.STARTUP_LAUNCH_DURATION_SECONDS
+        assertTrue(duration in 3f..5f)
+        assertEquals(4.2f, duration)
 
         // All 4 gas category folders have unique vibrant primary colors
         val categoryColors = ProductCategory.entries.map {

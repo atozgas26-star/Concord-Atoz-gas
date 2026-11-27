@@ -69,7 +69,12 @@ import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.RoyalElectricBlue
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
@@ -318,15 +323,21 @@ fun FloatingCalculatorIconButton(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .minimumInteractiveComponentSize()
+            .luxuryTapScale(pressedScale = 0.94f)
             .clickable(onClick = onClick)
             .testTag("floating_calculator_button")
     ) {
         Surface(
             shape = CircleShape,
-            color = BrandGreenPrimary,
-            shadowElevation = 8.dp,
-            border = BorderStroke(1.8.dp, Color.White.copy(alpha = 0.9f)),
-            modifier = Modifier.size(44.dp)
+            color = ObsidianMidnight,
+            shadowElevation = 10.dp,
+            border = BorderStroke(
+                1.6.dp,
+                androidx.compose.ui.graphics.Brush.linearGradient(
+                    listOf(ElectricBlueBright, MetallicOrangeBright)
+                )
+            ),
+            modifier = Modifier.size(46.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -379,10 +390,10 @@ fun QuickCalculatorPopupDialog(
             var dialogOffsetY by remember { mutableFloatStateOf(0f) }
 
             Surface(
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp,
-                shadowElevation = 12.dp,
+                shadowElevation = 14.dp,
                 border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier
                     .widthIn(max = 360.dp)
@@ -583,15 +594,15 @@ fun QuickCalculatorPopupDialog(
                                     val isClear = key == "C"
                                     val isOperator = key in setOf("÷", "×", "-", "+", "%")
                                     val containerColor = when {
-                                        isEquals -> BrandGreenPrimary
+                                        isEquals -> RoyalElectricBlue
                                         isClear -> BrandRedContainer
-                                        isOperator -> BrandGreenContainer
+                                        isOperator -> MaterialTheme.colorScheme.primaryContainer
                                         else -> MaterialTheme.colorScheme.surfaceVariant
                                     }
                                     val contentColor = when {
                                         isEquals -> Color.White
                                         isClear -> BrandRedOnContainer
-                                        isOperator -> BrandGreenOnContainer
+                                        isOperator -> MaterialTheme.colorScheme.onPrimaryContainer
                                         else -> MaterialTheme.colorScheme.onSurface
                                     }
 

@@ -9,7 +9,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,12 +36,15 @@ import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Store
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -95,6 +105,8 @@ import com.example.ui.screens.StoreManagementScreen
 import com.example.ui.screens.VehicleDetailScreen
 import com.example.ui.screens.VehicleManagementScreen
 import com.example.ui.theme.ConcordGasTheme
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PureWhite
 import com.example.ui.viewmodel.AppViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -698,7 +710,15 @@ fun ConcordGasRootApp(
                 contentWindowInsets = WindowInsets.safeDrawing,
                 bottomBar = {
                     if (showBottomBar) {
-                            NavigationBar {
+                        Column {
+                            HorizontalDivider(
+                                thickness = 0.8.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                            )
+                            NavigationBar(
+                                containerColor = if (effectiveDarkMode) ObsidianSurface else PureWhite,
+                                tonalElevation = 0.dp
+                            ) {
                                 navTabs.forEach { tab ->
                                     val selected = currentTab == tab
                                     NavigationBarItem(
@@ -715,12 +735,20 @@ fun ConcordGasRootApp(
                                             )
                                         },
                                         label = { Text(tab.label, maxLines = 1) },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
                                         modifier = Modifier.testTag("nav_${tab.name.lowercase()}")
                                     )
                                 }
                             }
                         }
                     }
+                }
                 ) { innerPadding ->
                     Row(
                         modifier = Modifier
@@ -728,7 +756,10 @@ fun ConcordGasRootApp(
                             .padding(innerPadding)
                     ) {
                         if (useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
-                            NavigationRail(modifier = Modifier.statusBarsPadding()) {
+                            NavigationRail(
+                                containerColor = if (effectiveDarkMode) ObsidianSurface else PureWhite,
+                                modifier = Modifier.statusBarsPadding()
+                            ) {
                                 navTabs.forEach { tab ->
                                     val selected = currentTab == tab
                                     NavigationRailItem(
@@ -745,14 +776,36 @@ fun ConcordGasRootApp(
                                             )
                                         },
                                         label = { Text(tab.label) },
+                                        colors = NavigationRailItemDefaults.colors(
+                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
                                         modifier = Modifier.testTag("rail_${tab.name.lowercase()}")
                                     )
                                 }
                             }
                         }
 
+                        val effectiveTab = if (isReadOnly && currentTab == AdminNavTab.SETTINGS) {
+                            AdminNavTab.DASHBOARD
+                        } else {
+                            currentTab
+                        }
+
                         Box(modifier = Modifier.weight(1f)) {
-                            if (viewingCompanyInventory) {
+                            AnimatedContent(
+                                targetState = Triple(viewingCompanyInventory, viewingVehicleDetail, effectiveTab),
+                                transitionSpec = {
+                                    (fadeIn(animationSpec = tween(220)) +
+                                        slideInVertically(animationSpec = tween(220)) { it / 28 })
+                                        .togetherWith(fadeOut(animationSpec = tween(150)))
+                                },
+                                label = "admin_nav_transition"
+                            ) { (showInventory, showVehicleDetail, activeNavTab) ->
+                            if (showInventory) {
                                 CompanyInventoryScreen(
                                     selectedDate = selectedDate,
                                     stockRows = companyStockReport,
@@ -770,7 +823,7 @@ fun ConcordGasRootApp(
                                     },
                                     onBack = { viewingCompanyInventory = false }
                                 )
-                            } else if (viewingVehicleDetail) {
+                            } else if (showVehicleDetail) {
                                 val activeVehicle = vehicles.firstOrNull { it.id == selectedVehicleId }
                                 VehicleDetailScreen(
                                     vehicle = activeVehicle,
@@ -824,12 +877,7 @@ fun ConcordGasRootApp(
                                     }
                                 )
                             } else {
-                                val effectiveTab = if (isReadOnly && currentTab == AdminNavTab.SETTINGS) {
-                                    AdminNavTab.DASHBOARD
-                                } else {
-                                    currentTab
-                                }
-                                when (effectiveTab) {
+                                when (activeNavTab) {
                                     AdminNavTab.DASHBOARD -> AdminDashboardScreen(
                                         adminName = session.user.displayName,
                                         selectedDate = selectedDate,
@@ -1024,6 +1072,7 @@ fun ConcordGasRootApp(
                                         onLogout = viewModel::logout
                                     )
                                 }
+                            }
                         }
                     }
                 }

@@ -81,6 +81,7 @@ import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
+import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpeningStockEditDialog
 import com.example.ui.components.PendingCustomerCard
@@ -95,7 +96,9 @@ import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.RoyalElectricBlue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -145,13 +148,13 @@ fun VehicleManagementScreen(
             }
 
             items(vehicleOverviews, key = { it.vehicle.id }) { overview ->
-                Card(
+                LuxuryGlassCard(
+                    onClick = { onSelectVehicle(overview.vehicle.id) },
+                    shape = RoundedCornerShape(18.dp),
+                    accentGlow = RoyalElectricBlue,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSelectVehicle(overview.vehicle.id) }
-                        .testTag("vehicle_card_${overview.vehicle.name}"),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        .testTag("vehicle_card_${overview.vehicle.name}")
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -588,9 +591,9 @@ fun VehicleDetailScreen(
                         items(dayTransactions, key = { it.transaction.id }) { item ->
                             val tx = item.transaction
                             val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            LuxuryGlassCard(
+                                shape = RoundedCornerShape(18.dp),
+                                accentGlow = ElectricBlueBright
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -823,9 +826,9 @@ fun VehicleProductRowCard(
     canEditOpening: Boolean,
     onEditOpening: (() -> Unit)? = null
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    LuxuryGlassCard(
+        shape = RoundedCornerShape(18.dp),
+        accentGlow = RoyalElectricBlue
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(

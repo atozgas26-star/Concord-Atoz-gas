@@ -62,13 +62,20 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
-import com.example.ui.theme.BrandGreenContainer
-import com.example.ui.theme.BrandGreenDark
-import com.example.ui.theme.BrandGreenOnContainer
-import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.components.LuxuryGlassCard
+import com.example.ui.components.SignatureAccentHairline
+import com.example.ui.components.obsidianRoyalAtmosphere
 import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
-import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueOnSoft
+import com.example.ui.theme.ElectricBlueSoft
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.RoyalElectricBlue
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -250,11 +257,14 @@ fun GoogleSignInButton(
             )
         },
         enabled = !isLoading,
-        colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = RoyalElectricBlue,
+            contentColor = Color.White
+        ),
+        shape = RoundedCornerShape(16.dp),
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(54.dp)
             .testTag("google_sign_in_button")
     ) {
         if (isLoading) {
@@ -353,13 +363,15 @@ fun GoogleAuthScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(190.dp)
+                    .height(200.dp)
+                    .obsidianRoyalAtmosphere()
             ) {
                 if (bannerBitmap != null) {
                     Image(
                         bitmap = bannerBitmap!!,
                         contentDescription = "C&A Gas Banner",
                         contentScale = ContentScale.Crop,
+                        alpha = 0.22f,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -369,8 +381,8 @@ fun GoogleAuthScreen(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    BrandGreenDark.copy(alpha = 0.78f),
-                                    BrandGreenDark.copy(alpha = 0.94f)
+                                    ObsidianMidnight.copy(alpha = 0.72f),
+                                    ObsidianDeep.copy(alpha = 0.90f)
                                 )
                             )
                         )
@@ -378,7 +390,7 @@ fun GoogleAuthScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
                     Row(
@@ -388,7 +400,7 @@ fun GoogleAuthScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                color = BrandRedSecondary,
+                                color = MetallicOrange,
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
@@ -396,45 +408,55 @@ fun GoogleAuthScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                 )
                             }
                             Spacer(Modifier.width(8.dp))
                             Surface(
-                                color = Color.White.copy(alpha = 0.16f),
+                                color = Color.White.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.35f)),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
                                     text = "ONLINE CLOUD SYNC",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                 )
                             }
                         }
                         if (onToggleDarkMode != null) {
-                            IconButton(
-                                onClick = onToggleDarkMode,
-                                modifier = Modifier.testTag("google_auth_dark_mode_toggle")
+                            Surface(
+                                color = Color.White.copy(alpha = 0.10f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
                             ) {
-                                Icon(
-                                    imageVector = if (darkModeEnabled) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                    contentDescription = if (darkModeEnabled) "Switch to Light Mode" else "Switch to Warehouse Dark Mode",
-                                    tint = Color.White
-                                )
+                                IconButton(
+                                    onClick = onToggleDarkMode,
+                                    modifier = Modifier.testTag("google_auth_dark_mode_toggle")
+                                ) {
+                                    Icon(
+                                        imageVector = if (darkModeEnabled) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                        contentDescription = if (darkModeEnabled) "Switch to Light Mode" else "Switch to Warehouse Dark Mode",
+                                        tint = Color.White
+                                    )
+                                }
                             }
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(14.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color.White.copy(alpha = 0.12f),
-                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
-                            modifier = Modifier.size(52.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            color = ObsidianMidnight.copy(alpha = 0.85f),
+                            border = BorderStroke(
+                                1.5.dp,
+                                Brush.linearGradient(listOf(ElectricBlueGlow, MetallicOrangeBright))
+                            ),
+                            modifier = Modifier.size(56.dp)
                         ) {
                             if (authLogoBitmap != null) {
                                 Image(
@@ -464,18 +486,13 @@ fun GoogleAuthScreen(
                             Text(
                                 text = "C&A Gas • Fleet Online Entry, Store & Vehicle Cloud Sync",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.88f)
+                                color = Color.White.copy(alpha = 0.84f)
                             )
                         }
                     }
                 }
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .background(BrandRedSecondary)
-            )
+            SignatureAccentHairline(height = 2.5.dp)
 
             Column(
                 modifier = Modifier
@@ -484,25 +501,26 @@ fun GoogleAuthScreen(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                LuxuryGlassCard(
+                    shape = RoundedCornerShape(22.dp),
+                    accentGlow = RoyalElectricBlue
                 ) {
                     Column(
-                        modifier = Modifier.padding(18.dp),
+                        modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                color = BrandGreenContainer,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.size(44.dp)
+                                color = ElectricBlueSoft,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, RoyalElectricBlue.copy(alpha = 0.25f)),
+                                modifier = Modifier.size(46.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.CloudSync,
                                         contentDescription = null,
-                                        tint = BrandGreenOnContainer
+                                        tint = ElectricBlueOnSoft
                                     )
                                 }
                             }
@@ -522,19 +540,20 @@ fun GoogleAuthScreen(
                         }
 
                         Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(12.dp)
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
+                                    .padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Groups,
                                     contentDescription = null,
-                                    tint = BrandGreenPrimary,
+                                    tint = MetallicOrangeBright,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(Modifier.width(10.dp))
@@ -549,7 +568,7 @@ fun GoogleAuthScreen(
                         if (authError != null) {
                             Surface(
                                 color = BrandRedContainer,
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
@@ -573,7 +592,7 @@ fun GoogleAuthScreen(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     strokeWidth = 2.dp,
-                                    color = BrandGreenPrimary
+                                    color = ElectricBlueBright
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Text(

@@ -54,14 +54,17 @@ import com.example.data.local.ChatMessageEntity
 import com.example.data.model.ChatChannel
 import com.example.data.model.UserRole
 import com.example.data.remote.CloudTypingStatus
+import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.RoyalElectricBlue
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val ChatBlue = Color(0xFF0B3A8C)
-private val ChatRed = Color(0xFFDC2626)
-private val ChatGreen = Color(0xFF15803D)
+private val ChatBlue = RoyalElectricBlue
+private val ChatRed = BrandRedSecondary
+private val ChatGreen = BrandGreenPrimary
 
 @Composable
 fun TeamChatDialog(
@@ -124,16 +127,18 @@ fun TeamChatDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 20.dp),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Header
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(ChatBlue)
+                        .obsidianRoyalAtmosphere()
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -171,6 +176,7 @@ fun TeamChatDialog(
                         Icon(Icons.Filled.Close, contentDescription = "Close chat", tint = Color.White)
                     }
                 }
+                SignatureAccentHairline(height = 2.dp)
 
                 // Channel selector (Admin & Owner get both tabs; Staff gets Team Chat only)
                 if (canAccessAdminOwner) {

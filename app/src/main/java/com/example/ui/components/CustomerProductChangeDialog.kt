@@ -78,6 +78,8 @@ import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.RoyalElectricBlue
 
 /**
  * Reusable Multi-Product, Multi-Category dialog for both Staff (assigned Vehicle) and Admin (Main Store or Vehicle):
@@ -218,19 +220,23 @@ fun CustomerProductChangeDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier
                 .fillMaxWidth(0.95f)
                 .widthIn(max = 580.dp)
                 .heightIn(max = 740.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SignatureAccentHairline(height = 2.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
                 // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -282,8 +288,8 @@ fun CustomerProductChangeDialog(
                         val selected = mode == entry
                         val chipColor = when (entry) {
                             CustomerChangeMode.FULL_TO_FULL -> BrandGreenPrimary
-                            CustomerChangeMode.EMPTY_TO_EMPTY -> Color(0xFF7E22CE)
-                            CustomerChangeMode.RETURN_EMPTY -> Color(0xFF1D4ED8)
+                            CustomerChangeMode.EMPTY_TO_EMPTY -> MetallicOrange
+                            CustomerChangeMode.RETURN_EMPTY -> RoyalElectricBlue
                         }
                         FilterChip(
                             selected = selected,
@@ -706,6 +712,7 @@ fun CustomerProductChangeDialog(
                         )
                     }
                 }
+            }
             }
         }
     }

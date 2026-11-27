@@ -94,6 +94,8 @@ import com.example.ui.components.HeaderBellIconButton
 import com.example.ui.components.HeaderChatIconButton
 import com.example.ui.components.HeaderUpdateIconButton
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.LuxuryGlassCard
+import com.example.ui.components.LuxurySectionHeader
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.PendingCustomerCard
 import com.example.ui.components.RoleHeaderPalettes
@@ -101,13 +103,21 @@ import com.example.ui.components.StaffDutyAttendanceCard
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.VehicleTransferDialog
 import com.example.ui.components.categoryVisualStyle
+import com.example.ui.components.luxuryTapScale
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueOnSoft
+import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeOnSoft
+import com.example.ui.theme.MetallicOrangeSoft
+import com.example.ui.theme.RoyalElectricBlue
 import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
 import java.text.SimpleDateFormat
@@ -413,9 +423,9 @@ fun StaffDashboardScreen(
                         value = closingFull.toString(),
                         subtitle = "Recd $totalReceived • Sold $totalSales",
                         icon = Icons.Default.PropaneTank,
-                        accentColor = Color(0xFF0F766E),
-                        containerColor = Color(0xFFCCFBF1),
-                        onContainerColor = Color(0xFF115E59),
+                        accentColor = RoyalElectricBlue,
+                        containerColor = ElectricBlueSoft,
+                        onContainerColor = ElectricBlueOnSoft,
                         modifier = Modifier.weight(1f)
                     )
                     KpiMetricCard(
@@ -423,9 +433,9 @@ fun StaffDashboardScreen(
                         value = closingEmpty.toString(),
                         subtitle = "Cust $totalCustEmpty • Ret $totalRetEmpty",
                         icon = Icons.Default.Recycling,
-                        accentColor = Color(0xFFC2410C),
-                        containerColor = Color(0xFFFFEDD5),
-                        onContainerColor = Color(0xFF9A3412),
+                        accentColor = MetallicOrange,
+                        containerColor = MetallicOrangeSoft,
+                        onContainerColor = MetallicOrangeOnSoft,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -433,23 +443,22 @@ fun StaffDashboardScreen(
 
             // Quick Entry Actions Card — Compact & Easy to Tap
             item(key = "staff_quick_actions") {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                LuxuryGlassCard(
+                    shape = RoundedCornerShape(20.dp),
+                    accentGlow = RoyalElectricBlue
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Quick Cylinder Entries",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F766E)
+                        LuxurySectionHeader(
+                            eyebrow = "VEHICLE OPERATIONS",
+                            title = "Quick Cylinder Entries",
+                            accentColor = RoyalElectricBlue
                         )
+                        Spacer(Modifier.height(2.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -605,16 +614,15 @@ fun StaffDashboardScreen(
             // Store Transfer Admin Approvals Status
             if (recentRequests.isNotEmpty()) {
                 item(key = "staff_store_requests") {
-                    Card(
+                    LuxuryGlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("staff_store_requests_card"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = MetallicOrange
                     ) {
                         Column(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
@@ -901,9 +909,9 @@ fun StaffDashboardScreen(
                         } else {
                             items(filteredSalesSummaries, key = { "sale_sum_${it.product.id}" }) { item ->
                                 val catStyle = categoryVisualStyle(item.product.category)
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
+                                LuxuryGlassCard(
+                                    shape = RoundedCornerShape(18.dp),
+                                    accentGlow = catStyle.primaryColor
                                 ) {
                                     Column(
                                         modifier = Modifier
@@ -1036,9 +1044,9 @@ fun StaffDashboardScreen(
                         items(myVehicleTransactions, key = { "tx_${it.transaction.id}" }) { item ->
                             val tx = item.transaction
                             val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            LuxuryGlassCard(
+                                shape = RoundedCornerShape(18.dp),
+                                accentGlow = ElectricBlueBright
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1286,9 +1294,11 @@ private fun StaffBigActionButton(
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(containerColor = containerColor),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-        modifier = modifier.height(54.dp)
+        modifier = modifier
+            .luxuryTapScale()
+            .height(54.dp)
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(19.dp))
         Spacer(Modifier.width(7.dp))

@@ -74,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -89,9 +90,6 @@ import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
-import com.example.data.model.StoreStockRow
-import androidx.compose.material.icons.filled.NewReleases
-import androidx.compose.material.icons.filled.SystemUpdate
 import com.example.notifications.StaffLoginNotificationItem
 import com.example.ui.components.AdminDailyWorkHoursCard
 import com.example.ui.components.AppUpdateBanner
@@ -99,6 +97,7 @@ import com.example.ui.components.BrandHeaderBanner
 import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
 import com.example.data.model.CompanyStockRow
+import com.example.data.model.StoreStockRow
 import com.example.ui.components.CurrentInventoryTotalsCard
 import com.example.ui.components.DashboardInsideOutsideFolderCard
 import com.example.ui.components.DateSelectorBar
@@ -107,11 +106,15 @@ import com.example.ui.components.HeaderBellIconButton
 import com.example.ui.components.HeaderChatIconButton
 import com.example.ui.components.HeaderUpdateIconButton
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.LuxuryGlassCard
+import com.example.ui.components.LuxurySectionHeader
+import com.example.ui.components.LuxurySectionReveal
 import com.example.ui.components.PendingDeliveriesSummaryCard
 import com.example.ui.components.PendingStoreTransferCard
 import com.example.ui.components.RecentStoreActivityCard
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
+import com.example.ui.components.luxuryTapScale
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberOnContainer
 import com.example.ui.theme.AmberWarning
@@ -121,7 +124,13 @@ import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueOnSoft
+import com.example.ui.theme.ElectricBlueSoft
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.RoyalElectricBlue
 import com.example.ui.theme.SlateContainer
 import com.example.ui.theme.SlateOnContainer
 import com.example.ui.theme.SlateTertiary
@@ -358,53 +367,56 @@ fun AdminDashboardScreen(
                 )
             }
 
-            // Quick Navigation Section (Material 3 Cards for Inventory, Store, Vehicles)
+            // Quick Navigation Section (Editorial Bento Command Tiles)
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Quick Navigation",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        QuickNavCard(
-                            title = "Inventory",
-                            subtitle = summary?.let { "${it.totalFullCylinders} Full • ${it.totalEmptyCylinders} Emp" } ?: "All Cylinders",
-                            icon = Icons.Default.Inventory2,
-                            accentColor = BrandGreenPrimary,
-                            containerColor = BrandGreenContainer,
-                            onContainerColor = BrandGreenOnContainer,
-                            onClick = onOpenInventory,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("quick_nav_inventory")
+                LuxurySectionReveal(delayMillis = 30) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LuxurySectionHeader(
+                            eyebrow = "EXECUTIVE COMMAND",
+                            title = "Quick Navigation",
+                            accentColor = RoyalElectricBlue
                         )
-                        QuickNavCard(
-                            title = "Store",
-                            subtitle = summary?.let { "${it.storeFullBalance}F / ${it.storeEmptyBalance}E Yard" } ?: "Yard Stock",
-                            icon = Icons.Default.Store,
-                            accentColor = SlateTertiary,
-                            containerColor = SlateContainer,
-                            onContainerColor = SlateOnContainer,
-                            onClick = onOpenStore,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("quick_nav_store")
-                        )
-                        QuickNavCard(
-                            title = "Vehicles",
-                            subtitle = summary?.let { "${it.vehicleOverviews.size} Active Fleet" } ?: "All Vehicles",
-                            icon = Icons.Default.LocalShipping,
-                            accentColor = BrandRedSecondary,
-                            containerColor = BrandRedContainer,
-                            onContainerColor = BrandRedOnContainer,
-                            onClick = onOpenVehicles,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("quick_nav_vehicles")
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            QuickNavCard(
+                                title = "Inventory",
+                                subtitle = summary?.let { "${it.totalFullCylinders} Full • ${it.totalEmptyCylinders} Emp" } ?: "All Cylinders",
+                                icon = Icons.Default.Inventory2,
+                                accentColor = RoyalElectricBlue,
+                                containerColor = ElectricBlueSoft,
+                                onContainerColor = ElectricBlueOnSoft,
+                                onClick = onOpenInventory,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("quick_nav_inventory")
+                            )
+                            QuickNavCard(
+                                title = "Store",
+                                subtitle = summary?.let { "${it.storeFullBalance}F / ${it.storeEmptyBalance}E Yard" } ?: "Yard Stock",
+                                icon = Icons.Default.Store,
+                                accentColor = BrandGreenPrimary,
+                                containerColor = BrandGreenContainer,
+                                onContainerColor = BrandGreenOnContainer,
+                                onClick = onOpenStore,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("quick_nav_store")
+                            )
+                            QuickNavCard(
+                                title = "Vehicles",
+                                subtitle = summary?.let { "${it.vehicleOverviews.size} Active Fleet" } ?: "All Vehicles",
+                                icon = Icons.Default.LocalShipping,
+                                accentColor = MetallicOrange,
+                                containerColor = AmberContainer,
+                                onContainerColor = AmberOnContainer,
+                                onClick = onOpenVehicles,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("quick_nav_vehicles")
+                            )
+                        }
                     }
                 }
             }
@@ -412,11 +424,13 @@ fun AdminDashboardScreen(
             // Separate Inside (Main Store) & Outside (Fleet/Vehicles) Color-Coded Category Folders
             if (companyStockRows.isNotEmpty()) {
                 item(key = "inside_outside_category_folders") {
-                    DashboardInsideOutsideFolderCard(
-                        companyStockRows = companyStockRows,
-                        onOpenStore = onOpenStore,
-                        onOpenVehicles = onOpenVehicles
-                    )
+                    LuxurySectionReveal(delayMillis = 70) {
+                        DashboardInsideOutsideFolderCard(
+                            companyStockRows = companyStockRows,
+                            onOpenStore = onOpenStore,
+                            onOpenVehicles = onOpenVehicles
+                        )
+                    }
                 }
             }
 
@@ -631,21 +645,21 @@ fun AdminDashboardScreen(
 
                 // Vehicle-Wise Stock Section
                 item {
-                    Text(
-                        text = "Vehicle-Wise Stock (${summary.vehicleOverviews.size} Vehicles)",
-                        style = MaterialTheme.typography.titleMedium,
+                    LuxurySectionHeader(
+                        eyebrow = "FLEET OVERVIEW",
+                        title = "Vehicle-Wise Stock (${summary.vehicleOverviews.size} Vehicles)",
+                        accentColor = MetallicOrangeBright,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
 
                 items(summary.vehicleOverviews, key = { it.vehicle.id }) { overview ->
-                    Card(
+                    LuxuryGlassCard(
+                        onClick = { onOpenVehicleDetail(overview.vehicle.id) },
+                        accentGlow = RoyalElectricBlue,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onOpenVehicleDetail(overview.vehicle.id) }
-                            .testTag("dashboard_vehicle_${overview.vehicle.name}"),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            .testTag("dashboard_vehicle_${overview.vehicle.name}")
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Row(
@@ -654,13 +668,21 @@ fun AdminDashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.LocalShipping,
-                                        contentDescription = overview.vehicle.name,
-                                        tint = BrandGreenPrimary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(Modifier.width(8.dp))
+                                    Surface(
+                                        color = ElectricBlueSoft,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                Icons.Default.LocalShipping,
+                                                contentDescription = overview.vehicle.name,
+                                                tint = RoyalElectricBlue,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(10.dp))
                                     Text(
                                         text = overview.vehicle.name,
                                         style = MaterialTheme.typography.titleMedium,
@@ -672,23 +694,31 @@ fun AdminDashboardScreen(
                                     StockPill(label = "Empty", value = overview.totalEmptyBalance, isFull = false)
                                 }
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                            Spacer(Modifier.height(10.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = "Recd: ${overview.totalFullReceived}  •  Sold: ${overview.totalCustomerSales}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = JetBrainsMono,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "Cust Emp: ${overview.totalCustomerEmptyReceived}  •  Ret: ${overview.totalEmptyReturnedToStore}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = JetBrainsMono,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Recd: ${overview.totalFullReceived}  •  Sold: ${overview.totalCustomerSales}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = JetBrainsMono,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "Cust Emp: ${overview.totalCustomerEmptyReceived}  •  Ret: ${overview.totalEmptyReturnedToStore}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = JetBrainsMono,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -696,29 +726,19 @@ fun AdminDashboardScreen(
 
                 // Staff Activity Section
                 item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    LuxurySectionHeader(
+                        eyebrow = "LIVE LEDGER",
+                        title = "Staff Activity ($selectedDate)",
+                        accentColor = ElectricBlueBright,
                         modifier = Modifier.padding(top = 6.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.History,
-                            contentDescription = "Staff activity",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "Staff Activity ($selectedDate)",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
+                    )
                 }
 
                 if (summary.recentTransactions.isEmpty()) {
                     item {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
@@ -733,21 +753,19 @@ fun AdminDashboardScreen(
                     items(summary.recentTransactions, key = { it.transaction.id }) { item ->
                         val tx = item.transaction
                         val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
+                        LuxuryGlassCard(accentGlow = RoyalElectricBlue) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
+                                    .padding(14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "${tx.type.label} • ${item.productName}",
-                                        style = MaterialTheme.typography.titleSmall
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = "${item.productCategory.displayName} • By ${tx.staffName}" +
@@ -768,22 +786,22 @@ fun AdminDashboardScreen(
                                         Text(
                                             text = "Customer: ${tx.customerName}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = BrandRedSecondary,
+                                            color = MetallicOrange,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Surface(
-                                        color = BrandGreenContainer,
+                                        color = ElectricBlueSoft,
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
                                         Text(
                                             text = "×${tx.quantity}",
                                             fontFamily = JetBrainsMono,
                                             fontWeight = FontWeight.Bold,
-                                            color = BrandGreenOnContainer,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                            color = ElectricBlueOnSoft,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                         )
                                     }
                                     if (!isReadOnly && products.isNotEmpty()) {
@@ -791,7 +809,7 @@ fun AdminDashboardScreen(
                                             Icon(
                                                 imageVector = Icons.Default.Edit,
                                                 contentDescription = "Edit transaction",
-                                                tint = BrandGreenPrimary,
+                                                tint = RoyalElectricBlue,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -853,13 +871,12 @@ private fun StaffLoginActivityCard(
     events: List<StaffLoginNotificationItem>
 ) {
     val visibleEvents = events.take(5)
-    Card(
+    LuxuryGlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("staff_login_activity_card"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        shape = RoundedCornerShape(18.dp),
+        accentGlow = RoyalElectricBlue
     ) {
         Column(
             modifier = Modifier
@@ -1217,15 +1234,24 @@ private fun QuickNavCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(
+    LuxuryGlassCard(
         onClick = onClick,
-        modifier = modifier.minimumInteractiveComponentSize(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+        accentGlow = accentColor,
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier
+            .luxuryTapScale()
+            .minimumInteractiveComponentSize()
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(accentColor, MetallicOrangeBright)
+                    )
+                )
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1234,8 +1260,8 @@ private fun QuickNavCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(containerColor),
                 contentAlignment = Alignment.Center
             ) {

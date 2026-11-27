@@ -69,8 +69,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -129,17 +127,26 @@ import com.example.ui.components.AppUpdateSettingsCard
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
+import com.example.ui.components.LuxuryGlassCard
+import com.example.ui.components.LuxurySectionHeader
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpenedSectionFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.categoryVisualStyle
+import com.example.ui.components.luxuryTapScale
 import com.example.update.AppUpdateUiState
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PureWhite
+import com.example.ui.theme.RoyalElectricBlue
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -273,16 +280,20 @@ fun AdminSettingsScreen(
             accentBarColor = RoleHeaderPalettes.AdminAccent
         )
 
-        TabRow(selectedTabIndex = activeTab) {
+        TabRow(
+            selectedTabIndex = activeTab,
+            containerColor = if (LocalIsDarkTheme.current) ObsidianSurface else PureWhite,
+            contentColor = MaterialTheme.colorScheme.primary
+        ) {
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                text = { Text("Settings Folders") }
+                text = { Text("Settings Folders", fontWeight = FontWeight.SemiBold) }
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
-                text = { Text("Product Master (${products.size})") }
+                text = { Text("Product Master (${products.size})", fontWeight = FontWeight.SemiBold) }
             )
         }
 
@@ -337,21 +348,30 @@ fun AdminSettingsScreen(
                 }
                 if (showCloudBackup) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = BrandGreenContainer),
-                        border = BorderStroke(1.dp, BrandGreenPrimary)
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = BrandGreenPrimary
                     ) {
                         Column(
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CloudSync, contentDescription = null, tint = BrandGreenOnContainer)
-                                Spacer(Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = BrandGreenPrimary.copy(alpha = 0.14f),
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.CloudSync, contentDescription = null, tint = BrandGreenPrimary, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                Spacer(Modifier.width(10.dp))
                                 Text(
                                     text = "Online Cloud Sync (${vehicles.size} Vehicles)",
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = BrandGreenOnContainer,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -359,7 +379,7 @@ fun AdminSettingsScreen(
                                 Text(
                                     text = "Signed in as: $googleEmail",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = BrandGreenOnContainer
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             if (workspaceState is WorkspaceConnectionState.Connected) {
@@ -368,7 +388,7 @@ fun AdminSettingsScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontFamily = JetBrainsMono,
                                     fontWeight = FontWeight.Bold,
-                                    color = BrandGreenOnContainer
+                                    color = BrandGreenPrimary
                                 )
                             }
                             Row(
@@ -377,15 +397,17 @@ fun AdminSettingsScreen(
                             ) {
                                 Button(
                                     onClick = onSyncNow,
+                                    shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("settings_sync_now_button")
                                 ) {
-                                    Text("Sync All Now")
+                                    Text("Sync All Now", fontWeight = FontWeight.SemiBold)
                                 }
                                 OutlinedButton(
                                     onClick = onGoogleSignOut,
+                                    shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("settings_google_signout_button")
@@ -398,12 +420,13 @@ fun AdminSettingsScreen(
                 }
 
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = RoyalElectricBlue
                     ) {
                         Column(
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Row(
@@ -610,32 +633,30 @@ fun AdminSettingsScreen(
 
                 if (showSecurityPins) {
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Admin & Staff Name / PIN (${users.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Button(
-                            onClick = { showAddStaffDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-                            modifier = Modifier.testTag("settings_add_staff_button")
-                        ) {
-                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Add Staff")
+                    LuxurySectionHeader(
+                        eyebrow = "ACCESS CONTROL",
+                        title = "Admin & Staff Name / PIN (${users.size})",
+                        accentColor = RoyalElectricBlue,
+                        trailing = {
+                            Button(
+                                onClick = { showAddStaffDialog = true },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                                modifier = Modifier.testTag("settings_add_staff_button")
+                            ) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add Staff", fontWeight = FontWeight.SemiBold)
+                            }
                         }
-                    }
+                    )
                 }
 
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = RoyalElectricBlue
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
@@ -678,9 +699,10 @@ fun AdminSettingsScreen(
                 }
 
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = MetallicOrange
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
@@ -725,9 +747,9 @@ fun AdminSettingsScreen(
                 items(users.filter { it.role == UserRole.STAFF }, key = { it.id }) { user ->
                     val isAdmin = false
                     val linkedVehicle = vehicles.firstOrNull { it.staffUserId == user.id }
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(
                             modifier = Modifier
@@ -794,19 +816,21 @@ fun AdminSettingsScreen(
                 if (showCloudBackup) {
                 item {
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Offline Backup & Restore",
-                        style = MaterialTheme.typography.titleMedium
+                    LuxurySectionHeader(
+                        eyebrow = "LOCAL ARCHIVE",
+                        title = "Offline Backup & Restore",
+                        accentColor = MetallicOrange
                     )
                 }
 
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = MetallicOrange
                     ) {
                         Column(
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
@@ -850,12 +874,13 @@ fun AdminSettingsScreen(
 
                 if (showAppTheme) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = RoyalElectricBlue
                     ) {
                         Column(
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -977,6 +1002,7 @@ fun AdminSettingsScreen(
 
                             OutlinedButton(
                                 onClick = onPreviewStartupSplash,
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
@@ -988,7 +1014,7 @@ fun AdminSettingsScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Preview 6s Launch Screen")
+                                Text("Preview Signature Launch Screen", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -1106,9 +1132,10 @@ fun AdminSettingsScreen(
                     } else {
                         items(matchingProducts, key = { it.id }) { prod ->
                             val catStyle = categoryVisualStyle(prod.category)
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
+                            LuxuryGlassCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                accentGlow = if (prod.isActive) catStyle.primaryColor else null
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1494,9 +1521,10 @@ private fun EditOwnerViewPasswordDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Visibility, contentDescription = null, tint = Color(0xFF4338CA))
+                Icon(Icons.Default.Visibility, contentDescription = null, tint = RoyalElectricBlue)
                 Spacer(Modifier.width(8.dp))
                 Text(if (ownerViewConfigured) "Change Owner View 4-Digit PIN" else "Create Owner View 4-Digit PIN")
             }
@@ -1610,7 +1638,7 @@ private fun EditOwnerViewPasswordDialog(
                     }
                     onConfirm(currentAdminPassword, newOwnerPassword, confirmOwnerPassword)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4338CA)),
+                colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue),
                 modifier = Modifier.testTag("settings_owner_pwd_save_button")
             ) {
                 Text("Save 4-Digit PIN")
@@ -1637,10 +1665,10 @@ private enum class SettingsFolderSection(
         shortCode = "SEC",
         title = "Security & PINs",
         subtitle = "Admin, Owner, Staff",
-        primaryColor = Color(0xFF1D4ED8),
-        lightContainer = Color(0xFFDBEAFE),
-        darkContainer = Color(0xFF172554),
-        lightOnContainer = Color(0xFF1E3A8A),
+        primaryColor = RoyalElectricBlue,
+        lightContainer = Color(0xFFE5EEFF),
+        darkContainer = Color(0xFF0E1E42),
+        lightOnContainer = Color(0xFF0A2E7A),
         darkOnContainer = Color(0xFFBFDBFE),
         icon = Icons.Default.Lock
     ),
@@ -1648,9 +1676,9 @@ private enum class SettingsFolderSection(
         shortCode = "CLD",
         title = "Cloud & Backup",
         subtitle = "Sync, Drive, JSON",
-        primaryColor = Color(0xFF0F766E),
+        primaryColor = Color(0xFF0D9488),
         lightContainer = Color(0xFFCCFBF1),
-        darkContainer = Color(0xFF134E4A),
+        darkContainer = Color(0xFF0D3B38),
         lightOnContainer = Color(0xFF115E59),
         darkOnContainer = Color(0xFF99F6E4),
         icon = Icons.Default.CloudSync
@@ -1659,22 +1687,22 @@ private enum class SettingsFolderSection(
         shortCode = "APP",
         title = "App & Theme",
         subtitle = "Updates, Dark, Lock",
-        primaryColor = Color(0xFFC2410C),
-        lightContainer = Color(0xFFFFEDD5),
-        darkContainer = Color(0xFF431407),
-        lightOnContainer = Color(0xFF7C2D12),
-        darkOnContainer = Color(0xFFFED7AA),
+        primaryColor = MetallicOrange,
+        lightContainer = Color(0xFFFFEDE1),
+        darkContainer = Color(0xFF3D1906),
+        lightOnContainer = Color(0xFF8A2E07),
+        darkOnContainer = Color(0xFFFFD8BD),
         icon = Icons.Default.Palette
     ),
     PRODUCT_MASTER(
         shortCode = "GAS",
         title = "Product Master",
         subtitle = "Gas Categories",
-        primaryColor = Color(0xFF7E22CE),
-        lightContainer = Color(0xFFF3E8FF),
-        darkContainer = Color(0xFF3B0764),
-        lightOnContainer = Color(0xFF581C87),
-        darkOnContainer = Color(0xFFE9D5FF),
+        primaryColor = ElectricBlueBright,
+        lightContainer = Color(0xFFE0F2FE),
+        darkContainer = Color(0xFF0C2D4D),
+        lightOnContainer = Color(0xFF075985),
+        darkOnContainer = Color(0xFFBAE6FD),
         icon = Icons.Default.Inventory2
     )
 }
@@ -1689,7 +1717,7 @@ private fun SettingsCategoryFolderGrid(
     val isDark = LocalIsDarkTheme.current
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1730,19 +1758,18 @@ private fun SettingsCategoryFolderGrid(
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             SettingsFolderSection.entries.forEach { folder ->
                 val isSelected = selectedFolder == folder
                 val bgColor = when {
                     isSelected -> folder.primaryColor
-                    isDark -> folder.darkContainer.copy(alpha = 0.72f)
-                    else -> folder.lightContainer.copy(alpha = 0.72f)
+                    isDark -> ObsidianSurface
+                    else -> PureWhite
                 }
                 val textColor = when {
                     isSelected -> Color.White
-                    isDark -> folder.darkOnContainer
-                    else -> folder.lightOnContainer
+                    else -> MaterialTheme.colorScheme.onSurface
                 }
                 val badgeText = when (folder) {
                     SettingsFolderSection.SECURITY_PINS -> "$staffCount Staff"
@@ -1753,8 +1780,9 @@ private fun SettingsCategoryFolderGrid(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(11.dp))
+                        .heightIn(min = 52.dp)
+                        .luxuryTapScale()
+                        .clip(RoundedCornerShape(14.dp))
                         .clickable {
                             if (folder == SettingsFolderSection.PRODUCT_MASTER) {
                                 onSelectFolder(folder)
@@ -1763,13 +1791,14 @@ private fun SettingsCategoryFolderGrid(
                             }
                         }
                         .testTag("settings_folder_${folder.name.lowercase()}"),
-                    shape = RoundedCornerShape(11.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = bgColor,
                     border = BorderStroke(
-                        width = if (isSelected) 1.6.dp else 1.dp,
-                        color = if (isSelected) folder.primaryColor else folder.primaryColor.copy(alpha = 0.42f)
+                        width = if (isSelected) 1.5.dp else 1.dp,
+                        color = if (isSelected) folder.primaryColor else folder.primaryColor.copy(alpha = 0.28f)
                     ),
-                    tonalElevation = if (isSelected) 3.dp else 0.dp
+                    tonalElevation = if (isSelected) 4.dp else 1.dp,
+                    shadowElevation = if (isSelected) 4.dp else 1.dp
                 ) {
                     Row(
                         modifier = Modifier

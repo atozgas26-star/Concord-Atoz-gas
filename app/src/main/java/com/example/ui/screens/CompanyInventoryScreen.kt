@@ -1,11 +1,17 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,8 +29,6 @@ import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +44,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -51,18 +58,28 @@ import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.InsideOutsideScopeToggle
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.LuxuryGlassCard
+import com.example.ui.components.LuxurySectionHeader
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
+import com.example.ui.components.SignatureAccentHairline
 import com.example.ui.components.StockPill
 import com.example.ui.components.StockZoneScope
 import com.example.ui.components.categoryVisualStyle
+import com.example.ui.components.obsidianRoyalAtmosphere
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenOnContainer
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.ElectricBlueBright
+import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.MetallicOrange
+import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.RoyalElectricBlue
 
 @Composable
 fun CompanyInventoryScreen(
@@ -160,7 +177,7 @@ fun CompanyInventoryScreen(
                         value = totalFull.toString(),
                         subtitle = "Inside $storeFull • Outside $vehiclesFull",
                         icon = Icons.Default.PropaneTank,
-                        accentColor = BrandGreenPrimary,
+                        accentColor = ElectricBlueBright,
                         containerColor = BrandGreenContainer,
                         onContainerColor = BrandGreenOnContainer,
                         modifier = Modifier.weight(1f)
@@ -170,11 +187,94 @@ fun CompanyInventoryScreen(
                         value = totalEmpty.toString(),
                         subtitle = "Inside $storeEmpty • Outside $vehiclesEmpty",
                         icon = Icons.Default.Recycling,
-                        accentColor = BrandRedSecondary,
+                        accentColor = MetallicOrange,
                         containerColor = BrandRedContainer,
                         onContainerColor = BrandRedOnContainer,
                         modifier = Modifier.weight(1f)
                     )
+                }
+            }
+
+            item(key = "inv_executive_visualization") {
+                val grandTotal = (totalFull + totalEmpty).coerceAtLeast(1)
+                val fullRatioTarget = (totalFull.toFloat() / grandTotal.toFloat()).coerceIn(0f, 1f)
+                val fullRatio by animateFloatAsState(
+                    targetValue = fullRatioTarget,
+                    animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+                    label = "inv_full_ratio"
+                )
+                val fullPercent = (fullRatio * 100f).toInt()
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.28f)),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.obsidianRoyalAtmosphere()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "STOCK COMPOSITION • ${totalFull + totalEmpty} CYLINDERS",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ElectricBlueGlow
+                                )
+                                Text(
+                                    text = "$fullPercent% FULL",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontFamily = JetBrainsMono,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MetallicOrangeBright
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(9.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.14f))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(fullRatio.coerceAtLeast(0.02f))
+                                        .fillMaxHeight()
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(ElectricBlueBright, ElectricBlueGlow, MetallicOrangeBright)
+                                            )
+                                        )
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Store Yard: ${storeFull}F / ${storeEmpty}E",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = JetBrainsMono,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                                Text(
+                                    text = "On Fleet: ${vehiclesFull}F / ${vehiclesEmpty}E",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = JetBrainsMono,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                        SignatureAccentHairline(height = 2.dp)
+                    }
                 }
             }
 
@@ -235,14 +335,22 @@ fun CompanyInventoryScreen(
             }
 
             item(key = "inv_search") {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search cylinder or gas category...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LuxurySectionHeader(
+                        eyebrow = "ENTERPRISE CATALOG",
+                        title = "Product Stock Search",
+                        accentColor = RoyalElectricBlue
+                    )
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search cylinder or gas category...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             val showProducts = selectedCategory != null || searchQuery.isNotBlank()
@@ -269,106 +377,142 @@ fun CompanyInventoryScreen(
                     }
                 } else {
                     items(filteredRows, key = { it.product.id }) { row ->
-                val catStyle = categoryVisualStyle(row.product.category)
-                val primaryFull = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeFull else row.vehiclesFull
-                val primaryEmpty = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeEmpty else row.vehiclesEmpty
-                val zonePrefix = if (activeZone == StockZoneScope.INSIDE_STORE) "In" else "Out"
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.2.dp, catStyle.primaryColor.copy(alpha = 0.35f))
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        val catStyle = categoryVisualStyle(row.product.category)
+                        val primaryFull = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeFull else row.vehiclesFull
+                        val primaryEmpty = if (activeZone == StockZoneScope.INSIDE_STORE) row.storeEmpty else row.vehiclesEmpty
+                        val zonePrefix = if (activeZone == StockZoneScope.INSIDE_STORE) "In" else "Out"
+                        val itemTotal = (row.totalFull + row.totalEmpty).coerceAtLeast(1)
+                        val itemFullRatio by animateFloatAsState(
+                            targetValue = (row.totalFull.toFloat() / itemTotal.toFloat()).coerceIn(0f, 1f),
+                            animationSpec = tween(durationMillis = 360),
+                            label = "row_full_ratio"
+                        )
+                        LuxuryGlassCard(
+                            accentGlow = catStyle.primaryColor,
+                            shape = RoundedCornerShape(18.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = row.product.category.displayName,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = catStyle.primaryColor,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = row.product.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                StockPill(label = "$zonePrefix Full", value = primaryFull, isFull = true)
-                                StockPill(label = "$zonePrefix Emp", value = primaryEmpty, isFull = false)
-                            }
-                        }
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        val isDark = LocalIsDarkTheme.current
+                                        Surface(
+                                            color = if (isDark) catStyle.darkContainer else catStyle.lightContainer,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = row.product.category.displayName.uppercase(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isDark) catStyle.darkOnContainer else catStyle.lightOnContainer,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = row.product.name,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        StockPill(label = "$zonePrefix Full", value = primaryFull, isFull = true)
+                                        StockPill(label = "$zonePrefix Emp", value = primaryEmpty, isFull = false)
+                                    }
+                                }
 
-                        Spacer(Modifier.height(8.dp))
+                                Spacer(Modifier.height(10.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Surface(
-                                color = BrandGreenContainer.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = "INSIDE Store: ${row.storeFull}F / ${row.storeEmpty}E",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = JetBrainsMono,
-                                    color = BrandGreenOnContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                                )
-                            }
-                            Surface(
-                                color = BrandRedContainer.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = "OUTSIDE Fleet: ${row.vehiclesFull}F / ${row.vehiclesEmpty}E",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = JetBrainsMono,
-                                    color = BrandRedOnContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                                )
-                            }
-                        }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandRedContainer.copy(alpha = 0.7f))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(itemFullRatio.coerceAtLeast(0.02f))
+                                            .fillMaxHeight()
+                                            .clip(CircleShape)
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    listOf(catStyle.primaryColor, ElectricBlueBright)
+                                                )
+                                            )
+                                    )
+                                }
 
-                        Spacer(Modifier.height(6.dp))
+                                Spacer(Modifier.height(10.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Overall Company Total: ${row.overallTotalCylinders} cyl (${row.totalFull}F + ${row.totalEmpty}E)",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = JetBrainsMono,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (row.newCustomerSoldOut > 0) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(6.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Surface(
+                                        color = BrandGreenContainer.copy(alpha = 0.45f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "INSIDE Store: ${row.storeFull}F / ${row.storeEmpty}E",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = JetBrainsMono,
+                                            color = BrandGreenOnContainer,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                        )
+                                    }
+                                    Surface(
+                                        color = BrandRedContainer.copy(alpha = 0.45f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "OUTSIDE Fleet: ${row.vehiclesFull}F / ${row.vehiclesEmpty}E",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = JetBrainsMono,
+                                            color = BrandRedOnContainer,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "New Cust Set: -${row.newCustomerSoldOut}",
+                                        text = "Overall Company Total: ${row.overallTotalCylinders} cyl (${row.totalFull}F + ${row.totalEmpty}E)",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontFamily = JetBrainsMono,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    if (row.newCustomerSoldOut > 0) {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "New Cust Set: -${row.newCustomerSoldOut}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontFamily = JetBrainsMono,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            }
                 }
             }
         }

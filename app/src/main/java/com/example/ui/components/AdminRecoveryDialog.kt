@@ -61,6 +61,7 @@ import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.RoyalElectricBlue
 
 /**
  * Interactive Gmail Verification Code dialog for Admin Forgot Password
@@ -95,6 +96,7 @@ fun AdminRecoveryDialog(
 
     AlertDialog(
         onDismissRequest = { if (!state.isSending && !state.isVerifying) onDismiss() },
+        shape = RoundedCornerShape(24.dp),
         icon = {
             Icon(
                 imageVector = when {
@@ -104,7 +106,7 @@ fun AdminRecoveryDialog(
                     else -> Icons.Default.Person
                 },
                 contentDescription = purpose.title,
-                tint = BrandGreenPrimary,
+                tint = RoyalElectricBlue,
                 modifier = Modifier.size(30.dp)
             )
         },
