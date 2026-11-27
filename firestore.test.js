@@ -1084,3 +1084,132 @@ test("Duty attendance, pending store transfer approvals, bell notifications, tea
     })
   );
 });
+
+test("Full Return to Store and Customer Product Change (Full-to-Full, Empty-to-Empty, Return Empty) enforce role scopes", async () => {
+  const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
+  const staffDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
+
+  await assertSucceeds(
+    staffDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      role: "STAFF",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
+      memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
+      lastJoinInviteCode: INVITE_CODE,
+      updatedAt: pastDate(1000),
+    })
+  );
+  const members = [ADMIN_UID, STAFF_NADEEM_UID];
+
+  // Staff submits PENDING Full Return to Store request (VEHICLE_TO_STORE_FULL)
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("pending_store_transfers").doc("req_full_return_001").set({
+      requestId: "req_full_return_001",
+      businessDate: "2026-11-26",
+      direction: "VEHICLE_TO_STORE_FULL",
+      vehicleId: 1,
+      vehicleName: "NADEEM",
+      productId: 1,
+      productName: "Oxygen",
+      productCategory: "INDUSTRIAL_GAS",
+      quantity: 4,
+      staffId: 2,
+      staffName: "Nadeem",
+      notes: "End of shift full return",
+      status: "PENDING",
+      requestedAtMs: Date.now() - 800,
+      reviewedAtMs: 0,
+      reviewedBy: "",
+      reviewNotes: "",
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Staff records vehicle Customer Product Change (Full->Full & Empty->Empty)
+  for (const [id, txType] of [
+    ["tx_veh_chg_f_in", "VEHICLE_CUSTOMER_CHANGE_FULL_IN"],
+    ["tx_veh_chg_f_out", "VEHICLE_CUSTOMER_CHANGE_FULL_OUT"],
+    ["tx_veh_chg_e_in", "VEHICLE_CUSTOMER_CHANGE_EMPTY_IN"],
+    ["tx_veh_chg_e_out", "VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT"],
+  ]) {
+    await assertSucceeds(
+      staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc(id).set({
+        clientTxId: id,
+        businessDate: "2026-11-26",
+        clientTimestampMs: Date.now() - 500,
+        type: txType,
+        productId: 1,
+        vehicleId: 1,
+        vehicleName: "NADEEM",
+        staffId: 2,
+        staffName: "Nadeem",
+        quantity: 2,
+        customerName: "Al Noor Metals",
+        notes: "Customer cylinder change",
+        createdByUid: STAFF_NADEEM_UID,
+        memberUids: members,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+    );
+  }
+
+  // Staff CANNOT write store-level customer product change or store empty return
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc("tx_staff_store_chg_hack").set({
+      clientTxId: "tx_staff_store_chg_hack",
+      businessDate: "2026-11-26",
+      clientTimestampMs: Date.now() - 500,
+      type: "STORE_CUSTOMER_CHANGE_FULL_OUT",
+      productId: 1,
+      staffId: 2,
+      staffName: "Nadeem",
+      quantity: 2,
+      customerName: "Al Noor Metals",
+      notes: "Unauthorized store swap",
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Admin CAN record Full Return to Store & Store-level Customer Product Change & Return Empty
+  for (const [id, txType] of [
+    ["tx_admin_full_ret", "VEHICLE_FULL_RETURN_TO_STORE"],
+    ["tx_admin_store_e_ret", "STORE_EMPTY_FROM_CUSTOMER"],
+    ["tx_admin_store_chg_f_in", "STORE_CUSTOMER_CHANGE_FULL_IN"],
+    ["tx_admin_store_chg_f_out", "STORE_CUSTOMER_CHANGE_FULL_OUT"],
+    ["tx_admin_store_chg_e_in", "STORE_CUSTOMER_CHANGE_EMPTY_IN"],
+    ["tx_admin_store_chg_e_out", "STORE_CUSTOMER_CHANGE_EMPTY_OUT"],
+  ]) {
+    await assertSucceeds(
+      adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc(id).set({
+        clientTxId: id,
+        businessDate: "2026-11-26",
+        clientTimestampMs: Date.now() - 400,
+        type: txType,
+        productId: 1,
+        staffId: 1,
+        staffName: "Ragavan",
+        quantity: 2,
+        customerName: "Al Noor Metals",
+        notes: "Admin store exchange",
+        createdByUid: ADMIN_UID,
+        memberUids: members,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+    );
+  }
+});
+

@@ -48,7 +48,6 @@ import com.example.data.model.ProductCategory
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
-import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.InsideOutsideScopeToggle
 import com.example.ui.components.KpiMetricCard
@@ -247,15 +246,7 @@ fun CompanyInventoryScreen(
             }
 
             val showProducts = selectedCategory != null || searchQuery.isNotBlank()
-            if (!showProducts) {
-                item(key = "inv_closed_folder_prompt") {
-                    ClosedFolderPromptCard(
-                        title = "Company Products Inside Folders",
-                        subtitle = "Tap any category folder above to open Inside Store & Outside Fleet products, or search by cylinder name.",
-                        accentColor = activeZone.accentColor
-                    )
-                }
-            } else {
+            if (showProducts) {
                 selectedCategory?.let { openCat ->
                     item(key = "inv_opened_folder_header_${openCat.name}") {
                         OpenedCategoryFolderHeader(

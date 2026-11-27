@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,14 +32,11 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableView
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,12 +47,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.data.local.VehicleEntity
 import com.example.data.model.ProductCategory
@@ -63,7 +65,6 @@ import com.example.export.ReportTable
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
-import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
@@ -367,7 +368,7 @@ fun ReportsScreen(
                 }
             }
 
-            // Vibrant 2x2 Category Folders for instant category-wise report view & export
+            // Compact Small-List Style Category Folders for instant category-wise report view & export
             if (supportsCategoryFolders) {
                 item(key = "report_category_folders") {
                     CategoryFolderGrid(
@@ -377,78 +378,96 @@ fun ReportsScreen(
                             selectedCategory = cat
                             if (cat != null) showAllReportRows = false
                         },
-                        sectionTitle = "Report Category Folders"
+                        sectionTitle = "Report Category Folders",
+                        headerTrailingAction = if (!showAllReportRows && baseTable.rows.isNotEmpty()) {
+                            {
+                                TextButton(
+                                    onClick = { showAllReportRows = true },
+                                    modifier = Modifier.testTag("report_view_all_rows_button")
+                                ) {
+                                    Text(
+                                        text = "All (${baseTable.rows.size})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else null
                     )
                 }
             }
 
-            // Export Actions (PDF Save/Share & Excel Save/Share)
+            // Compact Small-Icon Export Toolbar (PDF Save/Share, Excel Save/Share, Cloud & Drive)
             item(key = "report_export_actions") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Button(
+                        CompactReportIconAction(
+                            icon = Icons.Default.PictureAsPdf,
+                            label = "PDF",
+                            contentDescription = "Save PDF",
+                            accentColor = BrandRedSecondary,
+                            filled = true,
                             onClick = { savePdfLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.pdf") },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandRedSecondary),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("export_pdf_save")
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Save PDF")
-                        }
-                        OutlinedButton(
+                            modifier = Modifier.testTag("export_pdf_save")
+                        )
+                        CompactReportIconAction(
+                            icon = Icons.Default.Share,
+                            label = "Share",
+                            contentDescription = "Share PDF",
+                            accentColor = BrandRedSecondary,
+                            filled = false,
                             onClick = { shareFile(isPdf = true) },
                             modifier = Modifier.testTag("export_pdf_share")
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = "Share PDF", modifier = Modifier.size(18.dp))
-                        }
-                        Button(
+                        )
+                        CompactReportIconAction(
+                            icon = Icons.Default.TableView,
+                            label = "Excel",
+                            contentDescription = "Save Excel",
+                            accentColor = BrandGreenPrimary,
+                            filled = true,
                             onClick = { saveExcelLauncher.launch("${selectedReport.name.lowercase()}_$selectedDate.xlsx") },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("export_excel_save")
-                        ) {
-                            Icon(Icons.Default.TableView, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Save Excel")
-                        }
-                        OutlinedButton(
+                            modifier = Modifier.testTag("export_excel_save")
+                        )
+                        CompactReportIconAction(
+                            icon = Icons.Default.Download,
+                            label = "Share",
+                            contentDescription = "Share Excel",
+                            accentColor = BrandGreenPrimary,
+                            filled = false,
                             onClick = { shareFile(isPdf = false) },
                             modifier = Modifier.testTag("export_excel_share")
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = "Share Excel", modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    if (!isReadOnly) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
+                        )
+                        if (!isReadOnly) {
+                            CompactReportIconAction(
+                                icon = Icons.Default.CloudUpload,
+                                label = "Cloud",
+                                contentDescription = "Save Cloud Snapshot",
+                                accentColor = MaterialTheme.colorScheme.primary,
+                                filled = false,
                                 onClick = { onSaveReportCloudAndDrive(selectedReport, table, false) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("report_save_cloud_button")
-                            ) {
-                                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Save Cloud Snapshot")
-                            }
-                            OutlinedButton(
+                                modifier = Modifier.testTag("report_save_cloud_button")
+                            )
+                            CompactReportIconAction(
+                                icon = Icons.Default.AddToDrive,
+                                label = "Drive",
+                                contentDescription = "Upload PDF to Drive",
+                                accentColor = MaterialTheme.colorScheme.primary,
+                                filled = false,
                                 onClick = { onSaveReportCloudAndDrive(selectedReport, table, true) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("report_save_drive_button")
-                            ) {
-                                Icon(Icons.Default.AddToDrive, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Upload PDF to Drive")
-                            }
+                                modifier = Modifier.testTag("report_save_drive_button")
+                            )
                         }
                     }
                 }
@@ -456,17 +475,7 @@ fun ReportsScreen(
 
             // Report Preview: Keep product rows neatly inside Category Folders until opened
             val showTable = !supportsCategoryFolders || selectedCategory != null || showAllReportRows
-            if (!showTable) {
-                item(key = "report_closed_folder_prompt") {
-                    ClosedFolderPromptCard(
-                        title = "Report Items Inside Category Folders",
-                        subtitle = "Tap any category folder above to open its product rows. Save PDF / Excel exports all ${baseTable.rows.size} items.",
-                        accentColor = BrandGreenPrimary,
-                        actionLabel = "View All (${baseTable.rows.size})",
-                        onAction = { showAllReportRows = true }
-                    )
-                }
-            } else {
+            if (showTable) {
                 selectedCategory?.let { openCat ->
                     item(key = "report_opened_folder_header_${openCat.name}") {
                         OpenedCategoryFolderHeader(
@@ -755,3 +764,46 @@ private fun formatYearMonth(ym: String): String {
         ym
     }
 }
+
+@Composable
+private fun CompactReportIconAction(
+    icon: ImageVector,
+    label: String,
+    contentDescription: String,
+    accentColor: Color,
+    filled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = if (filled) accentColor else accentColor.copy(alpha = 0.10f),
+        border = if (filled) null else BorderStroke(1.dp, accentColor.copy(alpha = 0.45f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (filled) Color.White else accentColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (filled) Color.White else accentColor,
+                maxLines = 1
+            )
+        }
+    }
+}
+

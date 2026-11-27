@@ -622,7 +622,11 @@ fun ConcordGasRootApp(
                                 emptyCollectedNow = empNow
                             )
                         },
+                        onRecordBatchTransactions = viewModel::recordBatchTransactions,
+                        onRecordCustomerProductChange = viewModel::recordCustomerProductChange,
+                        onRecordMultiCustomerProductChange = viewModel::recordMultiCustomerProductChange,
                         onSubmitStoreTransferRequest = viewModel::submitStaffStoreTransferRequest,
+                        onSubmitBatchStoreTransferRequests = viewModel::submitStaffStoreTransferRequests,
                         onTransferBetweenVehicles = { srcId, dstId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes ->
                             viewModel.transferBetweenVehicles(
                                 sourceVehicleId = srcId,
@@ -786,6 +790,9 @@ fun ConcordGasRootApp(
                                             emptyCollectedNow = empNow
                                         )
                                     },
+                                    onRecordBatchTransactions = viewModel::recordBatchTransactions,
+                                    onRecordCustomerProductChange = viewModel::recordCustomerProductChange,
+                                    onRecordMultiCustomerProductChange = viewModel::recordMultiCustomerProductChange,
                                     onTransferBetweenVehicles = { srcId, dstId, prodId, fullQty, emptyQty, extraFullQty, extraEmptyQty, notes ->
                                         viewModel.transferBetweenVehicles(
                                             sourceVehicleId = srcId,
@@ -904,6 +911,9 @@ fun ConcordGasRootApp(
                                                 customerName = custName
                                             )
                                         },
+                                        onRecordBatchTransactions = viewModel::recordBatchTransactions,
+                                        onRecordCustomerProductChange = viewModel::recordCustomerProductChange,
+                                        onRecordMultiCustomerProductChange = viewModel::recordMultiCustomerProductChange,
                                         onUpdateOpeningStock = { productId, full, empty ->
                                             viewModel.updateOpeningStock(
                                                 scope = StockCalculator.SCOPE_STORE,

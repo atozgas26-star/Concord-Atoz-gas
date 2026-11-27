@@ -12,7 +12,10 @@ import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.AuthSession
+import com.example.data.model.BatchProductEntry
 import com.example.data.model.CompanyStockRow
+import com.example.data.model.CustomerChangeMode
+import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.DashboardSummary
 import com.example.data.model.MonthlyDailySaleRow
@@ -374,7 +377,8 @@ class InventoryRepository(
                     totalEmptyBalance = vRows.sumOf { it.emptyBalance },
                     totalComplaintReplaced = vRows.sumOf { it.complaintReplaced },
                     totalFullTransferredOut = vRows.sumOf { it.fullTransferredOut },
-                    totalEmptyTransferredOut = vRows.sumOf { it.emptyTransferredOut }
+                    totalEmptyTransferredOut = vRows.sumOf { it.emptyTransferredOut },
+                    totalFullReturnedToStore = vRows.sumOf { it.fullReturnedToStore }
                 )
             }
 
@@ -486,6 +490,7 @@ class InventoryRepository(
                     }
                 }
                 TransactionType.STORE_FULL_DISPATCH_DIRECT,
+                TransactionType.STORE_CUSTOMER_CHANGE_FULL_OUT,
                 TransactionType.STORE_ADJUST_FULL_OUT -> {
                     if (liveStoreFull < quantity) {
                         return@withTransaction OperationResult.InsufficientStock(
@@ -496,6 +501,7 @@ class InventoryRepository(
                 }
                 TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE,
                 TransactionType.STORE_EMPTY_DISPATCH,
+                TransactionType.STORE_CUSTOMER_CHANGE_EMPTY_OUT,
                 TransactionType.STORE_ADJUST_EMPTY_OUT -> {
                     if (liveStoreEmpty < quantity) {
                         return@withTransaction OperationResult.InsufficientStock(
@@ -504,9 +510,11 @@ class InventoryRepository(
                         )
                     }
                 }
+                TransactionType.VEHICLE_FULL_RETURN_TO_STORE,
                 TransactionType.VEHICLE_CUSTOMER_SALE,
                 TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
                 TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT,
                 TransactionType.VEHICLE_TRANSFER_FULL_OUT,
                 TransactionType.VEHICLE_ADJUST_FULL_OUT -> {
                     if (liveVehicleFull < quantity) {
@@ -517,6 +525,7 @@ class InventoryRepository(
                     }
                 }
                 TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT,
                 TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
                 TransactionType.VEHICLE_ADJUST_EMPTY_OUT -> {
                     if (liveVehicleEmpty < quantity) {
@@ -556,6 +565,485 @@ class InventoryRepository(
                 return OperationResult.Success(
                     "Saved $quantity × $productNameLabel locally (will sync when online)."
                 )
+            }
+        }
+        return localResult
+    }
+
+    /**
+     * Atomically records a batch of transactions across multiple products/categories in one database
+     * transaction while strictly preventing negative stock on any Store or Vehicle cylinder balance.
+     */
+    suspend fun recordBatchTransactions(
+        businessDate: String,
+        type: TransactionType,
+        vehicleId: Long?,
+        actor: UserAccountEntity,
+        items: List<BatchProductEntry>,
+        notes: String = "",
+        purchaseCompanyName: String = "",
+        customerName: String = ""
+    ): OperationResult {
+        val mergedItems = items
+            .filter { it.quantity > 0 || it.emptyCollectedNow > 0 }
+            .groupBy { it.productId }
+            .map { (prodId, entries) ->
+                BatchProductEntry(
+                    productId = prodId,
+                    quantity = entries.sumOf { it.quantity },
+                    emptyCollectedNow = entries.sumOf { it.emptyCollectedNow }
+                )
+            }
+        if (mergedItems.isEmpty()) {
+            return OperationResult.ValidationError("Select at least one product with quantity greater than 0.")
+        }
+        for (entry in mergedItems) {
+            if (entry.quantity <= 0 || entry.quantity > 100000) {
+                return OperationResult.ValidationError("Each product quantity must be between 1 and 100,000.")
+            }
+            if (entry.emptyCollectedNow < 0 || entry.emptyCollectedNow > 100000) {
+                return OperationResult.ValidationError("Collected empty quantity must be between 0 and 100,000.")
+            }
+        }
+
+        val insertedEntities = mutableListOf<StockTransactionEntity>()
+        var summaryMessage = ""
+
+        val localResult = db.withTransaction {
+            val vehicle = if (vehicleId != null) {
+                vehicleDao.getVehicleById(vehicleId)
+                    ?: return@withTransaction OperationResult.ValidationError("Selected vehicle not found.")
+            } else {
+                null
+            }
+            if (type.isVehicleLevel && vehicle == null) {
+                return@withTransaction OperationResult.ValidationError("Please select a vehicle for this transaction.")
+            }
+
+            val openings = openingDao.getAllOpeningsOnce()
+            val allTxs = txDao.getAllTransactionsOnce()
+            val cleanCompany = purchaseCompanyName.trim().take(120)
+            val cleanCustomer = customerName.trim().take(120)
+            val cleanNotes = notes.trim().take(300)
+            val nowMs = System.currentTimeMillis()
+            var offsetMs = 0L
+
+            val validatedEntries = mutableListOf<Pair<ProductEntity, BatchProductEntry>>()
+            for (entry in mergedItems) {
+                val product = productDao.getProductById(entry.productId)
+                    ?: return@withTransaction OperationResult.ValidationError("Selected product (ID ${entry.productId}) not found.")
+                val productLabel = "${product.category.displayName} • ${product.name}"
+
+                val (liveStoreFull, liveStoreEmpty) = StockCalculator.currentStoreBalance(
+                    productId = product.id,
+                    openings = openings,
+                    transactions = allTxs
+                )
+                val (liveVehicleFull, liveVehicleEmpty) = if (vehicle != null) {
+                    StockCalculator.currentVehicleBalance(
+                        vehicleId = vehicle.id,
+                        productId = product.id,
+                        openings = openings,
+                        transactions = allTxs
+                    )
+                } else {
+                    0 to 0
+                }
+
+                when (type) {
+                    TransactionType.VEHICLE_FULL_RECEIVED -> {
+                        if (liveStoreFull < entry.quantity) {
+                            return@withTransaction OperationResult.InsufficientStock(
+                                title = "Insufficient Store Full Stock",
+                                message = "Cannot dispatch ${entry.quantity} × $productLabel to ${vehicle!!.name}.\n\nAvailable Store Full Balance: $liveStoreFull"
+                            )
+                        }
+                    }
+                    TransactionType.STORE_FULL_DISPATCH_DIRECT,
+                    TransactionType.STORE_CUSTOMER_CHANGE_FULL_OUT,
+                    TransactionType.STORE_ADJUST_FULL_OUT -> {
+                        if (liveStoreFull < entry.quantity) {
+                            return@withTransaction OperationResult.InsufficientStock(
+                                title = "Insufficient Store Full Stock",
+                                message = "Cannot dispatch/deduct ${entry.quantity} × $productLabel.\n\nAvailable Store Full Balance: $liveStoreFull"
+                            )
+                        }
+                    }
+                    TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE,
+                    TransactionType.STORE_EMPTY_DISPATCH,
+                    TransactionType.STORE_CUSTOMER_CHANGE_EMPTY_OUT,
+                    TransactionType.STORE_ADJUST_EMPTY_OUT -> {
+                        if (liveStoreEmpty < entry.quantity) {
+                            return@withTransaction OperationResult.InsufficientStock(
+                                title = "Insufficient Store Empty Stock",
+                                message = "Cannot dispatch/replace ${entry.quantity} × $productLabel empty cylinders.\n\nAvailable Store Empty Balance: $liveStoreEmpty"
+                            )
+                        }
+                    }
+                    TransactionType.VEHICLE_FULL_RETURN_TO_STORE,
+                    TransactionType.VEHICLE_CUSTOMER_SALE,
+                    TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                    TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
+                    TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT,
+                    TransactionType.VEHICLE_TRANSFER_FULL_OUT,
+                    TransactionType.VEHICLE_ADJUST_FULL_OUT -> {
+                        if (liveVehicleFull < entry.quantity) {
+                            return@withTransaction OperationResult.InsufficientStock(
+                                title = "Insufficient Vehicle Full Stock",
+                                message = "${vehicle!!.name} does not have enough full cylinders for $productLabel.\n\nAvailable Vehicle Full Balance: $liveVehicleFull, Requested: ${entry.quantity}"
+                            )
+                        }
+                    }
+                    TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+                    TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT,
+                    TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
+                    TransactionType.VEHICLE_ADJUST_EMPTY_OUT -> {
+                        if (liveVehicleEmpty < entry.quantity) {
+                            return@withTransaction OperationResult.InsufficientStock(
+                                title = "Insufficient Vehicle Empty Stock",
+                                message = "${vehicle!!.name} cannot move ${entry.quantity} empty $productLabel cylinders.\n\nAvailable Vehicle Empty Balance: $liveVehicleEmpty"
+                            )
+                        }
+                    }
+                    else -> Unit
+                }
+
+                validatedEntries.add(product to entry)
+            }
+
+            for ((product, entry) in validatedEntries) {
+                val newEntity = StockTransactionEntity(
+                    businessDate = businessDate,
+                    timestamp = nowMs + offsetMs++,
+                    type = type,
+                    productId = product.id,
+                    vehicleId = vehicle?.id,
+                    vehicleName = vehicle?.name,
+                    staffId = actor.id,
+                    staffName = actor.displayName,
+                    quantity = entry.quantity,
+                    purchaseCompanyName = cleanCompany,
+                    customerName = cleanCustomer,
+                    notes = cleanNotes,
+                    remoteId = CloudSyncRepository.generateRemoteTxId()
+                )
+                val rowId = txDao.insert(newEntity)
+                insertedEntities.add(newEntity.copy(id = rowId))
+
+                if (type == TransactionType.VEHICLE_CUSTOMER_SALE && entry.emptyCollectedNow > 0 && vehicle != null) {
+                    val emptyEntity = StockTransactionEntity(
+                        businessDate = businessDate,
+                        timestamp = nowMs + offsetMs++,
+                        type = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
+                        productId = product.id,
+                        vehicleId = vehicle.id,
+                        vehicleName = vehicle.name,
+                        staffId = actor.id,
+                        staffName = actor.displayName,
+                        quantity = entry.emptyCollectedNow,
+                        purchaseCompanyName = "",
+                        customerName = cleanCustomer,
+                        notes = cleanNotes,
+                        remoteId = CloudSyncRepository.generateRemoteTxId()
+                    )
+                    val empRowId = txDao.insert(emptyEntity)
+                    insertedEntities.add(emptyEntity.copy(id = empRowId))
+                }
+            }
+
+            val totalQty = mergedItems.sumOf { it.quantity }
+            summaryMessage = if (validatedEntries.size == 1) {
+                val prodName = validatedEntries.first().first.name
+                "Recorded $totalQty × $prodName (${type.label})."
+            } else {
+                "Saved ${validatedEntries.size} products ($totalQty total cylinders) for ${type.label}."
+            }
+            OperationResult.Success(summaryMessage)
+        }
+
+        if (localResult is OperationResult.Success && cloudSync != null && insertedEntities.isNotEmpty()) {
+            var anySyncFailed = false
+            for (tx in insertedEntities) {
+                if (cloudSync.pushTransaction(tx).isFailure) {
+                    anySyncFailed = true
+                }
+            }
+            if (anySyncFailed) {
+                return OperationResult.Success("$summaryMessage Saved locally (will sync when online).")
+            }
+        }
+        return localResult
+    }
+
+    /**
+     * Atomically records Customer Product Change (Full -> Full, Empty -> Empty) or Customer Empty Return
+     * for either a Vehicle (Staff or Admin) or the Main Store (Admin, vehicleId == null).
+     * Strictly prevents negative balances on the outgoing cylinder product.
+     */
+    suspend fun recordCustomerProductChange(
+        businessDate: String,
+        mode: CustomerChangeMode,
+        returnedProductId: Long,
+        givenProductId: Long?,
+        vehicleId: Long?,
+        actor: UserAccountEntity,
+        quantity: Int,
+        customerName: String = "",
+        notes: String = ""
+    ): OperationResult {
+        if (quantity <= 0 || quantity > 100000) {
+            return OperationResult.ValidationError("Quantity must be between 1 and 100,000.")
+        }
+        val givenList = if (mode == CustomerChangeMode.RETURN_EMPTY) {
+            emptyList()
+        } else {
+            val targetGivenId = givenProductId
+                ?: return OperationResult.ValidationError("Please select the replacement product to give to the customer.")
+            listOf(CustomerExchangeItem(targetGivenId, quantity))
+        }
+        return recordMultiCustomerProductChange(
+            businessDate = businessDate,
+            mode = mode,
+            returnedItems = listOf(CustomerExchangeItem(returnedProductId, quantity)),
+            givenItems = givenList,
+            vehicleId = vehicleId,
+            actor = actor,
+            customerName = customerName,
+            notes = notes
+        )
+    }
+
+    /**
+     * Atomically records multi-product Customer Cylinder Exchange (Full -> Full, Empty -> Empty)
+     * or multi-product Customer Return Empty across any categories for either Vehicle or Main Store.
+     */
+    suspend fun recordMultiCustomerProductChange(
+        businessDate: String,
+        mode: CustomerChangeMode,
+        returnedItems: List<CustomerExchangeItem>,
+        givenItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        actor: UserAccountEntity,
+        customerName: String = "",
+        notes: String = ""
+    ): OperationResult {
+        val mergedReturned = returnedItems
+            .filter { it.quantity > 0 }
+            .groupBy { it.productId }
+            .map { (prodId, items) -> CustomerExchangeItem(prodId, items.sumOf { it.quantity }) }
+
+        val mergedGiven = if (mode == CustomerChangeMode.RETURN_EMPTY) {
+            emptyList()
+        } else {
+            givenItems
+                .filter { it.quantity > 0 }
+                .groupBy { it.productId }
+                .map { (prodId, items) -> CustomerExchangeItem(prodId, items.sumOf { it.quantity }) }
+        }
+
+        if (mergedReturned.isEmpty()) {
+            return OperationResult.ValidationError("Select at least one returned cylinder with quantity greater than 0.")
+        }
+        for (item in mergedReturned + mergedGiven) {
+            if (item.quantity <= 0 || item.quantity > 100000) {
+                return OperationResult.ValidationError("Each cylinder quantity must be between 1 and 100,000.")
+            }
+        }
+        if (mode != CustomerChangeMode.RETURN_EMPTY && mergedGiven.isEmpty()) {
+            return OperationResult.ValidationError("Select at least one replacement cylinder to give to the customer.")
+        }
+
+        val cleanCustomer = customerName.trim().take(120)
+        val cleanNote = notes.trim()
+        val noteSuffix = if (cleanNote.isNotBlank()) " • $cleanNote" else ""
+        val insertedEntities = mutableListOf<StockTransactionEntity>()
+        var summaryMessage = ""
+
+        val localResult = db.withTransaction {
+            val vehicle = if (vehicleId != null) {
+                vehicleDao.getVehicleById(vehicleId)
+                    ?: return@withTransaction OperationResult.ValidationError("Selected vehicle not found.")
+            } else {
+                null
+            }
+            val scopeLabel = vehicle?.name ?: "Main Store"
+
+            val productMap = mutableMapOf<Long, ProductEntity>()
+            for (item in mergedReturned + mergedGiven) {
+                if (!productMap.containsKey(item.productId)) {
+                    val prod = productDao.getProductById(item.productId)
+                        ?: return@withTransaction OperationResult.ValidationError("Product (ID ${item.productId}) not found.")
+                    productMap[item.productId] = prod
+                }
+            }
+
+            if (mode == CustomerChangeMode.RETURN_EMPTY) {
+                val returnType = if (vehicle != null) {
+                    TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                } else {
+                    TransactionType.STORE_EMPTY_FROM_CUSTOMER
+                }
+                val nowMs = System.currentTimeMillis()
+                mergedReturned.forEachIndexed { idx, item ->
+                    val entity = StockTransactionEntity(
+                        businessDate = businessDate,
+                        timestamp = nowMs + idx,
+                        type = returnType,
+                        productId = item.productId,
+                        vehicleId = vehicle?.id,
+                        vehicleName = vehicle?.name,
+                        staffId = actor.id,
+                        staffName = actor.displayName,
+                        quantity = item.quantity,
+                        customerName = cleanCustomer,
+                        notes = buildString {
+                            append("Customer Return Empty")
+                            if (cleanNote.isNotBlank()) append(" • $cleanNote")
+                        }.take(300),
+                        remoteId = CloudSyncRepository.generateRemoteTxId()
+                    )
+                    val id = txDao.insert(entity)
+                    insertedEntities.add(entity.copy(id = id))
+                }
+                val totalRet = mergedReturned.sumOf { it.quantity }
+                summaryMessage = if (mergedReturned.size == 1) {
+                    val prodName = productMap[mergedReturned.first().productId]?.name ?: "Cylinder"
+                    "Customer Return Empty ($scopeLabel): $totalRet × $prodName."
+                } else {
+                    "Customer Return Empty ($scopeLabel): ${mergedReturned.size} products ($totalRet empty)."
+                }
+                return@withTransaction OperationResult.Success(summaryMessage)
+            }
+
+            val openings = openingDao.getAllOpeningsOnce()
+            val allTxs = txDao.getAllTransactionsOnce()
+            val returnedByProduct = mergedReturned.associate { it.productId to it.quantity }
+
+            for (item in mergedGiven) {
+                val givenProd = productMap[item.productId]!!
+                val (availFull, availEmpty) = if (vehicle != null) {
+                    StockCalculator.currentVehicleBalance(
+                        vehicleId = vehicle.id,
+                        productId = givenProd.id,
+                        openings = openings,
+                        transactions = allTxs
+                    )
+                } else {
+                    StockCalculator.currentStoreBalance(
+                        productId = givenProd.id,
+                        openings = openings,
+                        transactions = allTxs
+                    )
+                }
+                val sameReturnedQty = returnedByProduct[givenProd.id] ?: 0
+                val givenLabel = "${givenProd.category.displayName} • ${givenProd.name}"
+
+                if (mode == CustomerChangeMode.FULL_TO_FULL) {
+                    val effectiveAvail = availFull + sameReturnedQty
+                    if (effectiveAvail < item.quantity) {
+                        return@withTransaction OperationResult.InsufficientStock(
+                            title = "Insufficient Full Stock",
+                            message = "$scopeLabel does not have ${item.quantity} Full $givenLabel to give in Full → Full exchange.\n\nAvailable Full: $availFull"
+                        )
+                    }
+                } else if (mode == CustomerChangeMode.EMPTY_TO_EMPTY) {
+                    val effectiveAvail = availEmpty + sameReturnedQty
+                    if (effectiveAvail < item.quantity) {
+                        return@withTransaction OperationResult.InsufficientStock(
+                            title = "Insufficient Empty Stock",
+                            message = "$scopeLabel does not have ${item.quantity} Empty $givenLabel to give in Empty → Empty exchange.\n\nAvailable Empty: $availEmpty"
+                        )
+                    }
+                }
+            }
+
+            val (inType, outType, modeTag) = when {
+                mode == CustomerChangeMode.FULL_TO_FULL && vehicle != null -> Triple(
+                    TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_IN,
+                    TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT,
+                    "Full→Full Change"
+                )
+                mode == CustomerChangeMode.FULL_TO_FULL && vehicle == null -> Triple(
+                    TransactionType.STORE_CUSTOMER_CHANGE_FULL_IN,
+                    TransactionType.STORE_CUSTOMER_CHANGE_FULL_OUT,
+                    "Store Full→Full Change"
+                )
+                mode == CustomerChangeMode.EMPTY_TO_EMPTY && vehicle != null -> Triple(
+                    TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_IN,
+                    TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT,
+                    "Empty→Empty Change"
+                )
+                else -> Triple(
+                    TransactionType.STORE_CUSTOMER_CHANGE_EMPTY_IN,
+                    TransactionType.STORE_CUSTOMER_CHANGE_EMPTY_OUT,
+                    "Store Empty→Empty Change"
+                )
+            }
+
+            val retDesc = mergedReturned.joinToString(", ") { "${it.quantity}×${productMap[it.productId]?.name ?: ""}" }
+            val givDesc = mergedGiven.joinToString(", ") { "${it.quantity}×${productMap[it.productId]?.name ?: ""}" }
+            val nowMs = System.currentTimeMillis()
+            var offsetMs = 0L
+
+            mergedReturned.forEach { item ->
+                val prod = productMap[item.productId]!!
+                val inEntity = StockTransactionEntity(
+                    businessDate = businessDate,
+                    timestamp = nowMs + offsetMs++,
+                    type = inType,
+                    productId = prod.id,
+                    vehicleId = vehicle?.id,
+                    vehicleName = vehicle?.name,
+                    staffId = actor.id,
+                    staffName = actor.displayName,
+                    quantity = item.quantity,
+                    customerName = cleanCustomer,
+                    notes = "$modeTag: In $retDesc → Out $givDesc$noteSuffix".take(300),
+                    remoteId = CloudSyncRepository.generateRemoteTxId()
+                )
+                val inId = txDao.insert(inEntity)
+                insertedEntities.add(inEntity.copy(id = inId))
+            }
+
+            mergedGiven.forEach { item ->
+                val prod = productMap[item.productId]!!
+                val outEntity = StockTransactionEntity(
+                    businessDate = businessDate,
+                    timestamp = nowMs + offsetMs++,
+                    type = outType,
+                    productId = prod.id,
+                    vehicleId = vehicle?.id,
+                    vehicleName = vehicle?.name,
+                    staffId = actor.id,
+                    staffName = actor.displayName,
+                    quantity = item.quantity,
+                    customerName = cleanCustomer,
+                    notes = "$modeTag: Out $givDesc ← In $retDesc$noteSuffix".take(300),
+                    remoteId = CloudSyncRepository.generateRemoteTxId()
+                )
+                val outId = txDao.insert(outEntity)
+                insertedEntities.add(outEntity.copy(id = outId))
+            }
+
+            val totalIn = mergedReturned.sumOf { it.quantity }
+            val totalOut = mergedGiven.sumOf { it.quantity }
+            summaryMessage = if (mergedReturned.size == 1 && mergedGiven.size == 1) {
+                "$modeTag ($scopeLabel): $retDesc → $givDesc."
+            } else {
+                "$modeTag ($scopeLabel): In ${mergedReturned.size} items ($totalIn cyl) → Out ${mergedGiven.size} items ($totalOut cyl)."
+            }
+            OperationResult.Success(summaryMessage)
+        }
+
+        if (localResult is OperationResult.Success && cloudSync != null && insertedEntities.isNotEmpty()) {
+            var anySyncFailed = false
+            for (tx in insertedEntities) {
+                if (cloudSync.pushTransaction(tx).isFailure) {
+                    anySyncFailed = true
+                }
+            }
+            if (anySyncFailed) {
+                return OperationResult.Success("$summaryMessage Saved locally (will sync when online).")
             }
         }
         return localResult
@@ -1070,7 +1558,8 @@ class InventoryRepository(
                 TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
                 TransactionType.CUSTOMER_EMPTY_PENDING_ADD,
                 TransactionType.STORE_FULL_DISPATCH_DIRECT,
-                TransactionType.STORE_EMPTY_INWARD
+                TransactionType.STORE_EMPTY_INWARD,
+                TransactionType.STORE_EMPTY_FROM_CUSTOMER
             )
 
             val grouped = linkedMapOf<String, MutableList<StockTransactionEntity>>()
@@ -1096,7 +1585,8 @@ class InventoryRepository(
                 }.sumOf { it.quantity }
                 val emptyCollected = sorted.filter {
                     it.type == TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER ||
-                        it.type == TransactionType.STORE_EMPTY_INWARD
+                        it.type == TransactionType.STORE_EMPTY_INWARD ||
+                        it.type == TransactionType.STORE_EMPTY_FROM_CUSTOMER
                 }.sumOf { it.quantity }
                 val manualPending = sorted.filter {
                     it.type == TransactionType.CUSTOMER_EMPTY_PENDING_ADD

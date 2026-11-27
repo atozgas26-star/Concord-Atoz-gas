@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +45,8 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inventory2
@@ -126,7 +129,6 @@ import com.example.ui.components.AppUpdateSettingsCard
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
-import com.example.ui.components.ClosedFolderPromptCard
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpenedSectionFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
@@ -310,16 +312,7 @@ fun AdminSettingsScreen(
                     )
                 }
 
-                if (selectedSettingsFolder == null) {
-                    item(key = "settings_closed_folder_prompt") {
-                        ClosedFolderPromptCard(
-                            title = "System Settings Inside Folders",
-                            subtitle = "Tap Security & PINs, Cloud & Backup, App & Theme, or Product Master above to open its items.",
-                            accentColor = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                } else {
-                    val openFolder = selectedSettingsFolder!!
+                selectedSettingsFolder?.let { openFolder ->
                     item(key = "settings_opened_folder_header_${openFolder.name}") {
                         OpenedSectionFolderHeader(
                             title = openFolder.title,
@@ -1089,15 +1082,7 @@ fun AdminSettingsScreen(
                     )
                 }
 
-                if (!showProducts) {
-                    item(key = "product_master_closed_folder_prompt") {
-                        ClosedFolderPromptCard(
-                            title = "Gas Products Inside Folders",
-                            subtitle = "Tap any gas category folder above to manage products inside, or search by name.",
-                            accentColor = Color(0xFF7E22CE)
-                        )
-                    }
-                } else {
+                if (showProducts) {
                     selectedProductCategory?.let { openCat ->
                         item(key = "product_master_opened_header_${openCat.name}") {
                             OpenedCategoryFolderHeader(
@@ -1704,7 +1689,7 @@ private fun SettingsCategoryFolderGrid(
     val isDark = LocalIsDarkTheme.current
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1719,11 +1704,11 @@ private fun SettingsCategoryFolderGrid(
                     imageVector = Icons.Default.FolderOpen,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
                 Text(
                     text = "Settings Category Folders",
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -1735,140 +1720,118 @@ private fun SettingsCategoryFolderGrid(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close folder",
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
-                    Spacer(Modifier.width(4.dp))
-                    Text("Close Folder", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Close", fontWeight = FontWeight.Bold)
                 }
-            } else {
-                Text(
-                    text = "Tap a folder to open",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
-        SettingsFolderSection.entries.chunked(2).forEach { rowFolders ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                rowFolders.forEach { folder ->
-                    val isSelected = selectedFolder == folder
-                    val bgColor = when {
-                        isSelected -> folder.primaryColor
-                        isDark -> folder.darkContainer
-                        else -> folder.lightContainer
-                    }
-                    val textColor = when {
-                        isSelected -> Color.White
-                        isDark -> folder.darkOnContainer
-                        else -> folder.lightOnContainer
-                    }
-                    val badgeText = when (folder) {
-                        SettingsFolderSection.SECURITY_PINS -> "$staffCount Staff"
-                        SettingsFolderSection.PRODUCT_MASTER -> "$productCount Items"
-                        else -> folder.subtitle
-                    }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            SettingsFolderSection.entries.forEach { folder ->
+                val isSelected = selectedFolder == folder
+                val bgColor = when {
+                    isSelected -> folder.primaryColor
+                    isDark -> folder.darkContainer.copy(alpha = 0.72f)
+                    else -> folder.lightContainer.copy(alpha = 0.72f)
+                }
+                val textColor = when {
+                    isSelected -> Color.White
+                    isDark -> folder.darkOnContainer
+                    else -> folder.lightOnContainer
+                }
+                val badgeText = when (folder) {
+                    SettingsFolderSection.SECURITY_PINS -> "$staffCount Staff"
+                    SettingsFolderSection.PRODUCT_MASTER -> "$productCount Items"
+                    else -> folder.shortCode
+                }
 
-                    Column(
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .clickable {
+                            if (folder == SettingsFolderSection.PRODUCT_MASTER) {
+                                onSelectFolder(folder)
+                            } else {
+                                onSelectFolder(if (isSelected) null else folder)
+                            }
+                        }
+                        .testTag("settings_folder_${folder.name.lowercase()}"),
+                    shape = RoundedCornerShape(11.dp),
+                    color = bgColor,
+                    border = BorderStroke(
+                        width = if (isSelected) 1.6.dp else 1.dp,
+                        color = if (isSelected) folder.primaryColor else folder.primaryColor.copy(alpha = 0.42f)
+                    ),
+                    tonalElevation = if (isSelected) 3.dp else 0.dp
+                ) {
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable {
-                                if (folder == SettingsFolderSection.PRODUCT_MASTER) {
-                                    onSelectFolder(folder)
-                                } else {
-                                    onSelectFolder(if (isSelected) null else folder)
-                                }
-                            }
-                            .testTag("settings_folder_${folder.name.lowercase()}")
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Box(
-                                modifier = Modifier
-                                    .width(68.dp)
-                                    .height(14.dp)
-                                    .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
-                                    .background(folder.primaryColor),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                Text(
-                                    text = folder.shortCode,
-                                    color = Color.White,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                )
-                            }
-                        }
-
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(
-                                topStart = 0.dp,
-                                topEnd = 14.dp,
-                                bottomStart = 14.dp,
-                                bottomEnd = 14.dp
-                            ),
-                            color = bgColor,
-                            border = BorderStroke(
-                                width = if (isSelected) 2.dp else 1.2.dp,
-                                color = if (isSelected) folder.primaryColor else folder.primaryColor.copy(alpha = 0.45f)
-                            ),
-                            tonalElevation = if (isSelected) 4.dp else 1.dp
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isSelected) Color.White.copy(alpha = 0.22f)
+                                    else folder.primaryColor.copy(alpha = 0.16f)
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (isSelected) Color.White.copy(alpha = 0.22f)
-                                                else folder.primaryColor.copy(alpha = 0.16f)
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = folder.icon,
-                                            contentDescription = folder.title,
-                                            tint = if (isSelected) Color.White else folder.primaryColor,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.Folder,
-                                        contentDescription = null,
-                                        tint = if (isSelected) Color.White else folder.primaryColor.copy(alpha = 0.72f),
-                                        modifier = Modifier.size(17.dp)
-                                    )
-                                }
-                                Text(
-                                    text = folder.title,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = textColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = badgeText,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = textColor.copy(alpha = 0.85f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                            Icon(
+                                imageVector = folder.icon,
+                                contentDescription = folder.title,
+                                tint = if (isSelected) Color.White else folder.primaryColor,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = folder.title,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = folder.subtitle,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                color = textColor.copy(alpha = 0.78f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) Color.White.copy(alpha = 0.22f)
+                            else folder.primaryColor.copy(alpha = 0.14f)
+                        ) {
+                            Text(
+                                text = badgeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else folder.primaryColor,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            )
+                        }
+                        Icon(
+                            imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isSelected) "Collapse folder" else "Open folder",
+                            tint = if (isSelected) Color.White else folder.primaryColor,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }

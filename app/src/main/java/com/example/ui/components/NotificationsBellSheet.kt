@@ -396,11 +396,10 @@ fun PendingStoreTransferCard(
     onApprove: () -> Unit,
     onReject: () -> Unit
 ) {
-    val isFullReceive = request.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name
-    val dirLabel = if (isFullReceive) {
-        "Full Received from Store → ${request.vehicleName}"
-    } else {
-        "Empty Returned to Store ← ${request.vehicleName}"
+    val dirLabel = when (request.direction) {
+        StoreTransferDirection.STORE_TO_VEHICLE_FULL.name -> "Full Received from Store → ${request.vehicleName}"
+        StoreTransferDirection.VEHICLE_TO_STORE_FULL.name -> "Full Returned to Store ← ${request.vehicleName}"
+        else -> "Empty Returned to Store ← ${request.vehicleName}"
     }
     val timeLabel = SimpleDateFormat("hh:mm a", Locale.US).format(Date(request.requestedAtMs))
 

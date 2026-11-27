@@ -29,8 +29,11 @@ import com.example.data.local.VehicleEntity
 import com.example.data.model.ApprovalStatus
 import com.example.data.model.AuthSession
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.BatchProductEntry
 import com.example.data.model.ChatChannel
 import com.example.data.model.CompanyStockRow
+import com.example.data.model.CustomerChangeMode
+import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.DashboardSummary
 import com.example.data.model.LowStockAlertState
@@ -2187,11 +2190,16 @@ class AppViewModel(
         if (session.user.role == UserRole.STAFF) {
             val allowedStaffTypes = setOf(
                 TransactionType.VEHICLE_FULL_RECEIVED,
+                TransactionType.VEHICLE_FULL_RETURN_TO_STORE,
                 TransactionType.VEHICLE_CUSTOMER_SALE,
                 TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
                 TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
                 TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
                 TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_IN,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_IN,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT,
                 TransactionType.VEHICLE_TRANSFER_FULL_OUT,
                 TransactionType.VEHICLE_TRANSFER_FULL_IN,
                 TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
@@ -2232,6 +2240,148 @@ class AppViewModel(
                     customerName = customerName
                 )
             }
+            handleOperationResult(result)
+        }
+    }
+
+    fun recordBatchTransactions(
+        type: TransactionType,
+        items: List<BatchProductEntry>,
+        vehicleId: Long?,
+        notes: String = "",
+        purchaseCompanyName: String = "",
+        customerName: String = ""
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert(
+                title = "Owner View (Read-Only)",
+                message = "Owner View is view-only. Entries and modifications are disabled."
+            )
+            return
+        }
+        if (session.user.role == UserRole.STAFF) {
+            val allowedStaffTypes = setOf(
+                TransactionType.VEHICLE_FULL_RECEIVED,
+                TransactionType.VEHICLE_FULL_RETURN_TO_STORE,
+                TransactionType.VEHICLE_CUSTOMER_SALE,
+                TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
+                TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE,
+                TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER,
+                TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_IN,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_IN,
+                TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT,
+                TransactionType.VEHICLE_TRANSFER_FULL_OUT,
+                TransactionType.VEHICLE_TRANSFER_FULL_IN,
+                TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
+                TransactionType.VEHICLE_TRANSFER_EMPTY_IN,
+                TransactionType.CUSTOMER_EMPTY_PENDING_ADD
+            )
+            if (type !in allowedStaffTypes || vehicleId != session.assignedVehicle?.id) {
+                _warningAlert.value = WarningAlert(
+                    title = "Permission Denied",
+                    message = "Staff accounts can only record transactions for their own assigned vehicle."
+                )
+                return
+            }
+        }
+        viewModelScope.launch {
+            val result = repository.recordBatchTransactions(
+                businessDate = _selectedDate.value,
+                type = type,
+                vehicleId = vehicleId,
+                actor = session.user,
+                items = items,
+                notes = notes,
+                purchaseCompanyName = purchaseCompanyName,
+                customerName = customerName
+            )
+            handleOperationResult(result)
+        }
+    }
+
+    fun recordCustomerProductChange(
+        mode: CustomerChangeMode,
+        returnedProductId: Long,
+        givenProductId: Long?,
+        vehicleId: Long?,
+        quantity: Int,
+        customerName: String = "",
+        notes: String = ""
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert(
+                title = "Owner View (Read-Only)",
+                message = "Owner View is view-only. Entries and modifications are disabled."
+            )
+            return
+        }
+        if (session.user.role == UserRole.STAFF) {
+            val assignedId = session.assignedVehicle?.id
+            if (assignedId == null || vehicleId != assignedId) {
+                _warningAlert.value = WarningAlert(
+                    title = "Permission Denied",
+                    message = "Staff accounts can only record customer product changes on their assigned vehicle."
+                )
+                return
+            }
+        }
+        viewModelScope.launch {
+            val result = repository.recordCustomerProductChange(
+                businessDate = _selectedDate.value,
+                mode = mode,
+                returnedProductId = returnedProductId,
+                givenProductId = givenProductId,
+                vehicleId = vehicleId,
+                actor = session.user,
+                quantity = quantity,
+                customerName = customerName,
+                notes = notes
+            )
+            handleOperationResult(result)
+        }
+    }
+
+    fun recordMultiCustomerProductChange(
+        mode: CustomerChangeMode,
+        returnedItems: List<CustomerExchangeItem>,
+        givenItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        customerName: String = "",
+        notes: String = ""
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert(
+                title = "Owner View (Read-Only)",
+                message = "Owner View is view-only. Entries and modifications are disabled."
+            )
+            return
+        }
+        if (session.user.role == UserRole.STAFF) {
+            val assignedId = session.assignedVehicle?.id
+            if (assignedId == null || vehicleId != assignedId) {
+                _warningAlert.value = WarningAlert(
+                    title = "Permission Denied",
+                    message = "Staff accounts can only record customer product changes on their assigned vehicle."
+                )
+                return
+            }
+        }
+        viewModelScope.launch {
+            val result = repository.recordMultiCustomerProductChange(
+                businessDate = _selectedDate.value,
+                mode = mode,
+                returnedItems = returnedItems,
+                givenItems = givenItems,
+                vehicleId = vehicleId,
+                actor = session.user,
+                customerName = customerName,
+                notes = notes
+            )
             handleOperationResult(result)
         }
     }
@@ -2487,10 +2637,10 @@ class AppViewModel(
             )
             repository.createPendingStoreTransfer(req)
 
-            val actionText = if (direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL) {
-                "Full Received from Store → ${vehicle.name}"
-            } else {
-                "Empty Returned to Store ← ${vehicle.name}"
+            val actionText = when (direction) {
+                StoreTransferDirection.STORE_TO_VEHICLE_FULL -> "Full Received from Store → ${vehicle.name}"
+                StoreTransferDirection.VEHICLE_TO_STORE_FULL -> "Full Returned to Store ← ${vehicle.name}"
+                StoreTransferDirection.VEHICLE_TO_STORE_EMPTY -> "Empty Returned to Store ← ${vehicle.name}"
             }
             repository.createAppNotification(
                 AppNotificationEntity(
@@ -2509,12 +2659,101 @@ class AppViewModel(
         }
     }
 
+    fun submitStaffStoreTransferRequests(
+        direction: StoreTransferDirection,
+        items: List<BatchProductEntry>,
+        notes: String = ""
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.STAFF) {
+            _warningAlert.value = WarningAlert("Staff Request Only", "Only Staff submits Store transfer verification requests.")
+            return
+        }
+        val vehicle = session.assignedVehicle
+        if (vehicle == null) {
+            _warningAlert.value = WarningAlert("No Vehicle Assigned", "Your staff account is not linked to a vehicle.")
+            return
+        }
+        val validItems = items
+            .filter { it.quantity > 0 }
+            .groupBy { it.productId }
+            .map { (pId, list) -> BatchProductEntry(pId, list.sumOf { it.quantity }) }
+        if (validItems.isEmpty() || validItems.any { it.quantity !in 1..100000 }) {
+            _warningAlert.value = WarningAlert("Invalid Quantity", "Select at least one product with quantity between 1 and 100,000.")
+            return
+        }
+        if (validItems.size == 1) {
+            submitStaffStoreTransferRequest(
+                direction = direction,
+                productId = validItems.first().productId,
+                quantity = validItems.first().quantity,
+                notes = notes
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            val nowMs = System.currentTimeMillis()
+            val summaryParts = mutableListOf<String>()
+            var totalQty = 0
+            val cleanNote = notes.trim().take(300)
+
+            validItems.forEachIndexed { idx, entry ->
+                val product = repository.getProductById(entry.productId) ?: return@forEachIndexed
+                val req = PendingStoreTransferEntity(
+                    remoteId = CloudSyncRepository.generateRemoteId("req"),
+                    businessDate = _selectedDate.value,
+                    direction = direction.name,
+                    vehicleId = vehicle.id,
+                    vehicleName = vehicle.name,
+                    productId = product.id,
+                    productName = product.name,
+                    productCategory = product.category.displayName,
+                    quantity = entry.quantity,
+                    staffId = session.user.id,
+                    staffName = session.user.displayName,
+                    notes = cleanNote,
+                    status = ApprovalStatus.PENDING.name,
+                    requestedAtMs = nowMs + idx
+                )
+                repository.createPendingStoreTransfer(req)
+                totalQty += entry.quantity
+                summaryParts.add("${entry.quantity}×${product.name}")
+            }
+
+            if (summaryParts.isEmpty()) {
+                _warningAlert.value = WarningAlert("Product Not Found", "Please select valid gas cylinders.")
+                return@launch
+            }
+
+            val actionText = when (direction) {
+                StoreTransferDirection.STORE_TO_VEHICLE_FULL -> "Full Received from Store → ${vehicle.name}"
+                StoreTransferDirection.VEHICLE_TO_STORE_FULL -> "Full Returned to Store ← ${vehicle.name}"
+                StoreTransferDirection.VEHICLE_TO_STORE_EMPTY -> "Empty Returned to Store ← ${vehicle.name}"
+            }
+            repository.createAppNotification(
+                AppNotificationEntity(
+                    remoteId = CloudSyncRepository.generateRemoteId("notif"),
+                    targetScope = NotificationTargetScope.ADMIN_OWNER.name,
+                    targetStaffId = 0L,
+                    category = NotificationCategory.STORE_APPROVAL.name,
+                    title = "Admin Approval Needed: ${summaryParts.size} items ($totalQty cyl)",
+                    message = "${session.user.displayName} submitted $actionText (${summaryParts.joinToString(", ")}). Tap Bell to check & accept.",
+                    isUrgent = true,
+                    isRead = false,
+                    createdAtMs = nowMs
+                )
+            )
+            _snackbarMessage.value = "Sent ${summaryParts.size} products ($totalQty cyl, $actionText) to Admin for approval."
+        }
+    }
+
     fun approvePendingStoreTransfer(requestId: Long, reviewNotes: String = "") {
         val session = _authSession.value ?: return
         if (session.user.role != UserRole.ADMIN) {
             _warningAlert.value = WarningAlert(
                 title = "Admin Approval Required",
-                message = "Only Admin can accept or reject staff Store-to-Vehicle and Empty Return entries."
+                message = "Only Admin can accept or reject staff Store-to-Vehicle and Store Return entries."
             )
             return
         }
@@ -2529,10 +2768,10 @@ class AppViewModel(
                 return@launch
             }
 
-            val txType = if (req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name) {
-                TransactionType.VEHICLE_FULL_RECEIVED
-            } else {
-                TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
+            val txType = when (req.direction) {
+                StoreTransferDirection.STORE_TO_VEHICLE_FULL.name -> TransactionType.VEHICLE_FULL_RECEIVED
+                StoreTransferDirection.VEHICLE_TO_STORE_FULL.name -> TransactionType.VEHICLE_FULL_RETURN_TO_STORE
+                else -> TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
             }
             val cleanReview = reviewNotes.trim()
             val combinedNotes = buildString {
@@ -2560,10 +2799,10 @@ class AppViewModel(
                     reviewedBy = session.user.displayName,
                     reviewNotes = cleanReview.ifBlank { "Verified & accepted by Admin" }
                 )
-                val dirLabel = if (req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name) {
-                    "Full Received from Store"
-                } else {
-                    "Empty Returned to Store"
+                val dirLabel = when (req.direction) {
+                    StoreTransferDirection.STORE_TO_VEHICLE_FULL.name -> "Full Received from Store"
+                    StoreTransferDirection.VEHICLE_TO_STORE_FULL.name -> "Full Returned to Store"
+                    else -> "Empty Returned to Store"
                 }
                 repository.createAppNotification(
                     AppNotificationEntity(

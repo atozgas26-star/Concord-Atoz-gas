@@ -59,6 +59,9 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.BatchProductEntry
+import com.example.data.model.CustomerChangeMode
+import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.ProductCategory
 import com.example.data.model.StockCalculator
 import com.example.data.model.StoreStockRow
@@ -67,7 +70,7 @@ import com.example.data.model.TransactionType
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
-import com.example.ui.components.ClosedFolderPromptCard
+import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.OpenedCategoryFolderHeader
@@ -95,7 +98,7 @@ private enum class StoreModalAction {
     FULL_INWARD,
     EMPTY_INWARD,
     FULL_DISPATCH_VEHICLE,
-    FULL_DISPATCH_DIRECT,
+    FULL_RETURN_VEHICLE,
     EMPTY_RECEIVED_VEHICLE,
     EMPTY_DISPATCH_PLANT,
     ADJUST_FULL_IN,
@@ -117,6 +120,31 @@ fun StoreManagementScreen(
     isReadOnly: Boolean = false,
     onDateSelected: (String) -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, String) -> Unit,
+    onRecordBatchTransactions: (
+        type: TransactionType,
+        items: List<BatchProductEntry>,
+        vehicleId: Long?,
+        notes: String,
+        purchaseCompanyName: String,
+        customerName: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
+    onRecordCustomerProductChange: (
+        mode: CustomerChangeMode,
+        returnedProductId: Long,
+        givenProductId: Long?,
+        vehicleId: Long?,
+        quantity: Int,
+        customerName: String,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _, _ -> },
+    onRecordMultiCustomerProductChange: (
+        mode: CustomerChangeMode,
+        returnedItems: List<CustomerExchangeItem>,
+        givenItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        customerName: String,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
     onUpdateOpeningStock: (productId: Long, full: Int, empty: Int) -> Unit,
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onDeleteTransaction: (Long) -> Unit
@@ -125,6 +153,7 @@ fun StoreManagementScreen(
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var activeModal by remember { mutableStateOf<StoreModalAction?>(null) }
+    var showCustomerChangeDialog by remember { mutableStateOf(false) }
     var showAdjustmentPicker by remember { mutableStateOf(false) }
     var editingOpeningRow by remember { mutableStateOf<StoreStockRow?>(null) }
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
@@ -194,17 +223,20 @@ fun StoreManagementScreen(
                     StoreActionChip("Dispatch to Vehicle", Icons.Default.LocalShipping, BrandRedSecondary) {
                         activeModal = StoreModalAction.FULL_DISPATCH_VEHICLE
                     }
+                    StoreActionChip("Full Return (Veh)", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
+                        activeModal = StoreModalAction.FULL_RETURN_VEHICLE
+                    }
                     StoreActionChip("Empty Recd (Veh)", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
                         activeModal = StoreModalAction.EMPTY_RECEIVED_VEHICLE
+                    }
+                    StoreActionChip("Customer Change", Icons.Default.SwapHoriz, Color(0xFF7E22CE)) {
+                        showCustomerChangeDialog = true
                     }
                     StoreActionChip("Full Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
                         activeModal = StoreModalAction.FULL_INWARD
                     }
                     StoreActionChip("Empty Inward", Icons.AutoMirrored.Filled.Input, BrandGreenPrimary) {
                         activeModal = StoreModalAction.EMPTY_INWARD
-                    }
-                    StoreActionChip("Direct Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
-                        activeModal = StoreModalAction.FULL_DISPATCH_DIRECT
                     }
                     StoreActionChip("Empty Dispatch", Icons.Default.Outbox, BrandRedSecondary) {
                         activeModal = StoreModalAction.EMPTY_DISPATCH_PLANT
@@ -254,15 +286,7 @@ fun StoreManagementScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                if (!showProducts) {
-                    item(key = "store_closed_folder_prompt") {
-                        ClosedFolderPromptCard(
-                            title = "Products Inside Category Folders",
-                            subtitle = "Tap any category folder above to open Inside Store products, or search by cylinder name.",
-                            accentColor = BrandGreenPrimary
-                        )
-                    }
-                } else {
+                if (showProducts) {
                     selectedCategory?.let { openCat ->
                         item(key = "store_opened_folder_header_${openCat.name}") {
                             OpenedCategoryFolderHeader(
@@ -440,7 +464,7 @@ fun StoreManagementScreen(
             StoreModalAction.FULL_INWARD -> Triple("Full Cylinder Inward", TransactionType.STORE_FULL_INWARD, false)
             StoreModalAction.EMPTY_INWARD -> Triple("Empty Cylinder Inward", TransactionType.STORE_EMPTY_INWARD, false)
             StoreModalAction.FULL_DISPATCH_VEHICLE -> Triple("Dispatch Full to Vehicle", TransactionType.VEHICLE_FULL_RECEIVED, true)
-            StoreModalAction.FULL_DISPATCH_DIRECT -> Triple("Direct Store Full Dispatch", TransactionType.STORE_FULL_DISPATCH_DIRECT, false)
+            StoreModalAction.FULL_RETURN_VEHICLE -> Triple("Full Return from Vehicle to Store", TransactionType.VEHICLE_FULL_RETURN_TO_STORE, true)
             StoreModalAction.EMPTY_RECEIVED_VEHICLE -> Triple("Receive Empty from Vehicle", TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE, true)
             StoreModalAction.EMPTY_DISPATCH_PLANT -> Triple("Empty Dispatch (Refill/Plant)", TransactionType.STORE_EMPTY_DISPATCH, false)
             StoreModalAction.ADJUST_FULL_IN -> Triple("Store Full Adjustment (+)", TransactionType.STORE_ADJUST_FULL_IN, false)
@@ -452,7 +476,7 @@ fun StoreManagementScreen(
         val isPurchaseAction = txType == TransactionType.STORE_PURCHASE_FULL ||
             txType == TransactionType.STORE_PURCHASE_EMPTY ||
             txType == TransactionType.STORE_PURCHASE_COMPLAINT_REPLACE
-        val showCustField = txType == TransactionType.STORE_FULL_DISPATCH_DIRECT
+        val showCustField = false
 
         TransactionEntryDialog(
             title = title,
@@ -504,8 +528,27 @@ fun StoreManagementScreen(
                 }
             },
             onDismiss = { activeModal = null },
+            onConfirmBatch = { vehicleId, items, notes, purchaseCompany, custName ->
+                onRecordBatchTransactions(txType, items, vehicleId, notes, purchaseCompany, custName)
+            },
             onConfirm = { productId, vehicleId, qty, notes, purchaseCompany, custName, _ ->
                 onRecordTransaction(txType, productId, vehicleId, qty, notes, purchaseCompany, custName)
+            }
+        )
+    }
+
+    if (!isReadOnly && showCustomerChangeDialog) {
+        CustomerProductChangeDialog(
+            vehicle = null,
+            products = products,
+            storeRows = storeRows,
+            recentCustomerNames = recentCustomerNames,
+            onDismiss = { showCustomerChangeDialog = false },
+            onConfirmMulti = { mode, retItems, givItems, custName, notes ->
+                onRecordMultiCustomerProductChange(mode, retItems, givItems, null, custName, notes)
+            },
+            onConfirm = { mode, retProdId, givProdId, qty, custName, notes ->
+                onRecordCustomerProductChange(mode, retProdId, givProdId, null, qty, custName, notes)
             }
         )
     }

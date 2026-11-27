@@ -63,6 +63,9 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.BatchProductEntry
+import com.example.data.model.CustomerChangeMode
+import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.ProductCategory
 import com.example.data.model.StockCalculator
@@ -75,7 +78,7 @@ import com.example.ui.components.AddStaffVehicleDialog
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
-import com.example.ui.components.ClosedFolderPromptCard
+import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.OpenedCategoryFolderHeader
@@ -235,6 +238,31 @@ fun VehicleDetailScreen(
     onDateSelected: (String) -> Unit,
     onBack: () -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
+    onRecordBatchTransactions: (
+        type: TransactionType,
+        items: List<BatchProductEntry>,
+        vehicleId: Long?,
+        notes: String,
+        purchaseCompanyName: String,
+        customerName: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
+    onRecordCustomerProductChange: (
+        mode: CustomerChangeMode,
+        returnedProductId: Long,
+        givenProductId: Long?,
+        vehicleId: Long?,
+        quantity: Int,
+        customerName: String,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _, _ -> },
+    onRecordMultiCustomerProductChange: (
+        mode: CustomerChangeMode,
+        returnedItems: List<CustomerExchangeItem>,
+        givenItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        customerName: String,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
     onTransferBetweenVehicles: (
         sourceVehicleId: Long,
         targetVehicleId: Long,
@@ -258,6 +286,7 @@ fun VehicleDetailScreen(
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
     var showVehicleTransferDialog by remember { mutableStateOf(false) }
+    var showCustomerChangeDialog by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<VehicleStockRow?>(null) }
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
@@ -382,10 +411,26 @@ fun VehicleDetailScreen(
                         onClick = {
                             prefillCustomerName = ""
                             prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_FULL_RETURN_TO_STORE
+                        },
+                        label = { Text("Return Full to Store") },
+                        leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = BrandGreenPrimary) },
+                        modifier = Modifier.testTag("vehicle_detail_return_full_chip")
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
                             activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
                         },
                         label = { Text("Return Empty to Store") },
                         leadingIcon = { Icon(Icons.Default.Output, contentDescription = null, tint = BrandRedSecondary) }
+                    )
+                    AssistChip(
+                        onClick = { showCustomerChangeDialog = true },
+                        label = { Text("Customer Change") },
+                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFF7E22CE)) },
+                        modifier = Modifier.testTag("vehicle_detail_customer_change_chip")
                     )
                     if (vehicle != null && allVehicles.any { it.id != vehicle.id }) {
                         AssistChip(
@@ -443,15 +488,7 @@ fun VehicleDetailScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    if (!showProducts) {
-                        item(key = "vehicle_closed_folder_prompt") {
-                            ClosedFolderPromptCard(
-                                title = "Vehicle Products Inside Folders",
-                                subtitle = "Tap any category folder above to open ${vehicle?.name ?: "vehicle"} cylinders, or search by name.",
-                                accentColor = RoleHeaderPalettes.OutsideFleetAccent
-                            )
-                        }
-                    } else {
+                    if (showProducts) {
                         selectedCategory?.let { openCat ->
                             item(key = "vehicle_opened_folder_header_${openCat.name}") {
                                 OpenedCategoryFolderHeader(
@@ -639,6 +676,8 @@ fun VehicleDetailScreen(
                 when (type) {
                     TransactionType.VEHICLE_FULL_RECEIVED ->
                         "Store Full Available: ${sRow?.storeFullBalance ?: 0}  |  Vehicle Full: ${vRow?.fullBalance ?: 0}"
+                    TransactionType.VEHICLE_FULL_RETURN_TO_STORE ->
+                        "Vehicle Full Available: ${vRow?.fullBalance ?: 0}  |  Store Full: ${sRow?.storeFullBalance ?: 0}"
                     TransactionType.VEHICLE_CUSTOMER_SALE,
                     TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
                     TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ->
@@ -659,6 +698,11 @@ fun VehicleDetailScreen(
                         val sBal = (sRow?.storeFullBalance ?: 0) - qty
                         val vBal = vRow.fullBalance + qty
                         "Store Full: ${sRow?.storeFullBalance ?: 0} -> $sBal  |  Veh Full: ${vRow.fullBalance} -> $vBal"
+                    }
+                    TransactionType.VEHICLE_FULL_RETURN_TO_STORE -> {
+                        val vBal = vRow.fullBalance - qty
+                        val sBal = (sRow?.storeFullBalance ?: 0) + qty
+                        "Veh Full: ${vRow.fullBalance} -> $vBal  |  Store Full: ${sRow?.storeFullBalance ?: 0} -> $sBal"
                     }
                     TransactionType.VEHICLE_CUSTOMER_SALE -> {
                         val vFull = vRow.fullBalance - qty
@@ -689,8 +733,27 @@ fun VehicleDetailScreen(
                 }
             },
             onDismiss = { activeTxType = null },
+            onConfirmBatch = { _, items, notes, purchaseCompany, custName ->
+                onRecordBatchTransactions(type, items, vehicle.id, notes, purchaseCompany, custName)
+            },
             onConfirm = { prodId, _, qty, notes, _, custName, empNow ->
                 onRecordTransaction(type, prodId, vehicle.id, qty, notes, custName, empNow)
+            }
+        )
+    }
+
+    if (!isReadOnly && showCustomerChangeDialog && vehicle != null) {
+        CustomerProductChangeDialog(
+            vehicle = vehicle,
+            products = products,
+            vehicleRows = rows,
+            recentCustomerNames = recentCustomerNames,
+            onDismiss = { showCustomerChangeDialog = false },
+            onConfirmMulti = { mode, retItems, givItems, custName, notes ->
+                onRecordMultiCustomerProductChange(mode, retItems, givItems, vehicle.id, custName, notes)
+            },
+            onConfirm = { mode, retProdId, givProdId, qty, custName, notes ->
+                onRecordCustomerProductChange(mode, retProdId, givProdId, vehicle.id, qty, custName, notes)
             }
         )
     }
@@ -821,9 +884,11 @@ fun VehicleProductRowCard(
                             color = BrandGreenOnContainer
                         )
                         val replFull = if (row.complaintReplaced > 0) " • Repl: -${row.complaintReplaced}" else ""
+                        val retStoreFull = if (row.fullReturnedToStore > 0) " • Ret: -${row.fullReturnedToStore}" else ""
+                        val chgFull = if (row.fullChangedOut > 0) " • Chg: -${row.fullChangedOut}" else ""
                         val xferFull = if (row.fullTransferredOut > 0) " • Xfer: -${row.fullTransferredOut}" else ""
                         Text(
-                            text = "Old: ${row.oldFull}  •  Recd: ${row.fullReceived}\nTot: ${row.totalFull}  •  Sale: ${row.customerSales}$replFull$xferFull\nBal: ${row.fullBalance}",
+                            text = "Old: ${row.oldFull}  •  Recd: ${row.fullReceived}\nTot: ${row.totalFull}  •  Sale: ${row.customerSales}$replFull$retStoreFull$chgFull$xferFull\nBal: ${row.fullBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
                             color = BrandGreenOnContainer
@@ -843,9 +908,10 @@ fun VehicleProductRowCard(
                             color = BrandRedOnContainer
                         )
                         val replEmp = if (row.complaintReplaced > 0) " • Repl: +${row.complaintReplaced}" else ""
+                        val chgEmp = if (row.emptyChangedOut > 0) " • Chg: -${row.emptyChangedOut}" else ""
                         val xferEmp = if (row.emptyTransferredOut > 0) " • Xfer: -${row.emptyTransferredOut}" else ""
                         Text(
-                            text = "Old: ${row.oldEmpty}  •  Cust: ${row.customerEmptyReceived}$replEmp\nRet Store: ${row.emptyReturnedToStore}$xferEmp\nBal: ${row.emptyBalance}",
+                            text = "Old: ${row.oldEmpty}  •  Cust: ${row.customerEmptyReceived}$replEmp\nRet Store: ${row.emptyReturnedToStore}$chgEmp$xferEmp\nBal: ${row.emptyBalance}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = JetBrainsMono,
                             color = BrandRedOnContainer

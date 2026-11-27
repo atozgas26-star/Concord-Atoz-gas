@@ -163,11 +163,16 @@ service cloud.firestore {
     function isStaffAllowedTransactionType(txType) {
       return txType in [
         'VEHICLE_FULL_RECEIVED',
+        'VEHICLE_FULL_RETURN_TO_STORE',
         'VEHICLE_CUSTOMER_SALE',
         'VEHICLE_NEW_CUSTOMER_SALE',
         'VEHICLE_CUSTOMER_COMPLAINT_REPLACE',
         'VEHICLE_EMPTY_FROM_CUSTOMER',
         'VEHICLE_EMPTY_RETURN_TO_STORE',
+        'VEHICLE_CUSTOMER_CHANGE_FULL_IN',
+        'VEHICLE_CUSTOMER_CHANGE_FULL_OUT',
+        'VEHICLE_CUSTOMER_CHANGE_EMPTY_IN',
+        'VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT',
         'VEHICLE_TRANSFER_FULL_OUT',
         'VEHICLE_TRANSFER_FULL_IN',
         'VEHICLE_TRANSFER_EMPTY_OUT',
@@ -188,16 +193,26 @@ service cloud.firestore {
                'STORE_EMPTY_INWARD',
                'STORE_FULL_DISPATCH_DIRECT',
                'STORE_EMPTY_DISPATCH',
+               'STORE_EMPTY_FROM_CUSTOMER',
+               'STORE_CUSTOMER_CHANGE_FULL_IN',
+               'STORE_CUSTOMER_CHANGE_FULL_OUT',
+               'STORE_CUSTOMER_CHANGE_EMPTY_IN',
+               'STORE_CUSTOMER_CHANGE_EMPTY_OUT',
                'STORE_ADJUST_FULL_IN',
                'STORE_ADJUST_FULL_OUT',
                'STORE_ADJUST_EMPTY_IN',
                'STORE_ADJUST_EMPTY_OUT',
                'VEHICLE_FULL_RECEIVED',
+               'VEHICLE_FULL_RETURN_TO_STORE',
                'VEHICLE_CUSTOMER_SALE',
                'VEHICLE_NEW_CUSTOMER_SALE',
                'VEHICLE_CUSTOMER_COMPLAINT_REPLACE',
                'VEHICLE_EMPTY_FROM_CUSTOMER',
                'VEHICLE_EMPTY_RETURN_TO_STORE',
+               'VEHICLE_CUSTOMER_CHANGE_FULL_IN',
+               'VEHICLE_CUSTOMER_CHANGE_FULL_OUT',
+               'VEHICLE_CUSTOMER_CHANGE_EMPTY_IN',
+               'VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT',
                'VEHICLE_TRANSFER_FULL_OUT',
                'VEHICLE_TRANSFER_FULL_IN',
                'VEHICLE_TRANSFER_EMPTY_OUT',
@@ -304,7 +319,7 @@ service cloud.firestore {
       return data.requestId == requestId &&
              data.requestId is string && isValidId(data.requestId) &&
              data.businessDate is string && data.businessDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
-             data.direction in ['STORE_TO_VEHICLE_FULL', 'VEHICLE_TO_STORE_EMPTY'] &&
+             data.direction in ['STORE_TO_VEHICLE_FULL', 'VEHICLE_TO_STORE_FULL', 'VEHICLE_TO_STORE_EMPTY'] &&
              data.vehicleId is int && data.vehicleId >= 1 &&
              data.vehicleName is string && data.vehicleName.size() >= 1 && data.vehicleName.size() <= 64 &&
              data.productId is int && data.productId >= 1 &&

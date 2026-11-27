@@ -33,7 +33,10 @@ data class VehicleStockRow(
     val emptyBalance: Int,
     val complaintReplaced: Int = 0,
     val fullTransferredOut: Int = 0,
-    val emptyTransferredOut: Int = 0
+    val emptyTransferredOut: Int = 0,
+    val fullReturnedToStore: Int = 0,
+    val fullChangedOut: Int = 0,
+    val emptyChangedOut: Int = 0
 )
 
 data class VehicleOverview(
@@ -49,7 +52,8 @@ data class VehicleOverview(
     val totalEmptyBalance: Int,
     val totalComplaintReplaced: Int = 0,
     val totalFullTransferredOut: Int = 0,
-    val totalEmptyTransferredOut: Int = 0
+    val totalEmptyTransferredOut: Int = 0,
+    val totalFullReturnedToStore: Int = 0
 )
 
 data class DashboardSummary(
@@ -172,3 +176,14 @@ sealed class OperationResult {
     ) : OperationResult()
     data class ValidationError(val message: String) : OperationResult()
 }
+
+data class BatchProductEntry(
+    val productId: Long,
+    val quantity: Int,
+    val emptyCollectedNow: Int = 0
+)
+
+data class CustomerExchangeItem(
+    val productId: Long,
+    val quantity: Int
+)

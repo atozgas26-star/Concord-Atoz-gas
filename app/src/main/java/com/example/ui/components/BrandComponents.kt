@@ -98,6 +98,22 @@ import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Recycling
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.DialogProperties
+import com.example.data.model.BatchProductEntry
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -423,6 +439,13 @@ fun TransactionEntryDialog(
     availableStockHint: ((productId: Long, vehicleId: Long?) -> String?)? = null,
     liveCalculationPreview: ((productId: Long, vehicleId: Long?, qty: Int, emptyCollectedNow: Int) -> String?)? = null,
     onDismiss: () -> Unit,
+    onConfirmBatch: ((
+        vehicleId: Long?,
+        items: List<BatchProductEntry>,
+        notes: String,
+        purchaseCompanyName: String,
+        customerName: String
+    ) -> Unit)? = null,
     onConfirm: (
         productId: Long,
         vehicleId: Long?,
@@ -431,124 +454,106 @@ fun TransactionEntryDialog(
         purchaseCompanyName: String,
         customerName: String,
         emptyCollectedNow: Int
-    ) -> Unit
+    ) -> Unit = { _, _, _, _, _, _, _ -> }
 ) {
-    var selectedCategory by remember { mutableStateOf(ProductCategory.INDUSTRIAL_GAS) }
-    val filteredProducts = remember(products, selectedCategory) {
-        products.filter { it.category == selectedCategory }
+    // Multi-product quantities persisted across ALL 4 categories
+    val qtyByProductId = remember {
+        mutableStateMapOf<Long, String>().apply {
+            if (initialQuantity > 1 && products.isNotEmpty()) {
+                put(products.first().id, initialQuantity.toString())
+            }
+        }
     }
-    var selectedProduct by remember(filteredProducts) {
-        mutableStateOf(filteredProducts.firstOrNull())
-    }
-    var productMenuExpanded by remember { mutableStateOf(false) }
+    val emptyNowByProductId = remember { mutableStateMapOf<Long, String>() }
+
+    var selectedCategoryFilter by remember { mutableStateOf<ProductCategory?>(null) }
+    var productSearchQuery by remember { mutableStateOf("") }
 
     var selectedVehicle by remember(fixedVehicle, vehicles) {
         mutableStateOf(fixedVehicle ?: vehicles.firstOrNull())
     }
     var vehicleMenuExpanded by remember { mutableStateOf(false) }
 
-    var quantityText by remember(initialQuantity) { mutableStateOf(initialQuantity.coerceAtLeast(1).toString()) }
-    var emptyCollectedText by remember { mutableStateOf("0") }
     var purchaseCompanyName by remember { mutableStateOf("") }
     var customerName by remember(initialCustomerName) { mutableStateOf(initialCustomerName) }
     var notes by remember { mutableStateOf("") }
     var localError by remember { mutableStateOf<String?>(null) }
 
-    val parsedQty = quantityText.toIntOrNull() ?: 0
-    val parsedEmptyNow = if (showEmptyCollectedNowField) (emptyCollectedText.toIntOrNull() ?: 0) else 0
+    val sortedProducts = remember(products) {
+        products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.name }))
+    }
 
-    Dialog(onDismissRequest = onDismiss) {
+    val visibleProducts = remember(sortedProducts, selectedCategoryFilter, productSearchQuery) {
+        sortedProducts.filter { p ->
+            (selectedCategoryFilter == null || p.category == selectedCategoryFilter) &&
+                (productSearchQuery.isBlank() ||
+                    p.name.contains(productSearchQuery, ignoreCase = true) ||
+                    p.category.displayName.contains(productSearchQuery, ignoreCase = true) ||
+                    p.category.shortCode.contains(productSearchQuery, ignoreCase = true))
+        }
+    }
+
+    val selectedEntries = sortedProducts.mapNotNull { prod ->
+        val q = qtyByProductId[prod.id]?.toIntOrNull() ?: 0
+        if (q > 0) {
+            val empNow = if (showEmptyCollectedNowField) (emptyNowByProductId[prod.id]?.toIntOrNull() ?: 0) else 0
+            BatchProductEntry(
+                productId = prod.id,
+                quantity = q,
+                emptyCollectedNow = empNow
+            )
+        } else null
+    }
+    val totalSelectedQty = selectedEntries.sumOf { it.quantity }
+    val activeVehicleId = (fixedVehicle ?: selectedVehicle)?.id
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .widthIn(max = 580.dp)
+                .heightIn(max = 720.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp)
+                    .padding(16.dp)
             ) {
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${transactionType.label} • Multi-Category Entry",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close dialog")
                     }
                 }
 
-                Text(
-                    text = transactionType.label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                // Category chips
-                Text("Category", style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    ProductCategory.entries.forEach { cat ->
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = {
-                                selectedCategory = cat
-                                selectedProduct = products.firstOrNull { it.category == cat }
-                            },
-                            label = { Text(cat.displayName, fontSize = 11.sp) }
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                // Product dropdown
-                ExposedDropdownMenuBox(
-                    expanded = productMenuExpanded,
-                    onExpandedChange = { productMenuExpanded = it }
-                ) {
-                    OutlinedTextField(
-                        value = selectedProduct?.name ?: "Select Cylinder",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Product / Cylinder Size") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = productMenuExpanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .testTag("tx_product_dropdown")
-                    )
-                    ExposedDropdownMenu(
-                        expanded = productMenuExpanded,
-                        onDismissRequest = { productMenuExpanded = false }
-                    ) {
-                        filteredProducts.forEach { product ->
-                            DropdownMenuItem(
-                                text = { Text("${product.category.shortCode} • ${product.name}") },
-                                onClick = {
-                                    selectedProduct = product
-                                    productMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
                 // Vehicle selector if applicable
                 if (requireVehicleSelection && fixedVehicle == null && vehicles.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(6.dp))
                     ExposedDropdownMenuBox(
                         expanded = vehicleMenuExpanded,
                         onExpandedChange = { vehicleMenuExpanded = it }
@@ -580,284 +585,408 @@ fun TransactionEntryDialog(
                         }
                     }
                 } else if (fixedVehicle != null) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(4.dp))
                     Surface(
                         color = BrandGreenContainer,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Vehicle: ${fixedVehicle.name}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = BrandGreenOnContainer,
-                            modifier = Modifier.padding(10.dp)
-                        )
-                    }
-                }
-
-                // Live available stock hint
-                val hint = selectedProduct?.let { prod ->
-                    availableStockHint?.invoke(prod.id, (fixedVehicle ?: selectedVehicle)?.id)
-                }
-                if (!hint.isNullOrBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = hint,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = JetBrainsMono,
+                            text = "Vehicle: ${fixedVehicle.name}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandGreenOnContainer,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
 
-                // Quantity stepper + numeric field
-                Text("Quantity (Cylinders)", style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Selected summary bar across ALL 4 categories
+                Surface(
+                    color = if (selectedEntries.isNotEmpty()) BrandGreenContainer.copy(alpha = 0.72f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (selectedEntries.isNotEmpty()) BrandGreenPrimary.copy(alpha = 0.45f)
+                        else MaterialTheme.colorScheme.outlineVariant
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("tx_multi_summary_bar")
                 ) {
-                    OutlinedButton(
-                        onClick = {
-                            val current = quantityText.toIntOrNull() ?: 1
-                            if (current > 1) quantityText = (current - 1).toString()
-                        },
-                        modifier = Modifier.size(48.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-                    ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Decrease quantity")
-                    }
-
-                    OutlinedTextField(
-                        value = quantityText,
-                        onValueChange = { input ->
-                            if (input.all { it.isDigit() } && input.length <= 5) {
-                                quantityText = input
-                                localError = null
-                            }
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("tx_quantity_input")
-                    )
-
-                    OutlinedButton(
-                        onClick = {
-                            val current = quantityText.toIntOrNull() ?: 0
-                            quantityText = (current + 1).toString()
-                        },
-                        modifier = Modifier.size(48.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Increase quantity")
-                    }
-                }
-
-                if (showEmptyCollectedNowField) {
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = emptyCollectedText,
-                        onValueChange = { input ->
-                            if (input.all { it.isDigit() } && input.length <= 5) {
-                                emptyCollectedText = input
-                                localError = null
-                            }
-                        },
-                        label = { Text("Empty Cylinders Collected Now (Optional)") },
-                        placeholder = { Text("0 if pending all") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("tx_empty_collected_now_input")
-                    )
-                    if (parsedQty > 0) {
-                        val pendingDiff = parsedQty - parsedEmptyNow
-                        val badgeText = when {
-                            pendingDiff > 0 -> "Customer Pending Balance: +$pendingDiff Empty"
-                            pendingDiff == 0 -> "All $parsedQty Empty Returned (0 Pending)"
-                            else -> "Extra ${-pendingDiff} Previous Pending Empty Settled"
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Surface(
-                            color = if (pendingDiff > 0) BrandRedContainer else BrandGreenContainer,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = if (selectedEntries.isNotEmpty()) BrandGreenPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
                             Text(
-                                text = badgeText,
-                                style = MaterialTheme.typography.labelSmall,
+                                text = if (selectedEntries.isEmpty()) {
+                                    "Enter qty on any products across all 4 categories"
+                                } else {
+                                    "${selectedEntries.size} products selected • Total Qty: $totalSelectedQty"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = if (pendingDiff > 0) BrandRedOnContainer else BrandGreenOnContainer,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                color = if (selectedEntries.isNotEmpty()) BrandGreenOnContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
-                    }
-                }
-
-                // Live Calculation Preview (Full / Empty / Return / Dispatch Before -> After)
-                val calcText = selectedProduct?.let { prod ->
-                    liveCalculationPreview?.invoke(
-                        prod.id,
-                        (fixedVehicle ?: selectedVehicle)?.id,
-                        parsedQty,
-                        parsedEmptyNow
-                    )
-                }
-                if (!calcText.isNullOrBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Surface(
-                        color = BrandGreenContainer.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, BrandGreenPrimary.copy(alpha = 0.4f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Calculate,
-                                contentDescription = "Live Calculation",
-                                tint = BrandGreenOnContainer,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = calcText,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = JetBrainsMono,
-                                color = BrandGreenOnContainer
-                            )
-                        }
-                    }
-                }
-
-                if (showPurchaseCompanyField) {
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = purchaseCompanyName,
-                        onValueChange = { input ->
-                            if (input.length <= 120) {
-                                purchaseCompanyName = input
-                                localError = null
-                            }
-                        },
-                        label = { Text("Purchase Company Name") },
-                        placeholder = { Text("e.g., Emirates Gas, ADNOC, Concord Plant") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Business,
-                                contentDescription = "Purchase Company"
-                            )
-                        },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("tx_purchase_company_input")
-                    )
-                    if (recentPurchaseCompanies.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            recentPurchaseCompanies.forEach { company ->
-                                FilterChip(
-                                    selected = purchaseCompanyName.equals(company, ignoreCase = true),
-                                    onClick = {
-                                        purchaseCompanyName = company
-                                        localError = null
-                                    },
-                                    label = { Text(company, fontSize = 11.sp) }
-                                )
+                        if (selectedEntries.isNotEmpty()) {
+                            TextButton(
+                                onClick = {
+                                    qtyByProductId.clear()
+                                    emptyNowByProductId.clear()
+                                    localError = null
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                            ) {
+                                Text("Clear", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
 
-                if (showCustomerNameField) {
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = customerName,
-                        onValueChange = { input ->
-                            if (input.length <= 120) {
-                                customerName = input
-                                localError = null
-                            }
-                        },
+                Spacer(Modifier.height(6.dp))
+
+                // Category folder chips (All + 4 Categories with selected-item count badge)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedCategoryFilter == null,
+                        onClick = { selectedCategoryFilter = null },
                         label = {
-                            Text(if (requireCustomerName) "Customer Name *" else "Customer Name (for Empty Balance)")
-                        },
-                        placeholder = { Text("e.g., Al Noor Hotel, Gulf Workshop") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Customer Name"
+                            Text(
+                                text = if (selectedEntries.isEmpty()) "All (4 Folders)" else "All (${selectedEntries.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("tx_customer_name_input")
+                        modifier = Modifier.testTag("tx_cat_chip_all")
                     )
-                    if (recentCustomerNames.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            recentCustomerNames.forEach { cust ->
-                                FilterChip(
-                                    selected = customerName.equals(cust, ignoreCase = true),
-                                    onClick = {
-                                        customerName = cust
-                                        localError = null
-                                    },
-                                    label = { Text(cust, fontSize = 11.sp) }
-                                )
-                            }
+                    ProductCategory.entries.forEach { cat ->
+                        val catStyle = categoryVisualStyle(cat)
+                        val catSelectedCount = sortedProducts.count {
+                            it.category == cat && (qtyByProductId[it.id]?.toIntOrNull() ?: 0) > 0
                         }
+                        val isSel = selectedCategoryFilter == cat
+                        FilterChip(
+                            selected = isSel,
+                            onClick = {
+                                selectedCategoryFilter = if (isSel) null else cat
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = if (catSelectedCount > 0) "${cat.shortCode} ($catSelectedCount)" else cat.shortCode,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = catStyle.primaryColor,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("tx_cat_chip_${cat.name.lowercase()}")
+                        )
                     }
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(4.dp))
 
+                // Quick product filter search
                 OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes / Invoice / Remarks (Optional)") },
+                    value = productSearchQuery,
+                    onValueChange = { productSearchQuery = it },
+                    placeholder = { Text("Quick search product (e.g. Oxygen, 48 CFT, LPG, MCG)...", fontSize = 12.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (productSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { productSearchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("tx_notes_input")
+                        .testTag("tx_product_search_input")
                 )
 
-                if (localError != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = localError!!,
-                        color = BrandRedBright,
-                        style = MaterialTheme.typography.bodySmall
+                Spacer(Modifier.height(6.dp))
+
+                // Scrollable body: Multi-product list + Form metadata fields
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Product selection list (bounded LazyColumn so user can scroll many products cleanly)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 140.dp, max = 260.dp)
+                    ) {
+                        if (visibleProducts.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No matching products.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            val groupedVisible = visibleProducts.groupBy { it.category }
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                groupedVisible.forEach { (category, catProducts) ->
+                                    val catStyle = categoryVisualStyle(category)
+                                    item(key = "tx_hdr_${category.name}") {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.padding(top = 2.dp, bottom = 1.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(catStyle.primaryColor)
+                                            )
+                                            Text(
+                                                text = category.displayName,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = catStyle.primaryColor
+                                            )
+                                        }
+                                    }
+                                    items(catProducts, key = { it.id }) { product ->
+                                        val qtyStr = qtyByProductId[product.id].orEmpty()
+                                        val parsedQty = qtyStr.toIntOrNull() ?: 0
+                                        val emptyStr = emptyNowByProductId[product.id].orEmpty()
+                                        val parsedEmpNow = if (showEmptyCollectedNowField) (emptyStr.toIntOrNull() ?: 0) else 0
+                                        val stockHint = availableStockHint?.invoke(product.id, activeVehicleId)
+                                        val calcPreview = if (parsedQty > 0) {
+                                            liveCalculationPreview?.invoke(product.id, activeVehicleId, parsedQty, parsedEmpNow)
+                                        } else null
+                                        val isInsufficient = calcPreview?.contains("Insufficient", ignoreCase = true) == true ||
+                                            (calcPreview?.contains("-> -") == true)
+
+                                        BatchProductQtyRow(
+                                            product = product,
+                                            categoryColor = catStyle.primaryColor,
+                                            qtyText = qtyStr,
+                                            stockHint = stockHint,
+                                            calcPreview = calcPreview,
+                                            isInsufficient = isInsufficient,
+                                            showEmptyCollectedNow = showEmptyCollectedNowField && parsedQty > 0,
+                                            emptyCollectedText = emptyStr,
+                                            onQtyChange = { nextText ->
+                                                localError = null
+                                                val clean = nextText.filter { it.isDigit() }.take(5)
+                                                if (clean.isEmpty() || clean == "0") {
+                                                    qtyByProductId.remove(product.id)
+                                                } else {
+                                                    qtyByProductId[product.id] = clean
+                                                }
+                                            },
+                                            onEmptyCollectedChange = { nextEmp ->
+                                                localError = null
+                                                val clean = nextEmp.filter { it.isDigit() }.take(5)
+                                                if (clean.isEmpty() || clean == "0") {
+                                                    emptyNowByProductId.remove(product.id)
+                                                } else {
+                                                    emptyNowByProductId[product.id] = clean
+                                                }
+                                            },
+                                            testTagPrefix = "tx_prod_${product.id}"
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Selected items compact breakdown chips
+                    if (selectedEntries.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            selectedEntries.forEach { entry ->
+                                val prod = sortedProducts.firstOrNull { it.id == entry.productId }
+                                if (prod != null) {
+                                    val catColor = categoryVisualStyle(prod.category).primaryColor
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = catColor.copy(alpha = 0.14f),
+                                        border = BorderStroke(1.dp, catColor.copy(alpha = 0.45f))
+                                    ) {
+                                        Text(
+                                            text = "${prod.category.shortCode} ${prod.name}: ${entry.quantity}" +
+                                                if (showEmptyCollectedNowField && entry.emptyCollectedNow > 0) " (Emp:${entry.emptyCollectedNow})" else "",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = catColor,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (showPurchaseCompanyField) {
+                        OutlinedTextField(
+                            value = purchaseCompanyName,
+                            onValueChange = { input ->
+                                if (input.length <= 120) {
+                                    purchaseCompanyName = input
+                                    localError = null
+                                }
+                            },
+                            label = { Text("Purchase Company Name") },
+                            placeholder = { Text("e.g., Emirates Gas, ADNOC, Concord Plant") },
+                            leadingIcon = {
+                                Icon(Icons.Default.Business, contentDescription = "Purchase Company")
+                            },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("tx_purchase_company_input")
+                        )
+                        if (recentPurchaseCompanies.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                recentPurchaseCompanies.forEach { company ->
+                                    FilterChip(
+                                        selected = purchaseCompanyName.equals(company, ignoreCase = true),
+                                        onClick = {
+                                            purchaseCompanyName = company
+                                            localError = null
+                                        },
+                                        label = { Text(company, fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (showCustomerNameField) {
+                        OutlinedTextField(
+                            value = customerName,
+                            onValueChange = { input ->
+                                if (input.length <= 120) {
+                                    customerName = input
+                                    localError = null
+                                }
+                            },
+                            label = {
+                                Text(if (requireCustomerName) "Customer Name *" else "Customer Name (for Empty Balance)")
+                            },
+                            placeholder = { Text("e.g., Al Noor Hotel, Gulf Workshop") },
+                            leadingIcon = {
+                                Icon(Icons.Default.Person, contentDescription = "Customer Name")
+                            },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("tx_customer_name_input")
+                        )
+                        if (recentCustomerNames.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                recentCustomerNames.forEach { cust ->
+                                    FilterChip(
+                                        selected = customerName.equals(cust, ignoreCase = true),
+                                        onClick = {
+                                            customerName = cust
+                                            localError = null
+                                        },
+                                        label = { Text(cust, fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("Notes / Invoice / Remarks (Optional)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("tx_notes_input")
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                if (localError != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = localError!!,
+                        color = BrandRedBright,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
 
+                Spacer(Modifier.height(10.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(10.dp))
+
+                // ONE SAVE ENTRY Button pinned cleanly at the bottom
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -870,40 +999,295 @@ fun TransactionEntryDialog(
                     }
                     Button(
                         onClick = {
-                            val prod = selectedProduct
-                            val qty = quantityText.toIntOrNull() ?: 0
                             val cleanCompany = purchaseCompanyName.trim()
                             val cleanCustomer = customerName.trim()
-                            val empNow = if (showEmptyCollectedNowField) (emptyCollectedText.toIntOrNull() ?: 0) else 0
-                            if (prod == null) {
-                                localError = "Please select a product."
-                            } else if (qty <= 0) {
-                                localError = "Enter quantity greater than 0."
-                            } else if (showPurchaseCompanyField && cleanCompany.isEmpty()) {
-                                localError = "Please enter the purchase company name."
-                            } else if (requireCustomerName && cleanCustomer.isEmpty()) {
-                                localError = "Please enter the customer name."
-                            } else {
-                                onConfirm(
-                                    prod.id,
-                                    if (requireVehicleSelection) selectedVehicle?.id else null,
-                                    qty,
-                                    notes,
-                                    if (showPurchaseCompanyField) cleanCompany else "",
-                                    if (showCustomerNameField) cleanCustomer else "",
-                                    empNow
-                                )
-                                onDismiss()
+                            val targetVehicleId = if (requireVehicleSelection) selectedVehicle?.id else fixedVehicle?.id
+                            when {
+                                selectedEntries.isEmpty() -> {
+                                    localError = "Enter quantity (> 0) for at least one product."
+                                }
+                                requireVehicleSelection && targetVehicleId == null -> {
+                                    localError = "Please select a vehicle."
+                                }
+                                showPurchaseCompanyField && cleanCompany.isEmpty() -> {
+                                    localError = "Please enter the purchase company name."
+                                }
+                                requireCustomerName && cleanCustomer.isEmpty() -> {
+                                    localError = "Please enter the customer name."
+                                }
+                                else -> {
+                                    val finalCompany = if (showPurchaseCompanyField) cleanCompany else ""
+                                    val finalCustomer = if (showCustomerNameField) cleanCustomer else ""
+                                    val paramVehicleId = if (requireVehicleSelection) selectedVehicle?.id else null
+                                    if (onConfirmBatch != null) {
+                                        onConfirmBatch(paramVehicleId, selectedEntries, notes, finalCompany, finalCustomer)
+                                    } else {
+                                        selectedEntries.forEach { entry ->
+                                            onConfirm(
+                                                entry.productId,
+                                                paramVehicleId,
+                                                entry.quantity,
+                                                notes,
+                                                finalCompany,
+                                                finalCustomer,
+                                                entry.emptyCollectedNow
+                                            )
+                                        }
+                                    }
+                                    onDismiss()
+                                }
                             }
                         },
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(1.35f)
                             .testTag("tx_save_button"),
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary)
                     ) {
-                        Text("Save Entry")
+                        Text(
+                            text = if (selectedEntries.size > 1) {
+                                "SAVE ENTRY (${selectedEntries.size})"
+                            } else {
+                                "SAVE ENTRY"
+                            },
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatchProductQtyRow(
+    product: ProductEntity,
+    categoryColor: Color,
+    qtyText: String,
+    stockHint: String?,
+    calcPreview: String?,
+    isInsufficient: Boolean,
+    showEmptyCollectedNow: Boolean,
+    emptyCollectedText: String,
+    onQtyChange: (String) -> Unit,
+    onEmptyCollectedChange: (String) -> Unit,
+    testTagPrefix: String
+) {
+    val parsedQty = qtyText.toIntOrNull() ?: 0
+    val isActive = parsedQty > 0
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = when {
+            isInsufficient -> BrandRedContainer.copy(alpha = 0.45f)
+            isActive -> BrandGreenContainer.copy(alpha = 0.42f)
+            else -> MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            width = if (isActive) 1.4.dp else 1.dp,
+            color = when {
+                isInsufficient -> BrandRedSecondary
+                isActive -> BrandGreenPrimary
+                else -> MaterialTheme.colorScheme.outlineVariant
+            }
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTagPrefix)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = categoryColor.copy(alpha = 0.16f)
+                        ) {
+                            Text(
+                                text = product.category.shortCode,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = categoryColor,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                        Text(
+                            text = product.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (!stockHint.isNullOrBlank()) {
+                        Text(
+                            text = stockHint,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            fontFamily = JetBrainsMono,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Inline - [Qty] + stepper
+                CompactInlineStepper(
+                    valueText = qtyText,
+                    onValueChange = onQtyChange,
+                    testTagPrefix = "${testTagPrefix}_qty"
+                )
+            }
+
+            if (showEmptyCollectedNow) {
+                val parsedEmp = emptyCollectedText.toIntOrNull() ?: 0
+                val pendingDiff = parsedQty - parsedEmp
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Empty Recd Now",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = when {
+                                pendingDiff > 0 -> "Pending: +$pendingDiff"
+                                pendingDiff == 0 -> "Settled (0 Pending)"
+                                else -> "Extra ${-pendingDiff} settled"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            color = if (pendingDiff > 0) BrandRedOnContainer else BrandGreenOnContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    CompactInlineStepper(
+                        valueText = emptyCollectedText,
+                        onValueChange = onEmptyCollectedChange,
+                        testTagPrefix = "${testTagPrefix}_empty"
+                    )
+                }
+            }
+
+            if (!calcPreview.isNullOrBlank()) {
+                Text(
+                    text = calcPreview,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    fontFamily = JetBrainsMono,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isInsufficient) BrandRedOnContainer else BrandGreenOnContainer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactInlineStepper(
+    valueText: String,
+    onValueChange: (String) -> Unit,
+    testTagPrefix: String
+) {
+    val currentVal = valueText.toIntOrNull() ?: 0
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(7.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .clickable {
+                    val next = (currentVal - 1).coerceAtLeast(0)
+                    onValueChange(if (next == 0) "" else next.toString())
+                }
+                .testTag("${testTagPrefix}_minus")
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Remove,
+                    contentDescription = "Decrease quantity",
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(7.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .width(44.dp)
+                .height(34.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (valueText.isEmpty()) {
+                    Text(
+                        text = "0",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = JetBrainsMono,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+                BasicTextField(
+                    value = valueText,
+                    onValueChange = { raw -> onValueChange(raw.filter { it.isDigit() }.take(5)) },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        fontFamily = JetBrainsMono,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 2.dp)
+                        .testTag("${testTagPrefix}_input")
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(7.dp),
+            color = BrandGreenPrimary.copy(alpha = 0.16f),
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .clickable {
+                    onValueChange((currentVal + 1).toString())
+                }
+                .testTag("${testTagPrefix}_plus")
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Increase quantity",
+                    tint = BrandGreenPrimary,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }

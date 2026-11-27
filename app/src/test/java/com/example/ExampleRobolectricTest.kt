@@ -13,8 +13,11 @@ import com.example.data.local.ConcordDatabase
 import com.example.data.local.SessionPreferences
 import com.example.data.model.ApprovalStatus
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.BatchProductEntry
 import com.example.data.model.ChatChannel
 import com.example.data.model.CompanyStockRow
+import com.example.data.model.CustomerChangeMode
+import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.NotificationCategory
 import com.example.data.model.NotificationTargetScope
 import com.example.data.model.OperationResult
@@ -1729,8 +1732,8 @@ class ExampleRobolectricTest {
 
     @Test
     fun `app system update manager compares semver, enforces trusted github release urls, and updates viewmodel state`() = runTest {
-        assertEquals("1.10.0", BuildConfig.VERSION_NAME)
-        assertEquals(10, BuildConfig.VERSION_CODE)
+        assertEquals("1.11.0", BuildConfig.VERSION_NAME)
+        assertEquals(11, BuildConfig.VERSION_CODE)
 
         // 1. Semantic version comparisons
         assertTrue(AppUpdateManager.compareSemVer("v2.0.0", "1.9.0") > 0)
@@ -2019,13 +2022,13 @@ class ExampleRobolectricTest {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
         }
-        vm.setSelectedDate(day)
         vm.login(nadeem.id, "1001", UserRole.STAFF)
         val loginDeadline = System.currentTimeMillis() + 5000L
         while (vm.authSession.value == null && System.currentTimeMillis() < loginDeadline) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
         }
+        vm.setSelectedDate(day)
 
         vm.transferBetweenVehicles(
             sourceVehicleId = nadeemVeh.id,
@@ -2095,11 +2098,11 @@ class ExampleRobolectricTest {
             }
         }
         waitUntil { vm.isInitialized.value }
-        vm.setSelectedDate(day)
 
         // 1. Staff logs in and submits Store->Vehicle Full Received (8) & Vehicle->Store Empty Return (4)
         vm.login(nadeem.id, "1001", UserRole.STAFF)
         waitUntil { vm.authSession.value?.user?.role == UserRole.STAFF }
+        vm.setSelectedDate(day)
 
         vm.submitStaffStoreTransferRequest(StoreTransferDirection.STORE_TO_VEHICLE_FULL, oxygen.id, 8, "Morning load")
         vm.submitStaffStoreTransferRequest(StoreTransferDirection.VEHICLE_TO_STORE_EMPTY, oxygen.id, 4, "Evening empties")
@@ -2139,6 +2142,7 @@ class ExampleRobolectricTest {
         waitUntil { vm.authSession.value == null }
         vm.login(admin.id, "1725", UserRole.ADMIN)
         waitUntil { vm.authSession.value?.user?.role == UserRole.ADMIN }
+        vm.setSelectedDate(day)
 
         vm.approvePendingStoreTransfer(fullReq.id)
         vm.approvePendingStoreTransfer(emptyReq.id)
@@ -2387,4 +2391,417 @@ class ExampleRobolectricTest {
         val pendingList = repository.observeCustomerPendingBalances(nadeemVehicle.id).first()
         assertTrue(pendingList.none { it.customerName.equals("Al Noor Restaurant", ignoreCase = true) })
     }
+
+    @Test
+    fun `full return to store moves full cylinders from vehicle back to store with negative stock guard`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.displayName == "Nadeem" }
+        val nadeemVehicle = repository.vehiclesFlow.first().first { it.name == "NADEEM" }
+        val oxygen = repository.activeProductsFlow.first().first {
+            it.category == ProductCategory.INDUSTRIAL_GAS && it.name == "Oxygen"
+        }
+        val today = "2026-11-26"
+
+        // Store Opening = 30 Full, Dispatch 10 Full to Vehicle -> Store 20, Vehicle 10
+        assertTrue(
+            repository.setOpeningStockForDate(
+                scope = StockCalculator.SCOPE_STORE,
+                vehicleId = 0L,
+                productId = oxygen.id,
+                date = today,
+                desiredOpeningFull = 30,
+                desiredOpeningEmpty = 0,
+                admin = admin
+            ) is OperationResult.Success
+        )
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = today,
+                type = TransactionType.VEHICLE_FULL_RECEIVED,
+                productId = oxygen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = admin,
+                quantity = 10,
+                notes = "Morning load"
+            ) is OperationResult.Success
+        )
+
+        // Return 4 Full from Vehicle to Store -> Store 24, Vehicle 6
+        assertTrue(
+            repository.recordTransaction(
+                businessDate = today,
+                type = TransactionType.VEHICLE_FULL_RETURN_TO_STORE,
+                productId = oxygen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 4,
+                notes = "End of shift full return"
+            ) is OperationResult.Success
+        )
+
+        val storeRow = repository.observeStoreStock(today).first().first { it.product.id == oxygen.id }
+        val vehRow = repository.observeVehicleStock(nadeemVehicle.id, today).first().first { it.product.id == oxygen.id }
+        assertEquals(24, storeRow.storeFullBalance)
+        assertEquals(6, vehRow.fullBalance)
+        assertEquals(4, vehRow.fullReturnedToStore)
+
+        // Attempting to return 9 Full (> 6 available on vehicle) must fail with InsufficientStock
+        val overReturn = repository.recordTransaction(
+            businessDate = today,
+            type = TransactionType.VEHICLE_FULL_RETURN_TO_STORE,
+            productId = oxygen.id,
+            vehicleId = nadeemVehicle.id,
+            actor = nadeem,
+            quantity = 9,
+            notes = "Too many"
+        )
+        assertTrue(overReturn is OperationResult.InsufficientStock)
+    }
+
+    @Test
+    fun `customer product change full-to-full, empty-to-empty, and return empty work for vehicle and store`() = runTest {
+        repository.initializeDatabase()
+        val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
+        val nadeem = repository.usersFlow.first().first { it.displayName == "Nadeem" }
+        val nadeemVehicle = repository.vehiclesFlow.first().first { it.name == "NADEEM" }
+        val products = repository.activeProductsFlow.first()
+        val oxygen = products.first { it.category == ProductCategory.INDUSTRIAL_GAS && it.name == "Oxygen" }
+        val nitrogen = products.first { it.category == ProductCategory.INDUSTRIAL_GAS && it.name == "Nitrogen" }
+        val today = "2026-11-26"
+
+        // Seed Store Opening (Oxygen: 20F/10E, Nitrogen: 15F/8E) & Vehicle Opening (Oxygen: 6F/4E, Nitrogen: 5F/3E)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, oxygen.id, today, 20, 10, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, nitrogen.id, today, 15, 8, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVehicle.id, oxygen.id, today, 6, 4, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVehicle.id, nitrogen.id, today, 5, 3, admin) is OperationResult.Success)
+
+        // 1. Vehicle Full -> Full: Customer returns 2 Full Oxygen (+2) and takes 2 Full Nitrogen (-2)
+        assertTrue(
+            repository.recordCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.FULL_TO_FULL,
+                returnedProductId = oxygen.id,
+                givenProductId = nitrogen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 2,
+                customerName = "Gulf Welding",
+                notes = "Full swap"
+            ) is OperationResult.Success
+        )
+
+        // 2. Vehicle Empty -> Empty: Customer returns 1 Empty Oxygen (+1) and takes 1 Empty Nitrogen (-1)
+        assertTrue(
+            repository.recordCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.EMPTY_TO_EMPTY,
+                returnedProductId = oxygen.id,
+                givenProductId = nitrogen.id,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 1,
+                customerName = "Gulf Welding",
+                notes = "Empty swap"
+            ) is OperationResult.Success
+        )
+
+        // 3. Vehicle Return Empty: Customer returns 2 Empty Nitrogen (+2)
+        assertTrue(
+            repository.recordCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.RETURN_EMPTY,
+                returnedProductId = nitrogen.id,
+                givenProductId = null,
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                quantity = 2,
+                customerName = "Gulf Welding",
+                notes = "Return empty"
+            ) is OperationResult.Success
+        )
+
+        val vehRows = repository.observeVehicleStock(nadeemVehicle.id, today).first()
+        val vehOxy = vehRows.first { it.product.id == oxygen.id }
+        val vehNit = vehRows.first { it.product.id == nitrogen.id }
+        assertEquals(8, vehOxy.fullBalance)   // 6 + 2
+        assertEquals(5, vehOxy.emptyBalance)  // 4 + 1
+        assertEquals(3, vehNit.fullBalance)   // 5 - 2
+        assertEquals(4, vehNit.emptyBalance)  // 3 - 1 + 2
+
+        // 4. Negative stock guard: trying to give 10 Full Nitrogen (> 3 available) fails cleanly
+        val overSwap = repository.recordCustomerProductChange(
+            businessDate = today,
+            mode = CustomerChangeMode.FULL_TO_FULL,
+            returnedProductId = oxygen.id,
+            givenProductId = nitrogen.id,
+            vehicleId = nadeemVehicle.id,
+            actor = nadeem,
+            quantity = 10,
+            customerName = "Gulf Welding"
+        )
+        assertTrue(overSwap is OperationResult.InsufficientStock)
+
+        // 5. Admin Main Store Full -> Full, Empty -> Empty, and Return Empty
+        assertTrue(
+            repository.recordCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.FULL_TO_FULL,
+                returnedProductId = oxygen.id,
+                givenProductId = nitrogen.id,
+                vehicleId = null,
+                actor = admin,
+                quantity = 3,
+                customerName = "Al Noor Metals"
+            ) is OperationResult.Success
+        )
+        assertTrue(
+            repository.recordCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.EMPTY_TO_EMPTY,
+                returnedProductId = oxygen.id,
+                givenProductId = nitrogen.id,
+                vehicleId = null,
+                actor = admin,
+                quantity = 2,
+                customerName = "Al Noor Metals"
+            ) is OperationResult.Success
+        )
+        assertTrue(
+            repository.recordCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.RETURN_EMPTY,
+                returnedProductId = nitrogen.id,
+                givenProductId = null,
+                vehicleId = null,
+                actor = admin,
+                quantity = 4,
+                customerName = "Al Noor Metals"
+            ) is OperationResult.Success
+        )
+
+        val storeRows = repository.observeStoreStock(today).first()
+        val storeOxy = storeRows.first { it.product.id == oxygen.id }
+        val storeNit = storeRows.first { it.product.id == nitrogen.id }
+        assertEquals(23, storeOxy.storeFullBalance)   // 20 + 3
+        assertEquals(12, storeOxy.storeEmptyBalance)  // 10 + 2
+        assertEquals(12, storeNit.storeFullBalance)   // 15 - 3
+        assertEquals(10, storeNit.storeEmptyBalance)  // 8 - 2 + 4
+    }
+
+    @Test
+    fun `batch multi-category transaction entry saves all 4 categories atomically and rolls back on insufficient stock`() = runTest {
+        repository.initializeDatabase()
+        val today = "2026-11-26"
+        val users = repository.usersFlow.first()
+        val admin = users.first { it.role == UserRole.ADMIN }
+        val nadeem = users.first { it.displayName == "Nadeem" }
+        val nadeemVehicle = repository.vehiclesFlow.first().first { it.name == "NADEEM" }
+        val products = repository.activeProductsFlow.first()
+
+        val indProd = products.first { it.category == ProductCategory.INDUSTRIAL_GAS }
+        val smallProd = products.first { it.category == ProductCategory.SMALL_48_CFT }
+        val cookProd = products.first { it.category == ProductCategory.COOKING_GAS }
+        val mcgProd = products.first { it.category == ProductCategory.MCG_CUTTING_GAS }
+
+        // 1. Admin batch purchase across all 4 categories in ONE entry
+        val purchaseRes = repository.recordBatchTransactions(
+            businessDate = today,
+            type = TransactionType.STORE_PURCHASE_FULL,
+            vehicleId = null,
+            actor = admin,
+            items = listOf(
+                BatchProductEntry(indProd.id, 30),
+                BatchProductEntry(smallProd.id, 15),
+                BatchProductEntry(cookProd.id, 25),
+                BatchProductEntry(mcgProd.id, 10)
+            ),
+            notes = "Batch purchase across all 4 categories",
+            purchaseCompanyName = "Emirates Gas"
+        )
+        assertTrue(purchaseRes is OperationResult.Success)
+
+        val storeAfterPurchase = repository.observeStoreStock(today).first()
+        assertEquals(30, storeAfterPurchase.first { it.product.id == indProd.id }.storeFullBalance)
+        assertEquals(15, storeAfterPurchase.first { it.product.id == smallProd.id }.storeFullBalance)
+        assertEquals(25, storeAfterPurchase.first { it.product.id == cookProd.id }.storeFullBalance)
+        assertEquals(10, storeAfterPurchase.first { it.product.id == mcgProd.id }.storeFullBalance)
+
+        // 2. Dispatch different quantities of all 4 categories to Nadeem's vehicle
+        val dispatchRes = repository.recordBatchTransactions(
+            businessDate = today,
+            type = TransactionType.VEHICLE_FULL_RECEIVED,
+            vehicleId = nadeemVehicle.id,
+            actor = admin,
+            items = listOf(
+                BatchProductEntry(indProd.id, 12),
+                BatchProductEntry(smallProd.id, 7),
+                BatchProductEntry(cookProd.id, 9),
+                BatchProductEntry(mcgProd.id, 4)
+            ),
+            notes = "Morning load"
+        )
+        assertTrue(dispatchRes is OperationResult.Success)
+
+        // 3. Staff records batch Customer Sale across all 4 categories with varying Empty Collected Now
+        val saleRes = repository.recordBatchTransactions(
+            businessDate = today,
+            type = TransactionType.VEHICLE_CUSTOMER_SALE,
+            vehicleId = nadeemVehicle.id,
+            actor = nadeem,
+            items = listOf(
+                BatchProductEntry(indProd.id, quantity = 5, emptyCollectedNow = 3),
+                BatchProductEntry(smallProd.id, quantity = 3, emptyCollectedNow = 3),
+                BatchProductEntry(cookProd.id, quantity = 4, emptyCollectedNow = 1),
+                BatchProductEntry(mcgProd.id, quantity = 2, emptyCollectedNow = 0)
+            ),
+            notes = "Combined multi-category delivery",
+            customerName = "Al Noor Hotel"
+        )
+        assertTrue(saleRes is OperationResult.Success)
+
+        val vehRows = repository.observeVehicleStock(nadeemVehicle.id, today).first()
+        assertEquals(7, vehRows.first { it.product.id == indProd.id }.fullBalance)    // 12 - 5
+        assertEquals(3, vehRows.first { it.product.id == indProd.id }.emptyBalance)
+        assertEquals(4, vehRows.first { it.product.id == smallProd.id }.fullBalance)  // 7 - 3
+        assertEquals(3, vehRows.first { it.product.id == smallProd.id }.emptyBalance)
+        assertEquals(5, vehRows.first { it.product.id == cookProd.id }.fullBalance)   // 9 - 4
+        assertEquals(1, vehRows.first { it.product.id == cookProd.id }.emptyBalance)
+        assertEquals(2, vehRows.first { it.product.id == mcgProd.id }.fullBalance)    // 4 - 2
+        assertEquals(0, vehRows.first { it.product.id == mcgProd.id }.emptyBalance)
+
+        // 4. Atomic rollback: if one item in batch lacks stock, NO items in batch are committed
+        val failedBatch = repository.recordBatchTransactions(
+            businessDate = today,
+            type = TransactionType.VEHICLE_CUSTOMER_SALE,
+            vehicleId = nadeemVehicle.id,
+            actor = nadeem,
+            items = listOf(
+                BatchProductEntry(indProd.id, quantity = 2, emptyCollectedNow = 2),
+                BatchProductEntry(mcgProd.id, quantity = 99, emptyCollectedNow = 0) // exceeds 2
+            ),
+            customerName = "Al Noor Hotel"
+        )
+        assertTrue(failedBatch is OperationResult.InsufficientStock)
+
+        val vehAfterFail = repository.observeVehicleStock(nadeemVehicle.id, today).first()
+        assertEquals(7, vehAfterFail.first { it.product.id == indProd.id }.fullBalance)
+        assertEquals(3, vehAfterFail.first { it.product.id == indProd.id }.emptyBalance)
+    }
+
+    @Test
+    fun `multi-cylinder customer full and empty exchanges work for vehicle and store`() = runTest {
+        repository.initializeDatabase()
+        val today = "2026-11-26"
+        val users = repository.usersFlow.first()
+        val admin = users.first { it.role == UserRole.ADMIN }
+        val nadeem = users.first { it.displayName == "Nadeem" }
+        val nadeemVehicle = repository.vehiclesFlow.first().first { it.name == "NADEEM" }
+        val products = repository.activeProductsFlow.first()
+
+        val indProd = products.first { it.category == ProductCategory.INDUSTRIAL_GAS }
+        val smallProd = products.first { it.category == ProductCategory.SMALL_48_CFT }
+        val cookProd = products.first { it.category == ProductCategory.COOKING_GAS }
+        val mcgProd = products.first { it.category == ProductCategory.MCG_CUTTING_GAS }
+
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, indProd.id, today, 20, 12, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, smallProd.id, today, 15, 10, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, cookProd.id, today, 18, 14, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, mcgProd.id, today, 10, 8, admin) is OperationResult.Success)
+
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVehicle.id, indProd.id, today, 8, 5, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVehicle.id, smallProd.id, today, 6, 4, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVehicle.id, cookProd.id, today, 7, 5, admin) is OperationResult.Success)
+        assertTrue(repository.setOpeningStockForDate(StockCalculator.SCOPE_VEHICLE, nadeemVehicle.id, mcgProd.id, today, 5, 3, admin) is OperationResult.Success)
+
+        // 1. Staff Vehicle: Full multiple cylinder exchange (return 2 Industrial + 1 Small, give 2 Cooking + 1 MCG)
+        assertTrue(
+            repository.recordMultiCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.FULL_TO_FULL,
+                returnedItems = listOf(CustomerExchangeItem(indProd.id, 2), CustomerExchangeItem(smallProd.id, 1)),
+                givenItems = listOf(CustomerExchangeItem(cookProd.id, 2), CustomerExchangeItem(mcgProd.id, 1)),
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                customerName = "Multi Exchange Customer",
+                notes = "Full swap across categories"
+            ) is OperationResult.Success
+        )
+
+        // 2. Staff Vehicle: Empty multiple cylinder exchange (return 3 Cooking + 2 MCG, give 3 Industrial + 2 Small)
+        assertTrue(
+            repository.recordMultiCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.EMPTY_TO_EMPTY,
+                returnedItems = listOf(CustomerExchangeItem(cookProd.id, 3), CustomerExchangeItem(mcgProd.id, 2)),
+                givenItems = listOf(CustomerExchangeItem(indProd.id, 3), CustomerExchangeItem(smallProd.id, 2)),
+                vehicleId = nadeemVehicle.id,
+                actor = nadeem,
+                customerName = "Multi Exchange Customer",
+                notes = "Empty swap across categories"
+            ) is OperationResult.Success
+        )
+
+        val vehRows = repository.observeVehicleStock(nadeemVehicle.id, today).first()
+        assertEquals(10, vehRows.first { it.product.id == indProd.id }.fullBalance)   // 8 + 2
+        assertEquals(7, vehRows.first { it.product.id == smallProd.id }.fullBalance)  // 6 + 1
+        assertEquals(5, vehRows.first { it.product.id == cookProd.id }.fullBalance)   // 7 - 2
+        assertEquals(4, vehRows.first { it.product.id == mcgProd.id }.fullBalance)    // 5 - 1
+
+        assertEquals(2, vehRows.first { it.product.id == indProd.id }.emptyBalance)   // 5 - 3
+        assertEquals(2, vehRows.first { it.product.id == smallProd.id }.emptyBalance) // 4 - 2
+        assertEquals(8, vehRows.first { it.product.id == cookProd.id }.emptyBalance)  // 5 + 3
+        assertEquals(5, vehRows.first { it.product.id == mcgProd.id }.emptyBalance)   // 3 + 2
+
+        // 3. Atomic rollback on Store if one given item exceeds stock
+        val failStoreSwap = repository.recordMultiCustomerProductChange(
+            businessDate = today,
+            mode = CustomerChangeMode.FULL_TO_FULL,
+            returnedItems = listOf(CustomerExchangeItem(indProd.id, 4)),
+            givenItems = listOf(CustomerExchangeItem(smallProd.id, 2), CustomerExchangeItem(mcgProd.id, 50)),
+            vehicleId = null,
+            actor = admin,
+            customerName = "Bad Swap"
+        )
+        assertTrue(failStoreSwap is OperationResult.InsufficientStock)
+        val storeAfterFail = repository.observeStoreStock(today).first()
+        assertEquals(20, storeAfterFail.first { it.product.id == indProd.id }.storeFullBalance)
+
+        // 4. Admin Store: Full multiple + Empty multiple exchanges succeed cleanly
+        assertTrue(
+            repository.recordMultiCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.FULL_TO_FULL,
+                returnedItems = listOf(CustomerExchangeItem(indProd.id, 3), CustomerExchangeItem(cookProd.id, 2)),
+                givenItems = listOf(CustomerExchangeItem(smallProd.id, 4), CustomerExchangeItem(mcgProd.id, 1)),
+                vehicleId = null,
+                actor = admin,
+                customerName = "Yard Customer"
+            ) is OperationResult.Success
+        )
+        assertTrue(
+            repository.recordMultiCustomerProductChange(
+                businessDate = today,
+                mode = CustomerChangeMode.EMPTY_TO_EMPTY,
+                returnedItems = listOf(CustomerExchangeItem(smallProd.id, 2), CustomerExchangeItem(mcgProd.id, 1)),
+                givenItems = listOf(CustomerExchangeItem(indProd.id, 2), CustomerExchangeItem(cookProd.id, 1)),
+                vehicleId = null,
+                actor = admin,
+                customerName = "Yard Customer"
+            ) is OperationResult.Success
+        )
+
+        val storeRows = repository.observeStoreStock(today).first()
+        assertEquals(23, storeRows.first { it.product.id == indProd.id }.storeFullBalance)   // 20 + 3
+        assertEquals(11, storeRows.first { it.product.id == smallProd.id }.storeFullBalance) // 15 - 4
+        assertEquals(20, storeRows.first { it.product.id == cookProd.id }.storeFullBalance)  // 18 + 2
+        assertEquals(9, storeRows.first { it.product.id == mcgProd.id }.storeFullBalance)    // 10 - 1
+
+        assertEquals(10, storeRows.first { it.product.id == indProd.id }.storeEmptyBalance)  // 12 - 2
+        assertEquals(12, storeRows.first { it.product.id == smallProd.id }.storeEmptyBalance)// 10 + 2
+        assertEquals(13, storeRows.first { it.product.id == cookProd.id }.storeEmptyBalance) // 14 - 1
+        assertEquals(9, storeRows.first { it.product.id == mcgProd.id }.storeEmptyBalance)   // 8 + 1
+    }
 }
+
+

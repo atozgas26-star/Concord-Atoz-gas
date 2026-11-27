@@ -29,17 +29,27 @@ enum class TransactionType(
     STORE_PURCHASE_COMPLAINT_REPLACE("Supplier Complaint Replace", true, false),
     STORE_FULL_INWARD("Full Cylinder Inward", true, false),
     STORE_EMPTY_INWARD("Empty Cylinder Inward", true, false),
+    STORE_EMPTY_FROM_CUSTOMER("Customer Empty Return (Store)", true, false),
     STORE_FULL_DISPATCH_DIRECT("Direct Full Dispatch", true, false),
     STORE_EMPTY_DISPATCH("Empty Dispatch (Refill/Plant)", true, false),
+    STORE_CUSTOMER_CHANGE_FULL_IN("Store Customer Full Change (In)", true, false),
+    STORE_CUSTOMER_CHANGE_FULL_OUT("Store Customer Full Change (Out)", true, false),
+    STORE_CUSTOMER_CHANGE_EMPTY_IN("Store Customer Empty Change (In)", true, false),
+    STORE_CUSTOMER_CHANGE_EMPTY_OUT("Store Customer Empty Change (Out)", true, false),
     STORE_ADJUST_FULL_IN("Store Full Adjustment (+)", true, false),
     STORE_ADJUST_FULL_OUT("Store Full Adjustment (-)", true, false),
     STORE_ADJUST_EMPTY_IN("Store Empty Adjustment (+)", true, false),
     STORE_ADJUST_EMPTY_OUT("Store Empty Adjustment (-)", true, false),
 
     VEHICLE_FULL_RECEIVED("Full Received from Store", true, true),
+    VEHICLE_FULL_RETURN_TO_STORE("Full Returned to Store", true, true),
     VEHICLE_CUSTOMER_SALE("Customer Sale", false, true),
     VEHICLE_NEW_CUSTOMER_SALE("New Customer Full Sale", false, true),
     VEHICLE_CUSTOMER_COMPLAINT_REPLACE("Customer Complaint Replace", false, true),
+    VEHICLE_CUSTOMER_CHANGE_FULL_IN("Customer Full Change (In)", false, true),
+    VEHICLE_CUSTOMER_CHANGE_FULL_OUT("Customer Full Change (Out)", false, true),
+    VEHICLE_CUSTOMER_CHANGE_EMPTY_IN("Customer Empty Change (In)", false, true),
+    VEHICLE_CUSTOMER_CHANGE_EMPTY_OUT("Customer Empty Change (Out)", false, true),
     VEHICLE_EMPTY_FROM_CUSTOMER("Customer Empty Received", false, true),
     VEHICLE_EMPTY_RETURN_TO_STORE("Empty Returned to Store", true, true),
     VEHICLE_TRANSFER_FULL_OUT("Full Transfer Out (To Vehicle)", false, true),
@@ -52,6 +62,12 @@ enum class TransactionType(
     VEHICLE_ADJUST_EMPTY_OUT("Vehicle Empty Adjustment (-)", false, true),
 
     CUSTOMER_EMPTY_PENDING_ADD("Customer Pending Empty (+)", false, false)
+}
+
+enum class CustomerChangeMode(val label: String, val shortLabel: String) {
+    FULL_TO_FULL("Full → Full Change", "Full → Full"),
+    EMPTY_TO_EMPTY("Empty → Empty Change", "Empty → Empty"),
+    RETURN_EMPTY("Customer Return Empty", "Return Empty")
 }
 
 enum class ReportType(val title: String, val subtitle: String) {
@@ -70,6 +86,7 @@ enum class ReportType(val title: String, val subtitle: String) {
 
 enum class StoreTransferDirection(val label: String) {
     STORE_TO_VEHICLE_FULL("Full Received (Store → Vehicle)"),
+    VEHICLE_TO_STORE_FULL("Full Return (Vehicle → Store)"),
     VEHICLE_TO_STORE_EMPTY("Empty Return (Vehicle → Store)")
 }
 

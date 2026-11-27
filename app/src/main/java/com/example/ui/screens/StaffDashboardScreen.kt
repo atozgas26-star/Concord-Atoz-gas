@@ -74,6 +74,9 @@ import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.ApprovalStatus
 import com.example.data.model.AutoLogoutMode
+import com.example.data.model.BatchProductEntry
+import com.example.data.model.CustomerChangeMode
+import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.ProductCategory
 import com.example.data.model.StoreStockRow
@@ -85,7 +88,7 @@ import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
-import com.example.ui.components.ClosedFolderPromptCard
+import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.HeaderBellIconButton
 import com.example.ui.components.HeaderChatIconButton
@@ -143,7 +146,33 @@ fun StaffDashboardScreen(
     onAutoLogoutModeChanged: (AutoLogoutMode) -> Unit = {},
     onDateSelected: (String) -> Unit,
     onRecordTransaction: (TransactionType, Long, Long?, Int, String, String, Int) -> Unit,
+    onRecordBatchTransactions: (
+        type: TransactionType,
+        items: List<BatchProductEntry>,
+        vehicleId: Long?,
+        notes: String,
+        purchaseCompanyName: String,
+        customerName: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
+    onRecordCustomerProductChange: (
+        mode: CustomerChangeMode,
+        returnedProductId: Long,
+        givenProductId: Long?,
+        vehicleId: Long?,
+        quantity: Int,
+        customerName: String,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _, _ -> },
+    onRecordMultiCustomerProductChange: (
+        mode: CustomerChangeMode,
+        returnedItems: List<CustomerExchangeItem>,
+        givenItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        customerName: String,
+        notes: String
+    ) -> Unit = { _, _, _, _, _, _ -> },
     onSubmitStoreTransferRequest: (StoreTransferDirection, Long, Int, String) -> Unit = { _, _, _, _ -> },
+    onSubmitBatchStoreTransferRequests: (StoreTransferDirection, List<BatchProductEntry>, String) -> Unit = { _, _, _ -> },
     onTransferBetweenVehicles: (
         sourceVehicleId: Long,
         targetVehicleId: Long,
@@ -174,6 +203,7 @@ fun StaffDashboardScreen(
     var prefillCustomerName by remember { mutableStateOf("") }
     var prefillQuantity by remember { mutableIntStateOf(1) }
     var showVehicleTransferDialog by remember { mutableStateOf(false) }
+    var showCustomerChangeDialog by remember { mutableStateOf(false) }
     var showAutoSessionDialog by remember { mutableStateOf(false) }
     var staffSalesDailyMode by remember { mutableStateOf(true) }
 
@@ -513,6 +543,33 @@ fun StaffDashboardScreen(
                                     .testTag("staff_action_complaint_replace")
                             )
                         }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StaffBigActionButton(
+                                label = "Full Return\nto Store",
+                                icon = Icons.Default.Output,
+                                containerColor = Color(0xFF047857),
+                                onClick = {
+                                    prefillCustomerName = ""
+                                    prefillQuantity = 1
+                                    activeTxType = TransactionType.VEHICLE_FULL_RETURN_TO_STORE
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_return_full")
+                            )
+                            StaffBigActionButton(
+                                label = "Customer Change\n(Full / Empty)",
+                                icon = Icons.Default.SwapHoriz,
+                                containerColor = Color(0xFF9333EA),
+                                onClick = { showCustomerChangeDialog = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("staff_action_customer_change")
+                            )
+                        }
                         if (assignedVehicle != null && allVehicles.any { it.id != assignedVehicle.id }) {
                             Button(
                                 onClick = { showVehicleTransferDialog = true },
@@ -566,8 +623,11 @@ fun StaffDashboardScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             recentRequests.forEach { req ->
-                                val isFull = req.direction == StoreTransferDirection.STORE_TO_VEHICLE_FULL.name
-                                val label = if (isFull) "Full from Store" else "Empty to Store"
+                                val label = when (req.direction) {
+                                    StoreTransferDirection.STORE_TO_VEHICLE_FULL.name -> "Full from Store"
+                                    StoreTransferDirection.VEHICLE_TO_STORE_FULL.name -> "Full to Store"
+                                    else -> "Empty to Store"
+                                }
                                 val badgeColor = when (req.status) {
                                     ApprovalStatus.APPROVED.name -> BrandGreenPrimary
                                     ApprovalStatus.REJECTED.name -> BrandRedSecondary
@@ -695,15 +755,7 @@ fun StaffDashboardScreen(
                         )
                     }
 
-                    if (!showVehicleProducts) {
-                        item(key = "staff_closed_folder_prompt") {
-                            ClosedFolderPromptCard(
-                                title = "Products Inside Category Folders",
-                                subtitle = "Tap any category folder above to open your vehicle cylinders, or search by name.",
-                                accentColor = Color(0xFF0F766E)
-                            )
-                        }
-                    } else {
+                    if (showVehicleProducts) {
                         selectedCategory?.let { openCat ->
                             item(key = "staff_opened_folder_header_${openCat.name}") {
                                 OpenedCategoryFolderHeader(
@@ -821,15 +873,7 @@ fun StaffDashboardScreen(
                                 )
                             }
                         }
-                    } else if (selectedSalesCategory == null) {
-                        item(key = "staff_sales_closed_folder_prompt") {
-                            ClosedFolderPromptCard(
-                                title = "Sales Products Inside Folders",
-                                subtitle = "Tap any category folder above to open product-wise sales inside.",
-                                accentColor = Color(0xFF1D4ED8)
-                            )
-                        }
-                    } else {
+                    } else if (selectedSalesCategory != null) {
                         val openSalesCat = selectedSalesCategory!!
                         item(key = "staff_sales_opened_header_${openSalesCat.name}") {
                             OpenedCategoryFolderHeader(
@@ -1081,6 +1125,8 @@ fun StaffDashboardScreen(
                 when (type) {
                     TransactionType.VEHICLE_FULL_RECEIVED ->
                         "Request Full from Main Store  |  Current Vehicle Full: ${vRow?.fullBalance ?: 0}"
+                    TransactionType.VEHICLE_FULL_RETURN_TO_STORE ->
+                        "Return Full to Main Store (Admin Approval)  |  Vehicle Full Available: ${vRow?.fullBalance ?: 0}"
                     TransactionType.VEHICLE_CUSTOMER_SALE,
                     TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
                     TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE ->
@@ -1098,6 +1144,8 @@ fun StaffDashboardScreen(
                 else when (type) {
                     TransactionType.VEHICLE_FULL_RECEIVED ->
                         "Vehicle Full: ${vRow.fullBalance} -> ${vRow.fullBalance + qty}"
+                    TransactionType.VEHICLE_FULL_RETURN_TO_STORE ->
+                        "Full Return to Store: Veh Full ${vRow.fullBalance} -> ${vRow.fullBalance - qty} (Admin Approval)"
                     TransactionType.VEHICLE_CUSTOMER_SALE ->
                         "Veh Full: ${vRow.fullBalance} -> ${vRow.fullBalance - qty}  |  Veh Empty: ${vRow.emptyBalance} -> ${vRow.emptyBalance + empNow}"
                     TransactionType.VEHICLE_NEW_CUSTOMER_SALE ->
@@ -1114,15 +1162,45 @@ fun StaffDashboardScreen(
                 }
             },
             onDismiss = { activeTxType = null },
+            onConfirmBatch = { _, items, notes, _, custName ->
+                when (type) {
+                    TransactionType.VEHICLE_FULL_RECEIVED ->
+                        onSubmitBatchStoreTransferRequests(StoreTransferDirection.STORE_TO_VEHICLE_FULL, items, notes)
+                    TransactionType.VEHICLE_FULL_RETURN_TO_STORE ->
+                        onSubmitBatchStoreTransferRequests(StoreTransferDirection.VEHICLE_TO_STORE_FULL, items, notes)
+                    TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
+                        onSubmitBatchStoreTransferRequests(StoreTransferDirection.VEHICLE_TO_STORE_EMPTY, items, notes)
+                    else ->
+                        onRecordBatchTransactions(type, items, assignedVehicle.id, notes, "", custName)
+                }
+            },
             onConfirm = { prodId, _, qty, notes, _, custName, empNow ->
                 when (type) {
                     TransactionType.VEHICLE_FULL_RECEIVED ->
                         onSubmitStoreTransferRequest(StoreTransferDirection.STORE_TO_VEHICLE_FULL, prodId, qty, notes)
+                    TransactionType.VEHICLE_FULL_RETURN_TO_STORE ->
+                        onSubmitStoreTransferRequest(StoreTransferDirection.VEHICLE_TO_STORE_FULL, prodId, qty, notes)
                     TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE ->
                         onSubmitStoreTransferRequest(StoreTransferDirection.VEHICLE_TO_STORE_EMPTY, prodId, qty, notes)
                     else ->
                         onRecordTransaction(type, prodId, assignedVehicle.id, qty, notes, custName, empNow)
                 }
+            }
+        )
+    }
+
+    if (showCustomerChangeDialog && assignedVehicle != null) {
+        CustomerProductChangeDialog(
+            vehicle = assignedVehicle,
+            products = products,
+            vehicleRows = vehicleRows,
+            recentCustomerNames = recentCustomerNames,
+            onDismiss = { showCustomerChangeDialog = false },
+            onConfirmMulti = { mode, retItems, givItems, custName, notes ->
+                onRecordMultiCustomerProductChange(mode, retItems, givItems, assignedVehicle.id, custName, notes)
+            },
+            onConfirm = { mode, retProdId, givProdId, qty, custName, notes ->
+                onRecordCustomerProductChange(mode, retProdId, givProdId, assignedVehicle.id, qty, custName, notes)
             }
         )
     }
