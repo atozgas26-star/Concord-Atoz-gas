@@ -221,6 +221,10 @@ fun AdminSettingsScreen(
     onExportBackupJson: suspend () -> String,
     onRestoreBackupJson: (String) -> Unit,
     onMessage: (String) -> Unit,
+    authorizedMobileCount: Int = 0,
+    activeDeviceCount: Int = 0,
+    securityAlertCount: Int = 0,
+    onOpenSecurityCenter: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -669,6 +673,49 @@ fun AdminSettingsScreen(
                 } // end if (showCloudBackup)
 
                 if (showSecurityPins) {
+                item {
+                    LuxuryGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        accentGlow = MetallicOrange
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.Security, contentDescription = null, tint = MetallicOrange)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "Corporate Security Center (+971 & Devices)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "$authorizedMobileCount +971 Authorized • $activeDeviceCount Active Devices • $securityAlertCount Alerts",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Button(
+                                    onClick = onOpenSecurityCenter,
+                                    colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.testTag("settings_open_security_center_btn")
+                                ) {
+                                    Text("Manage", color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
                 item {
                     LuxurySectionHeader(
                         eyebrow = "ACCESS CONTROL",

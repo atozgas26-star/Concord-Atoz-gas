@@ -38,6 +38,11 @@ service cloud.firestore {
              userProfileExists(request.auth.uid) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
     }
+    function isOwnerViewUser() {
+      return isSignedIn() &&
+             userProfileExists(request.auth.uid) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'OWNER_VIEW';
+    }
     function workspaceExists(workspaceId) {
       return exists(/databases/$(database)/documents/workspaces/$(workspaceId));
     }
@@ -49,13 +54,18 @@ service cloud.firestore {
              workspaceExists(workspaceId) &&
              (isBootstrappedAdmin() || request.auth.uid in workspaceData(workspaceId).memberUids);
     }
+    function isWritableWorkspaceMember(workspaceId) {
+      return isWorkspaceMember(workspaceId) && !isOwnerViewUser();
+    }
     function isWorkspaceOwner(workspaceId) {
       return isSignedIn() &&
+             !isOwnerViewUser() &&
              workspaceExists(workspaceId) &&
              (isBootstrappedAdmin() || workspaceData(workspaceId).ownerUid == request.auth.uid);
     }
     function isWorkspaceAdmin(workspaceId) {
       return isSignedIn() &&
+             !isOwnerViewUser() &&
              workspaceExists(workspaceId) &&
              (
                isBootstrappedAdmin() ||
@@ -63,17 +73,20 @@ service cloud.firestore {
                (request.auth.uid in workspaceData(workspaceId).memberUids && userHasAdminRole())
              );
     }
+    function isWorkspaceExecutiveReader(workspaceId) {
+      return isWorkspaceAdmin(workspaceId) || (isWorkspaceMember(workspaceId) && isOwnerViewUser());
+    }
 
     // --- ENTITY VALIDATION HELPERS ---
 
     function isValidUserProfile(data) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
-             data.role in ['ADMIN', 'STAFF'] &&
+             data.role in ['ADMIN', 'STAFF', 'OWNER_VIEW'] &&
              (!('email' in data) || (data.email is string && data.email.size() <= 200)) &&
              (!('activeWorkspaceId' in data) || (data.activeWorkspaceId is string && data.activeWorkspaceId.size() <= 128)) &&
              (!('linkedStaffUsername' in data) || (data.linkedStaffUsername is string && data.linkedStaffUsername.size() <= 64)) &&
-             (!('linkedStaffRole' in data) || (data.linkedStaffRole in ['', 'ADMIN', 'STAFF'])) &&
+             (!('linkedStaffRole' in data) || (data.linkedStaffRole in ['', 'ADMIN', 'STAFF', 'OWNER_VIEW'])) &&
              (!('autoDriveBackupEnabled' in data) || (data.autoDriveBackupEnabled is bool)) &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
@@ -177,6 +190,8 @@ service cloud.firestore {
         'VEHICLE_TRANSFER_FULL_IN',
         'VEHICLE_TRANSFER_EMPTY_OUT',
         'VEHICLE_TRANSFER_EMPTY_IN',
+        'VEHICLE_DAMAGED_ADD',
+        'VEHICLE_DAMAGED_REMOVE',
         'CUSTOMER_EMPTY_PENDING_ADD'
       ];
     }
@@ -202,6 +217,8 @@ service cloud.firestore {
                'STORE_ADJUST_FULL_OUT',
                'STORE_ADJUST_EMPTY_IN',
                'STORE_ADJUST_EMPTY_OUT',
+               'STORE_DAMAGED_ADD',
+               'STORE_DAMAGED_REMOVE',
                'VEHICLE_FULL_RECEIVED',
                'VEHICLE_FULL_RETURN_TO_STORE',
                'VEHICLE_CUSTOMER_SALE',
@@ -221,6 +238,8 @@ service cloud.firestore {
                'VEHICLE_ADJUST_FULL_OUT',
                'VEHICLE_ADJUST_EMPTY_IN',
                'VEHICLE_ADJUST_EMPTY_OUT',
+               'VEHICLE_DAMAGED_ADD',
+               'VEHICLE_DAMAGED_REMOVE',
                'CUSTOMER_EMPTY_PENDING_ADD'
              ] &&
              data.productId is int && data.productId >= 1 &&
@@ -282,7 +301,8 @@ service cloud.firestore {
                'FULL_EMPTY_STOCK',
                'PURCHASE_REGISTER',
                'CUSTOMER_PENDING',
-               'STAFF_WORK_HOURS'
+               'STAFF_WORK_HOURS',
+               'LPG_EXCHANGE_REPORT'
              ] &&
              data.reportTitle is string && data.reportTitle.size() >= 1 && data.reportTitle.size() <= 160 &&
              data.subtitle is string && data.subtitle.size() <= 300 &&
@@ -345,7 +365,7 @@ service cloud.firestore {
              data.notifId is string && isValidId(data.notifId) &&
              data.targetScope in ['ALL', 'ADMIN_OWNER', 'STAFF'] &&
              data.targetStaffId is int && data.targetStaffId >= 0 &&
-             data.category in ['TRANSFER_EXTRA', 'STORE_APPROVAL', 'ATTENDANCE', 'CHAT_IMPORTANT', 'SYSTEM_UPDATE', 'INFO'] &&
+              data.category in ['TRANSFER_EXTRA', 'STORE_APPROVAL', 'ATTENDANCE', 'CHAT_IMPORTANT', 'SYSTEM_UPDATE', 'SECURITY_ALERT', 'INFO'] &&
              data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
              data.message is string && data.message.size() >= 1 && data.message.size() <= 500 &&
              data.isUrgent is bool &&
@@ -379,6 +399,55 @@ service cloud.firestore {
              data.isTyping is bool &&
              data.updatedAtMs is int && data.updatedAtMs > 0 &&
              data.updatedByUid == request.auth.uid;
+    }
+
+    function isValidAuthorizedMobile(data, mobileId) {
+      return data.mobileId == mobileId &&
+             data.mobileId is string && isValidId(data.mobileId) &&
+             data.phoneE164 is string && data.phoneE164.matches('^\\+9715[0-9]{8}$') &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.role in ['ADMIN', 'STAFF', 'OWNER_VIEW'] &&
+             (!('staffUserId' in data) || (data.staffUserId is int && data.staffUserId >= 1)) &&
+             data.allowedFeaturesCsv is string && data.allowedFeaturesCsv.size() <= 300 &&
+             data.isActive is bool &&
+             data.isProtectedOwner is bool &&
+             data.createdAtMs is int && data.createdAtMs > 0 &&
+             data.updatedAtMs is int && data.updatedAtMs > 0 &&
+             data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidRegisteredDevice(data, deviceId) {
+      return data.deviceId == deviceId &&
+             data.deviceId is string && isValidId(data.deviceId) &&
+             data.deviceLabel is string && data.deviceLabel.size() >= 1 && data.deviceLabel.size() <= 120 &&
+             data.phoneE164 is string && data.phoneE164.size() <= 30 &&
+             data.userId is int && data.userId >= 0 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.role in ['ADMIN', 'STAFF', 'OWNER_VIEW'] &&
+             data.sessionVersion is int && data.sessionVersion >= 1 &&
+             data.isRevoked is bool &&
+             data.lastActiveMs is int && data.lastActiveMs > 0 &&
+             data.registeredAtMs is int && data.registeredAtMs > 0 &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidSecurityAuditLog(data, logId) {
+      return data.logId == logId &&
+             data.logId is string && isValidId(data.logId) &&
+             data.eventType is string && data.eventType.size() >= 1 && data.eventType.size() <= 60 &&
+             data.role is string && data.role.size() >= 1 && data.role.size() <= 30 &&
+             data.actorName is string && data.actorName.size() >= 1 && data.actorName.size() <= 100 &&
+             data.phoneE164 is string && data.phoneE164.size() <= 30 &&
+             data.deviceLabel is string && data.deviceLabel.size() <= 120 &&
+             data.details is string && data.details.size() <= 300 &&
+             data.isAlert is bool &&
+             data.timestampMs is int && data.timestampMs > 0 &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             isValidTimestamp(data.createdAt);
     }
 
     // --- COLLECTION RULES ---
@@ -638,7 +707,7 @@ service cloud.firestore {
                          incoming().keys().hasAll(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'staffId', 'staffName', 'quantity', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
                          incoming().keys().hasOnly(['clientTxId', 'businessDate', 'clientTimestampMs', 'type', 'productId', 'vehicleId', 'vehicleName', 'staffId', 'staffName', 'quantity', 'purchaseCompanyName', 'customerName', 'notes', 'createdByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
                          isValidTransaction(incoming()) &&
-                         isWorkspaceMember(workspaceId) &&
+                         isWritableWorkspaceMember(workspaceId) &&
                          (isWorkspaceAdmin(workspaceId) || isStaffAllowedTransactionType(incoming().type));
 
         allow update: if isWorkspaceAdmin(workspaceId) &&
@@ -687,10 +756,10 @@ service cloud.firestore {
         allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(settingId);
       }
 
-      // --- 3G. Admin-Only Sensitive Business & Purchase Reports ---
+      // --- 3G. Executive & Admin Business Reports (Owner View strictly read-only) ---
       match /admin_reports/{reportId} {
-        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(reportId);
-        allow list: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId);
+        allow get: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId) && isValidId(reportId);
+        allow list: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId);
 
         allow create: if isWorkspaceAdmin(workspaceId) &&
                          isValidId(workspaceId) &&
@@ -714,10 +783,10 @@ service cloud.firestore {
 
       // --- 3H. Staff App Login Events (Staff log own sign-in; Admin/Owner View reads alerts) ---
       match /staff_login_events/{eventId} {
-        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(eventId);
-        allow list: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId);
+        allow get: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId) && isValidId(eventId);
+        allow list: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId);
 
-        allow create: if isWorkspaceMember(workspaceId) &&
+        allow create: if isWritableWorkspaceMember(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(eventId) &&
                          incoming().loginByUid == request.auth.uid &&
@@ -735,7 +804,7 @@ service cloud.firestore {
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
 
-        allow create: if isWorkspaceMember(workspaceId) &&
+        allow create: if isWritableWorkspaceMember(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(attendanceId) &&
                          incoming().updatedByUid == request.auth.uid &&
@@ -744,7 +813,7 @@ service cloud.firestore {
                          incoming().keys().hasOnly(['attendanceId', 'businessDate', 'staffId', 'staffName', 'vehicleName', 'dutyStartMs', 'lunchOutMs', 'lunchInMs', 'dutyCloseMs', 'updatedAtMs', 'updatedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
                          isValidStaffAttendance(incoming(), attendanceId);
 
-        allow update: if isWorkspaceMember(workspaceId) &&
+        allow update: if isWritableWorkspaceMember(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(attendanceId) &&
                          incoming().attendanceId == existing().attendanceId &&
@@ -764,7 +833,7 @@ service cloud.firestore {
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
 
-        allow create: if isWorkspaceMember(workspaceId) &&
+        allow create: if isWritableWorkspaceMember(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(requestId) &&
                          incoming().createdByUid == request.auth.uid &&
@@ -800,7 +869,7 @@ service cloud.firestore {
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
 
-        allow create: if isWorkspaceMember(workspaceId) &&
+        allow create: if isWritableWorkspaceMember(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(notifId) &&
                          incoming().createdByUid == request.auth.uid &&
@@ -817,11 +886,11 @@ service cloud.firestore {
       match /chat_messages/{messageId} {
         allow get: if isSignedIn() && isValidId(messageId) &&
                       (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId)) &&
-                      (existing().channel == 'TEAM_CHAT' || isWorkspaceAdmin(workspaceId));
+                      (existing().channel == 'TEAM_CHAT' || isWorkspaceExecutiveReader(workspaceId));
         allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids &&
-                       (resource.data.channel == 'TEAM_CHAT' || isWorkspaceAdmin(workspaceId));
+                       (resource.data.channel == 'TEAM_CHAT' || isWorkspaceExecutiveReader(workspaceId));
 
-        allow create: if isWorkspaceMember(workspaceId) &&
+        allow create: if isWritableWorkspaceMember(workspaceId) &&
                          isValidId(workspaceId) &&
                          isValidId(messageId) &&
                          incoming().createdByUid == request.auth.uid &&
@@ -840,14 +909,91 @@ service cloud.firestore {
         allow get: if isWorkspaceMember(workspaceId) && isValidId(typingId);
         allow list: if isWorkspaceMember(workspaceId);
 
-        allow create, update: if isWorkspaceMember(workspaceId) &&
+        allow create, update: if isWritableWorkspaceMember(workspaceId) &&
                                  isValidId(workspaceId) &&
                                  isValidId(typingId) &&
                                  incoming().keys().hasAll(['typingId', 'channel', 'senderName', 'senderRole', 'isTyping', 'updatedAtMs', 'updatedByUid']) &&
                                  incoming().keys().hasOnly(['typingId', 'channel', 'senderName', 'senderRole', 'isTyping', 'updatedAtMs', 'updatedByUid']) &&
                                  isValidTypingStatus(incoming(), typingId);
 
-        allow delete: if isWorkspaceMember(workspaceId) && isValidId(typingId);
+        allow delete: if isWritableWorkspaceMember(workspaceId) && isValidId(typingId);
+      }
+
+      // --- 3N. Authorized UAE (+971) Mobile Allowlist (Protected Owner Immutable) ---
+      match /authorized_mobiles/{mobileId} {
+        allow get: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId) && isValidId(mobileId);
+        allow list: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId);
+
+        allow create: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(mobileId) &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['mobileId', 'phoneE164', 'displayName', 'role', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'createdAtMs', 'updatedAtMs', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['mobileId', 'phoneE164', 'displayName', 'role', 'staffUserId', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'createdAtMs', 'updatedAtMs', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         isValidAuthorizedMobile(incoming(), mobileId);
+
+        // Admin CANNOT alter, demote, or deactivate an existing Protected Owner mobile record
+        allow update: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(mobileId) &&
+                         existing().isProtectedOwner == false &&
+                         incoming().mobileId == existing().mobileId &&
+                         incoming().phoneE164 == existing().phoneE164 &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'staffUserId', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'updatedAtMs', 'updatedByUid', 'updatedAt']) &&
+                         isValidAuthorizedMobile(incoming(), mobileId);
+
+        allow delete: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(mobileId) &&
+                         existing().isProtectedOwner == false;
+      }
+
+      // --- 3O. Registered Devices & Session Revocation ---
+      match /registered_devices/{deviceId} {
+        allow get: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId) && isValidId(deviceId);
+        allow list: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId);
+
+        allow create: if isWritableWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(deviceId) &&
+                         incoming().ownerUid == request.auth.uid &&
+                         (incoming().isRevoked == false || isWorkspaceAdmin(workspaceId)) &&
+                         incoming().keys().hasAll(['deviceId', 'deviceLabel', 'phoneE164', 'userId', 'displayName', 'role', 'sessionVersion', 'isRevoked', 'lastActiveMs', 'registeredAtMs', 'ownerUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['deviceId', 'deviceLabel', 'phoneE164', 'userId', 'displayName', 'role', 'sessionVersion', 'isRevoked', 'lastActiveMs', 'registeredAtMs', 'ownerUid', 'createdAt', 'updatedAt']) &&
+                         isValidRegisteredDevice(incoming(), deviceId);
+
+        allow update: if isWritableWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(deviceId) &&
+                         incoming().deviceId == existing().deviceId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidRegisteredDevice(incoming(), deviceId) &&
+                         (
+                           isWorkspaceAdmin(workspaceId) ||
+                           (existing().ownerUid == request.auth.uid && incoming().ownerUid == existing().ownerUid && incoming().isRevoked == existing().isRevoked)
+                         ) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['deviceLabel', 'phoneE164', 'userId', 'displayName', 'role', 'sessionVersion', 'isRevoked', 'lastActiveMs', 'registeredAtMs', 'ownerUid', 'updatedAt']);
+
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(deviceId);
+      }
+
+      // --- 3P. Security & Login Audit Logs (Immutable; Owner View read-only) ---
+      match /security_logs/{logId} {
+        allow get: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId) && isValidId(logId);
+        allow list: if isWorkspaceExecutiveReader(workspaceId) && isValidId(workspaceId);
+
+        allow create: if isWritableWorkspaceMember(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(logId) &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['logId', 'eventType', 'role', 'actorName', 'phoneE164', 'deviceLabel', 'details', 'isAlert', 'timestampMs', 'createdByUid', 'createdAt']) &&
+                         incoming().keys().hasOnly(['logId', 'eventType', 'role', 'actorName', 'phoneE164', 'deviceLabel', 'details', 'isAlert', 'timestampMs', 'createdByUid', 'createdAt']) &&
+                         isValidSecurityAuditLog(incoming(), logId);
+
+        allow update: if false;
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(workspaceId) && isValidId(logId);
       }
     }
   }

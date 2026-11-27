@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -14,15 +16,21 @@ import com.example.auth.BiometricAuthManager
 import com.example.auth.BiometricAvailability
 import com.example.auth.GmailAuthResult
 import com.example.auth.GmailVerificationManager
+import com.example.auth.PhoneOtpAuthManager
+import com.example.auth.PhoneOtpUiState
 import com.example.auth.RecoveryPurpose
 import com.example.auth.RecoveryStep
+import com.example.auth.UaePhoneValidator
 import com.example.data.local.AdminCredentialsState
 import com.example.data.local.AppNotificationEntity
+import com.example.data.local.AuthorizedMobileEntity
 import com.example.data.local.BiometricUnlockState
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.RegisteredDeviceEntity
+import com.example.data.local.SecurityAuditLogEntity
 import com.example.data.local.SessionPreferences
 import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.UserAccountEntity
@@ -47,6 +55,7 @@ import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ProductSalesRow
 import com.example.data.model.ReportType
+import com.example.data.model.StaffFeaturePermission
 import com.example.data.model.StaffReturnHistoryGroup
 import com.example.data.model.StaffSalesRow
 import com.example.data.model.StockCalculator
@@ -164,6 +173,9 @@ class AppViewModel(
     val successFeedbackMessage: StateFlow<String?> = _successFeedbackMessage.asStateFlow()
 
     private val inFlightReturnKeys = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    private val phoneOtpAuthManager = PhoneOtpAuthManager()
+    val phoneOtpState: StateFlow<PhoneOtpUiState> = phoneOtpAuthManager.state
 
     private val _appUpdateState = MutableStateFlow(AppUpdateUiState())
     val appUpdateState: StateFlow<AppUpdateUiState> = _appUpdateState.asStateFlow()
@@ -355,6 +367,31 @@ class AppViewModel(
 
     val differentGasReturns: StateFlow<List<DifferentGasReturnEntity>> = repository.differentGasReturnsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val authorizedMobiles: StateFlow<List<AuthorizedMobileEntity>> = repository.authorizedMobilesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val registeredDevices: StateFlow<List<RegisteredDeviceEntity>> = repository.registeredDevicesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val securityAuditLogs: StateFlow<List<SecurityAuditLogEntity>> = repository.securityAuditLogsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val currentStaffPermissions: StateFlow<Set<StaffFeaturePermission>> = combine(
+        _authSession,
+        repository.authorizedMobilesFlow
+    ) { session, mobiles ->
+        if (session == null || session.user.role != UserRole.STAFF) {
+            StaffFeaturePermission.entries.toSet()
+        } else {
+            val matched = mobiles.firstOrNull { it.isActive && it.staffUserId == session.user.id }
+            if (matched != null) {
+                StaffFeaturePermission.parseCsv(matched.allowedFeaturesCsv)
+            } else {
+                StaffFeaturePermission.entries.toSet()
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StaffFeaturePermission.entries.toSet())
 
     val customerReturnHistory: StateFlow<List<CustomerReturnHistoryGroup>> = repository.customerReturnHistoryFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -1503,6 +1540,14 @@ class AppViewModel(
                 }
                 if (!matches) {
                     failedOwnerLoginAttempts++
+                    repository.logSecurityEvent(
+                        eventType = "FAILED_OWNER_LOGIN",
+                        role = UserRole.OWNER_VIEW.name,
+                        actorName = "Owner View",
+                        deviceLabel = currentDeviceLabel(),
+                        details = "Failed Owner View PIN attempt ($failedOwnerLoginAttempts/$MAX_LOGIN_ATTEMPTS).",
+                        isAlert = true
+                    )
                     if (failedOwnerLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
                         ownerLoginLockoutUntilMs = System.currentTimeMillis() + LOGIN_LOCKOUT_MS
                         failedOwnerLoginAttempts = 0
@@ -1527,6 +1572,22 @@ class AppViewModel(
                     role = UserRole.OWNER_VIEW,
                     displayName = ownerSession.user.displayName
                 )
+                repository.registerOrTouchDevice(
+                    deviceId = currentDeviceId(),
+                    deviceLabel = currentDeviceLabel(),
+                    phoneE164 = "",
+                    userId = OWNER_VIEW_SYNTHETIC_USER_ID,
+                    displayName = ownerSession.user.displayName,
+                    role = UserRole.OWNER_VIEW
+                )
+                repository.logSecurityEvent(
+                    eventType = "OWNER_LOGIN_SUCCESS",
+                    role = UserRole.OWNER_VIEW.name,
+                    actorName = ownerSession.user.displayName,
+                    deviceLabel = currentDeviceLabel(),
+                    details = "Executive Owner View session opened (strictly read-only).",
+                    isAlert = false
+                )
                 _shouldAutoPromptBiometric.value = false
                 _authSession.value = ownerSession
                 _loginError.value = null
@@ -1534,6 +1595,150 @@ class AppViewModel(
             } finally {
                 _isAuthenticating.value = false
             }
+        }
+    }
+
+    private fun currentDeviceId(): String {
+        val androidId = runCatching {
+            appContext?.let {
+                Settings.Secure.getString(it.contentResolver, Settings.Secure.ANDROID_ID)
+            }
+        }.getOrNull()
+        val raw = androidId?.takeIf { it.isNotBlank() } ?: "${Build.MANUFACTURER}_${Build.MODEL}"
+        return "dev_${raw.replace(Regex("[^a-zA-Z0-9_]"), "_").take(40)}"
+    }
+
+    private fun currentDeviceLabel(): String {
+        val mfr = Build.MANUFACTURER?.trim().orEmpty()
+        val model = Build.MODEL?.trim().orEmpty()
+        val joined = if (model.startsWith(mfr, ignoreCase = true)) model else "$mfr $model".trim()
+        return joined.ifBlank { "Android Device" }.take(80)
+    }
+
+    fun resetPhoneOtpState() {
+        phoneOtpAuthManager.reset()
+        _loginError.value = null
+    }
+
+    fun startUaePhoneOtp(activity: Activity, rawPhone: String) {
+        val normalized = UaePhoneValidator.normalizeUaePhone(rawPhone)
+        if (normalized == null) {
+            val msg = "Enter a valid UAE mobile number (+971 5X XXX XXXX)."
+            _loginError.value = msg
+            phoneOtpAuthManager.setError(rawPhone, msg)
+            return
+        }
+        viewModelScope.launch {
+            val authorized = repository.findAuthorizedMobileByPhone(normalized)
+            if (authorized == null || !authorized.isActive) {
+                val msg = "This UAE mobile number is not authorized. Contact Admin to register access."
+                _loginError.value = msg
+                phoneOtpAuthManager.setError(normalized, msg)
+                repository.logSecurityEvent(
+                    eventType = "UNAUTHORIZED_MOBILE_ATTEMPT",
+                    role = "UNKNOWN",
+                    actorName = "Unregistered Device",
+                    phoneE164 = normalized,
+                    deviceLabel = currentDeviceLabel(),
+                    details = "Blocked login attempt from unregistered or deactivated UAE mobile $normalized.",
+                    isAlert = true
+                )
+                return@launch
+            }
+            _loginError.value = null
+            phoneOtpAuthManager.sendOtp(
+                activity = activity,
+                normalizedPhoneE164 = normalized,
+                onAutoVerified = { verifiedPhone ->
+                    completeAuthorizedPhoneLogin(verifiedPhone)
+                },
+                onFailure = { errMsg ->
+                    _loginError.value = errMsg
+                    viewModelScope.launch {
+                        repository.logSecurityEvent(
+                            eventType = "OTP_SEND_FAILED",
+                            role = authorized.role.name,
+                            actorName = authorized.displayName,
+                            phoneE164 = normalized,
+                            deviceLabel = currentDeviceLabel(),
+                            details = errMsg.take(250),
+                            isAlert = true
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun verifyUaePhoneOtp(code: String) {
+        phoneOtpAuthManager.verifyOtpCode(
+            code = code,
+            onVerified = { verifiedPhone ->
+                completeAuthorizedPhoneLogin(verifiedPhone)
+            },
+            onFailure = { errMsg ->
+                _loginError.value = errMsg
+                viewModelScope.launch {
+                    repository.logSecurityEvent(
+                        eventType = "FAILED_OTP_VERIFY",
+                        role = "UNKNOWN",
+                        actorName = "OTP Verification",
+                        phoneE164 = phoneOtpState.value.normalizedPhone,
+                        deviceLabel = currentDeviceLabel(),
+                        details = errMsg.take(250),
+                        isAlert = true
+                    )
+                }
+            }
+        )
+    }
+
+    private fun completeAuthorizedPhoneLogin(normalizedPhone: String) {
+        viewModelScope.launch {
+            val authorized = repository.findAuthorizedMobileByPhone(normalizedPhone)
+            if (authorized == null || !authorized.isActive) {
+                _loginError.value = "Mobile authorization was revoked. Contact Admin."
+                return@launch
+            }
+            val session: AuthSession = when (authorized.role) {
+                UserRole.OWNER_VIEW -> buildOwnerViewSession()
+                UserRole.ADMIN -> {
+                    val adminUser = users.value.firstOrNull { it.role == UserRole.ADMIN }
+                        ?: return@launch
+                    AuthSession(user = adminUser, assignedVehicle = null)
+                }
+                UserRole.STAFF -> {
+                    val staffUser = authorized.staffUserId?.let { id -> users.value.firstOrNull { it.id == id && it.isActive } }
+                        ?: users.value.firstOrNull { it.role == UserRole.STAFF && it.displayName.equals(authorized.displayName, ignoreCase = true) && it.isActive }
+                        ?: run {
+                            _loginError.value = "No active Staff account is linked to ${UaePhoneValidator.formatDisplay(normalizedPhone)}."
+                            return@launch
+                        }
+                    val vehicle = vehicles.value.firstOrNull { it.staffUserId == staffUser.id }
+                    AuthSession(user = staffUser, assignedVehicle = vehicle)
+                }
+            }
+            repository.registerOrTouchDevice(
+                deviceId = currentDeviceId(),
+                deviceLabel = currentDeviceLabel(),
+                phoneE164 = normalizedPhone,
+                userId = session.user.id,
+                displayName = session.user.displayName,
+                role = session.user.role
+            )
+            repository.logSecurityEvent(
+                eventType = "UAE_OTP_LOGIN_SUCCESS",
+                role = session.user.role.name,
+                actorName = session.user.displayName,
+                phoneE164 = normalizedPhone,
+                deviceLabel = currentDeviceLabel(),
+                details = "Authenticated via UAE +971 Firebase SMS OTP.",
+                isAlert = false
+            )
+            _authSession.value = session
+            _loginError.value = null
+            _selectedDate.value = InventoryRepository.todayIsoDate()
+            phoneOtpAuthManager.reset()
         }
     }
 
@@ -2153,10 +2358,21 @@ class AppViewModel(
     }
 
     fun logout() {
+        val prev = _authSession.value
         _authSession.value = null
         _loginError.value = null
         _shouldAutoPromptBiometric.value = false
         viewModelScope.launch {
+            if (prev != null) {
+                repository.logSecurityEvent(
+                    eventType = "LOGOUT",
+                    role = prev.user.role.name,
+                    actorName = prev.user.displayName,
+                    deviceLabel = currentDeviceLabel(),
+                    details = "User signed out securely.",
+                    isAlert = false
+                )
+            }
             sessionPreferences?.disarmBiometricUnlockOnLogout()
             cloudSync?.clearLinkedStaffMetadata()
         }
@@ -2221,6 +2437,8 @@ class AppViewModel(
                 TransactionType.VEHICLE_TRANSFER_FULL_IN,
                 TransactionType.VEHICLE_TRANSFER_EMPTY_OUT,
                 TransactionType.VEHICLE_TRANSFER_EMPTY_IN,
+                TransactionType.VEHICLE_DAMAGED_ADD,
+                TransactionType.VEHICLE_DAMAGED_REMOVE,
                 TransactionType.CUSTOMER_EMPTY_PENDING_ADD
             )
             if (type !in allowedStaffTypes || vehicleId != session.assignedVehicle?.id) {
@@ -3211,6 +3429,113 @@ class AppViewModel(
         }
     }
 
+    fun updateDifferentGasReturn(
+        recordId: Long,
+        deliveredItems: List<CustomerExchangeItem>,
+        returnedItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        customerName: String,
+        customerPhone: String,
+        notes: String = ""
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert("Read-Only Access", "Owner View cannot edit gas exchanges.")
+            return
+        }
+        val effectiveVehicleId = if (session.user.role == UserRole.STAFF) session.assignedVehicle?.id else vehicleId
+        viewModelScope.launch {
+            val result = repository.updateDifferentGasReturn(
+                recordId = recordId,
+                deliveredItems = deliveredItems,
+                returnedItems = returnedItems,
+                vehicleId = effectiveVehicleId,
+                actor = session.user,
+                customerName = customerName,
+                customerPhone = customerPhone,
+                notes = notes
+            )
+            handleOperationResult(result)
+        }
+    }
+
+    fun deleteDifferentGasReturn(recordId: Long) {
+        val session = _authSession.value ?: return
+        if (session.user.role == UserRole.OWNER_VIEW) {
+            _warningAlert.value = WarningAlert("Read-Only Access", "Owner View cannot delete gas exchanges.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.deleteDifferentGasReturn(recordId, session.user)
+            handleOperationResult(result)
+        }
+    }
+
+    fun upsertAuthorizedMobile(
+        phoneRaw: String,
+        displayName: String,
+        role: UserRole,
+        staffUserId: Long?,
+        allowedFeatures: Set<StaffFeaturePermission>,
+        isActive: Boolean = true,
+        isProtectedOwner: Boolean = false
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can register or update authorized mobile access.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.upsertAuthorizedMobile(
+                phoneRaw = phoneRaw,
+                displayName = displayName,
+                role = role,
+                staffUserId = staffUserId,
+                allowedFeatures = allowedFeatures,
+                isActive = isActive,
+                isProtectedOwner = isProtectedOwner,
+                actor = session.user
+            )
+            handleOperationResult(result)
+        }
+    }
+
+    fun deleteAuthorizedMobile(mobileId: Long) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can remove authorized mobiles.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.deleteAuthorizedMobile(mobileId, session.user)
+            handleOperationResult(result)
+        }
+    }
+
+    fun revokeRegisteredDevice(deviceId: String) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can revoke registered devices.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.revokeDevice(deviceId, session.user)
+            handleOperationResult(result)
+        }
+    }
+
+    fun logoutAllRegisteredDevices() {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can sign out all devices.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.logoutAllDevices(session.user)
+            handleOperationResult(result)
+        }
+    }
+
     fun toggleProductActive(product: ProductEntity) {
         val session = _authSession.value ?: return
         if (session.user.role != UserRole.ADMIN) return
@@ -3273,7 +3598,7 @@ class AppViewModel(
                     generatedBy = actorName,
                     headers = listOf(
                         "Product", "Op.Full", "Pur.Full", "Inward", "Disp.Full",
-                        "Bal.Full", "Op.Empty", "Pur.Empty", "Ret.Empty", "Disp.Empty", "Bal.Empty"
+                        "Bal.Full", "Op.Empty", "Pur.Empty", "Ret.Empty", "Disp.Empty", "Bal.Empty", "Damaged"
                     ),
                     rows = rows.map { r ->
                         listOf(
@@ -3287,7 +3612,8 @@ class AppViewModel(
                             r.emptyPurchases.toString(),
                             r.emptyReturnsToStore.toString(),
                             r.emptyDispatch.toString(),
-                            r.storeEmptyBalance.toString()
+                            r.storeEmptyBalance.toString(),
+                            r.damagedBalance.toString()
                         )
                     },
                     footerTotals = listOf(
@@ -3301,7 +3627,8 @@ class AppViewModel(
                         rows.sumOf { it.emptyPurchases }.toString(),
                         rows.sumOf { it.emptyReturnsToStore }.toString(),
                         rows.sumOf { it.emptyDispatch }.toString(),
-                        rows.sumOf { it.storeEmptyBalance }.toString()
+                        rows.sumOf { it.storeEmptyBalance }.toString(),
+                        rows.sumOf { it.damagedBalance }.toString()
                     )
                 )
             }
@@ -3959,6 +4286,51 @@ class AppViewModel(
                         "",
                         formatMinutesAsHours(totalBreakMins),
                         formatMinutesAsHours(totalWorkMins),
+                        ""
+                    )
+                )
+            }
+
+            ReportType.LPG_EXCHANGE_REPORT -> {
+                val selectedVeh = vehicles.value.firstOrNull { it.id == vehicleFilterId }
+                val periodLabel = if (purchaseDailyMode) "Daily ($date)" else "Monthly ($ym)"
+                val filtered = differentGasReturns.value.filter { rec ->
+                    val periodMatch = if (purchaseDailyMode) rec.businessDate == date else rec.businessDate.startsWith(ym)
+                    val vehMatch = selectedVeh == null || rec.vehicleId == selectedVeh.id
+                    periodMatch && vehMatch
+                }
+                val timeFmt = SimpleDateFormat("dd MMM HH:mm", Locale.US)
+                ReportTable(
+                    reportTitle = "LPG & Gas Full / Empty Exchange Report",
+                    subtitle = "$periodLabel • ${selectedVeh?.name ?: "All Vehicles & Main Store"} • Arab Gas, Emirates Gas & Industrial",
+                    generatedBy = actorName,
+                    headers = listOf(
+                        "Date/Time", "Customer", "Staff", "Vehicle", "Delivered Full", "Returned Empty", "Del Qty", "Ret Qty", "Notes"
+                    ),
+                    rows = filtered.map { rec ->
+                        listOf(
+                            "${rec.businessDate} (${timeFmt.format(Date(rec.timestamp))})",
+                            if (rec.customerPhone.isNotBlank()) "${rec.customerName} (${rec.customerPhone})" else rec.customerName,
+                            rec.staffName,
+                            rec.vehicleName ?: "Main Store",
+                            rec.deliveredSummary,
+                            rec.returnedSummary,
+                            rec.totalDeliveredQty.toString(),
+                            rec.totalReturnedQty.toString(),
+                            rec.notes.ifBlank { "—" }
+                        )
+                    }.ifEmpty {
+                        listOf(listOf("No Exchanges", "—", "—", "—", "—", "—", "0", "0", "—"))
+                    },
+                    footerTotals = listOf(
+                        "TOTAL",
+                        "${filtered.size} Entries",
+                        "",
+                        "",
+                        "",
+                        "",
+                        filtered.sumOf { it.totalDeliveredQty }.toString(),
+                        filtered.sumOf { it.totalReturnedQty }.toString(),
                         ""
                     )
                 )

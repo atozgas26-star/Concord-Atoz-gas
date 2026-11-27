@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.data.model.ProductCategory
+import com.example.data.model.StaffFeaturePermission
 import com.example.data.model.TransactionType
 import com.example.data.model.UserRole
 
@@ -226,6 +227,63 @@ data class DifferentGasReturnEntity(
     val returnedItemsJson: String,
     val totalDeliveredQty: Int,
     val totalReturnedQty: Int,
-    val notes: String = ""
+    val notes: String = "",
+    val linkedTxRemoteIds: String = "",
+    val updatedAtMs: Long = 0L
 )
+
+@Entity(
+    tableName = "authorized_mobiles",
+    indices = [Index(value = ["phoneE164"], unique = true)]
+)
+data class AuthorizedMobileEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val phoneE164: String,
+    val displayName: String,
+    val role: UserRole,
+    val staffUserId: Long? = null,
+    val allowedFeaturesCsv: String = StaffFeaturePermission.ALL_DEFAULT_CSV,
+    val isActive: Boolean = true,
+    val isProtectedOwner: Boolean = false,
+    val createdAtMs: Long = System.currentTimeMillis(),
+    val updatedAtMs: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "registered_devices",
+    indices = [Index(value = ["deviceId"], unique = true)]
+)
+data class RegisteredDeviceEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val deviceId: String,
+    val deviceLabel: String,
+    val phoneE164: String = "",
+    val userId: Long = 0L,
+    val displayName: String,
+    val role: UserRole,
+    val sessionVersion: Long = 1L,
+    val isRevoked: Boolean = false,
+    val lastActiveMs: Long = System.currentTimeMillis(),
+    val registeredAtMs: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "security_audit_logs",
+    indices = [
+        Index(value = ["timestampMs"]),
+        Index(value = ["eventType"])
+    ]
+)
+data class SecurityAuditLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val eventType: String,
+    val role: String,
+    val actorName: String,
+    val phoneE164: String = "",
+    val deviceLabel: String = "",
+    val details: String = "",
+    val isAlert: Boolean = false,
+    val timestampMs: Long = System.currentTimeMillis()
+)
+
 

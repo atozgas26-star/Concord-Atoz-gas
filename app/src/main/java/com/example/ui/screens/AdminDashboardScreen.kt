@@ -83,8 +83,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.Security
+import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.RegisteredDeviceEntity
+import com.example.data.local.SecurityAuditLogEntity
 import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
@@ -95,6 +99,7 @@ import com.example.notifications.StaffLoginNotificationItem
 import com.example.ui.components.AdminDailyWorkHoursCard
 import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.BrandHeaderBanner
+import com.example.ui.components.OwnerExecutiveDashboardSection
 import com.example.update.AppUpdateStatus
 import com.example.update.AppUpdateUiState
 import com.example.data.model.CompanyStockRow
@@ -190,6 +195,11 @@ fun AdminDashboardScreen(
     onUpdateTransaction: (txId: Long, productId: Long, qty: Int, purchaseCompany: String, customerName: String, notes: String) -> Unit = { _, _, _, _, _, _ -> },
     onOpenDifferentGasReturn: () -> Unit = {},
     onOpenReturnHistory: () -> Unit = {},
+    lpgExchanges: List<DifferentGasReturnEntity> = emptyList(),
+    registeredDevices: List<RegisteredDeviceEntity> = emptyList(),
+    securityLogs: List<SecurityAuditLogEntity> = emptyList(),
+    allTransactions: List<StockTransactionEntity> = emptyList(),
+    onOpenSecurityCenter: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
@@ -262,7 +272,21 @@ fun AdminDashboardScreen(
                     )
                 }
             }
-            if (isReadOnly) {
+            if (isReadOnly && summary != null) {
+                item(key = "owner_executive_monitoring") {
+                    OwnerExecutiveDashboardSection(
+                        summary = summary,
+                        companyStockRows = companyStockRows,
+                        transactions = allTransactions,
+                        lpgExchanges = lpgExchanges,
+                        registeredDevices = registeredDevices,
+                        securityLogs = securityLogs,
+                        onOpenReports = onOpenReports,
+                        onOpenExchangeHistory = onOpenReturnHistory,
+                        onOpenSecurityMonitor = onOpenSecurityCenter
+                    )
+                }
+            } else if (isReadOnly) {
                 item {
                     val isDarkBanner = LocalIsDarkTheme.current
                     Surface(
@@ -447,8 +471,8 @@ fun AdminDashboardScreen(
                         ) {
                             if (!isReadOnly) {
                                 QuickNavCard(
-                                    title = "Diff Gas Return",
-                                    subtitle = "Deliver & Receive",
+                                    title = "LPG Exchange",
+                                    subtitle = "Arab & Emirates",
                                     icon = Icons.Default.SwapHoriz,
                                     accentColor = if (isDarkNav) MetallicOrangeBright else MetallicOrange,
                                     containerColor = if (isDarkNav) Color(0xFF3A1A0B) else AmberContainer,
@@ -460,8 +484,8 @@ fun AdminDashboardScreen(
                                 )
                             }
                             QuickNavCard(
-                                title = "Return History",
-                                subtitle = "Customer & Staff",
+                                title = "Exchange Log",
+                                subtitle = "Filter & Export",
                                 icon = Icons.Default.History,
                                 accentColor = if (isDarkNav) ElectricBlueGlow else RoyalElectricBlue,
                                 containerColor = if (isDarkNav) ObsidianElevated else ElectricBlueSoft,
@@ -470,6 +494,18 @@ fun AdminDashboardScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("quick_nav_return_history")
+                            )
+                            QuickNavCard(
+                                title = if (isReadOnly) "Security" else "+971 Security",
+                                subtitle = "${registeredDevices.count { !it.isRevoked }} Active Dev",
+                                icon = Icons.Default.Security,
+                                accentColor = if (isDarkNav) MetallicOrangeBright else RoyalElectricBlue,
+                                containerColor = if (isDarkNav) ObsidianElevated else ElectricBlueSoft,
+                                onContainerColor = if (isDarkNav) ArcticWhite else ElectricBlueOnSoft,
+                                onClick = onOpenSecurityCenter,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("quick_nav_security_center")
                             )
                         }
                     }

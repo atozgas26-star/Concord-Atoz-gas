@@ -1,6 +1,7 @@
 package com.example.export
 
 import androidx.room.withTransaction
+import com.example.data.local.AuthorizedMobileEntity
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.OpeningStockEntity
@@ -10,6 +11,7 @@ import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
+import com.example.data.model.StaffFeaturePermission
 import com.example.data.model.TransactionType
 import com.example.data.model.UserRole
 import org.json.JSONArray
@@ -24,10 +26,11 @@ class BackupManager(private val db: ConcordDatabase) {
         val openings = db.openingStockDao().getAllOpeningsOnce()
         val transactions = db.transactionDao().getAllTransactionsOnce()
         val differentGasReturns = db.differentGasReturnDao().getAllOnce()
+        val authorizedMobiles = db.authorizedMobileDao().getAllOnce()
 
         val root = JSONObject().apply {
             put("app", "Concord & A to Z Gas")
-            put("schemaVersion", 2)
+            put("schemaVersion", 3)
             put("exportedAt", System.currentTimeMillis())
 
             put("users", JSONArray().apply {
@@ -98,6 +101,7 @@ class BackupManager(private val db: ConcordDatabase) {
                         put("purchaseCompanyName", t.purchaseCompanyName)
                         put("customerName", t.customerName)
                         put("notes", t.notes)
+                        put("remoteId", t.remoteId ?: JSONObject.NULL)
                     })
                 }
             })
@@ -122,6 +126,25 @@ class BackupManager(private val db: ConcordDatabase) {
                         put("totalDeliveredQty", r.totalDeliveredQty)
                         put("totalReturnedQty", r.totalReturnedQty)
                         put("notes", r.notes)
+                        put("linkedTxRemoteIds", r.linkedTxRemoteIds)
+                        put("updatedAtMs", r.updatedAtMs)
+                    })
+                }
+            })
+
+            put("authorizedMobiles", JSONArray().apply {
+                authorizedMobiles.forEach { m ->
+                    put(JSONObject().apply {
+                        put("id", m.id)
+                        put("phoneE164", m.phoneE164)
+                        put("displayName", m.displayName)
+                        put("role", m.role.name)
+                        put("staffUserId", m.staffUserId ?: JSONObject.NULL)
+                        put("allowedFeaturesCsv", m.allowedFeaturesCsv)
+                        put("isActive", m.isActive)
+                        put("isProtectedOwner", m.isProtectedOwner)
+                        put("createdAtMs", m.createdAtMs)
+                        put("updatedAtMs", m.updatedAtMs)
                     })
                 }
             })
@@ -209,7 +232,8 @@ class BackupManager(private val db: ConcordDatabase) {
                     quantity = o.getInt("quantity"),
                     purchaseCompanyName = o.optString("purchaseCompanyName", ""),
                     customerName = o.optString("customerName", ""),
-                    notes = o.optString("notes", "")
+                    notes = o.optString("notes", ""),
+                    remoteId = if (!o.has("remoteId") || o.isNull("remoteId")) null else o.optString("remoteId").takeIf { it.isNotBlank() }
                 )
             }
 
@@ -234,11 +258,34 @@ class BackupManager(private val db: ConcordDatabase) {
                         returnedItemsJson = o.optString("returnedItemsJson", "[]"),
                         totalDeliveredQty = o.optInt("totalDeliveredQty", 0),
                         totalReturnedQty = o.optInt("totalReturnedQty", 0),
-                        notes = o.optString("notes", "")
+                        notes = o.optString("notes", ""),
+                        linkedTxRemoteIds = o.optString("linkedTxRemoteIds", ""),
+                        updatedAtMs = o.optLong("updatedAtMs", 0L)
                     )
                 }
             } else {
                 emptyList()
+            }
+
+            val mobilesArr = root.optJSONArray("authorizedMobiles")
+            val authorizedMobiles = if (mobilesArr != null) {
+                (0 until mobilesArr.length()).map { i ->
+                    val o = mobilesArr.getJSONObject(i)
+                    AuthorizedMobileEntity(
+                        id = o.optLong("id", 0L),
+                        phoneE164 = o.getString("phoneE164"),
+                        displayName = o.getString("displayName"),
+                        role = UserRole.valueOf(o.getString("role")),
+                        staffUserId = if (!o.has("staffUserId") || o.isNull("staffUserId")) null else o.getLong("staffUserId"),
+                        allowedFeaturesCsv = o.optString("allowedFeaturesCsv", StaffFeaturePermission.ALL_DEFAULT_CSV),
+                        isActive = o.optBoolean("isActive", true),
+                        isProtectedOwner = o.optBoolean("isProtectedOwner", false),
+                        createdAtMs = o.optLong("createdAtMs", System.currentTimeMillis()),
+                        updatedAtMs = o.optLong("updatedAtMs", System.currentTimeMillis())
+                    )
+                }
+            } else {
+                null
             }
 
             db.withTransaction {
@@ -257,6 +304,12 @@ class BackupManager(private val db: ConcordDatabase) {
                 if (diffReturns.isNotEmpty()) {
                     db.differentGasReturnDao().insertAll(diffReturns)
                 }
+                if (authorizedMobiles != null) {
+                    db.authorizedMobileDao().deleteAll()
+                    if (authorizedMobiles.isNotEmpty()) {
+                        db.authorizedMobileDao().insertAll(authorizedMobiles)
+                    }
+                }
             }
 
             OperationResult.Success(
@@ -267,3 +320,4 @@ class BackupManager(private val db: ConcordDatabase) {
         }
     }
 }
+

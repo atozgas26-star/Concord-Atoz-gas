@@ -16,7 +16,10 @@ data class StoreStockRow(
     val emptyPurchases: Int,
     val emptyReturnsToStore: Int,
     val emptyDispatch: Int,
-    val storeEmptyBalance: Int
+    val storeEmptyBalance: Int,
+    val damagedBalance: Int = 0,
+    val damagedAddedToday: Int = 0,
+    val damagedResolvedToday: Int = 0
 )
 
 data class VehicleStockRow(
@@ -36,7 +39,10 @@ data class VehicleStockRow(
     val emptyTransferredOut: Int = 0,
     val fullReturnedToStore: Int = 0,
     val fullChangedOut: Int = 0,
-    val emptyChangedOut: Int = 0
+    val emptyChangedOut: Int = 0,
+    val damagedBalance: Int = 0,
+    val damagedAddedToday: Int = 0,
+    val damagedResolvedToday: Int = 0
 )
 
 data class VehicleOverview(
@@ -53,7 +59,8 @@ data class VehicleOverview(
     val totalComplaintReplaced: Int = 0,
     val totalFullTransferredOut: Int = 0,
     val totalEmptyTransferredOut: Int = 0,
-    val totalFullReturnedToStore: Int = 0
+    val totalFullReturnedToStore: Int = 0,
+    val totalDamagedBalance: Int = 0
 )
 
 data class DashboardSummary(
@@ -74,8 +81,26 @@ data class DashboardSummary(
     val pendingDeliveryCylinders: Int = allVehiclesFullBalance,
     val activeDeliveryVehiclesCount: Int = vehicleOverviews.count { it.totalFullBalance > 0 },
     val todayStoreActivityCount: Int = 0,
-    val recentStoreActivity: List<TransactionDisplayItem> = emptyList()
+    val recentStoreActivity: List<TransactionDisplayItem> = emptyList(),
+    val storeDamagedBalance: Int = 0,
+    val allVehiclesDamagedBalance: Int = 0
 )
+
+/**
+ * Guarantees exact C&A GAS company/LPG naming across UI, reports, and imports.
+ * Never displays "Arabic Gas" or "Emergency Gas" — strictly enforces "Arab Gas" and "Emirates Gas".
+ */
+object GasNamingSanitizer {
+    const val ARAB_GAS = "Arab Gas"
+    const val EMIRATES_GAS = "Emirates Gas"
+
+    fun sanitizeCompanyOrProductName(raw: String): String {
+        return raw
+            .replace(Regex("\\bArabic\\s+Gas\\b", RegexOption.IGNORE_CASE), ARAB_GAS)
+            .replace(Regex("\\bEmergency\\s+Gas\\b", RegexOption.IGNORE_CASE), EMIRATES_GAS)
+            .trim()
+    }
+}
 
 data class TransactionDisplayItem(
     val transaction: StockTransactionEntity,

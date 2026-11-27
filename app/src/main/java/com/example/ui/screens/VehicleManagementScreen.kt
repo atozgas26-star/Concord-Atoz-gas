@@ -407,9 +407,11 @@ fun VehicleDetailScreen(
                 }
             )
     ) {
+        val totalVehicleDamaged = rows.sumOf { it.damagedBalance }
         BrandHeaderBanner(
             title = "Outside Vehicle: ${vehicle?.name ?: ""}" + if (isReadOnly) " (View Only)" else "",
-            subtitle = "Full Bal: ${rows.sumOf { it.fullBalance }}  •  Empty Bal: ${rows.sumOf { it.emptyBalance }}",
+            subtitle = "Full Bal: ${rows.sumOf { it.fullBalance }}  •  Empty Bal: ${rows.sumOf { it.emptyBalance }}" +
+                (if (totalVehicleDamaged > 0) "  •  Damaged: $totalVehicleDamaged" else ""),
             headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.OutsideFleetGradient,
             accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.OutsideFleetAccent,
             trailingContent = {
@@ -554,6 +556,30 @@ fun VehicleDetailScreen(
                         colors = chipColors,
                         border = chipBorder,
                         modifier = Modifier.testTag("vehicle_detail_return_history_chip")
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_DAMAGED_ADD
+                        },
+                        label = { Text("Damaged (+)") },
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = BrandRedBright) },
+                        colors = chipColors,
+                        border = chipBorder,
+                        modifier = Modifier.testTag("vehicle_detail_damaged_add_chip")
+                    )
+                    AssistChip(
+                        onClick = {
+                            prefillCustomerName = ""
+                            prefillQuantity = 1
+                            activeTxType = TransactionType.VEHICLE_DAMAGED_REMOVE
+                        },
+                        label = { Text("Resolve Dmg (-)") },
+                        leadingIcon = { Icon(Icons.Default.Recycling, contentDescription = null, tint = if (isDark) BrandGreenLight else BrandGreenPrimary) },
+                        colors = chipColors,
+                        border = chipBorder,
+                        modifier = Modifier.testTag("vehicle_detail_damaged_remove_chip")
                     )
                     if (vehicle != null && allVehicles.any { it.id != vehicle.id }) {
                         AssistChip(
@@ -1088,6 +1114,45 @@ fun VehicleProductRowCard(
                             fontFamily = JetBrainsMono,
                             color = if (isDark) ArcticWhite else BrandRedOnContainer
                         )
+                    }
+                }
+            }
+            if (row.damagedBalance > 0 || row.fullBalance <= 3) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (row.damagedBalance > 0) {
+                        Surface(
+                            color = Color(0xFF45141E),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(0.8.dp, BrandRedBright.copy(alpha = 0.65f))
+                        ) {
+                            Text(
+                                text = "DAMAGED: ${row.damagedBalance}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMono,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFCA5A5),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    if (row.fullBalance <= 3) {
+                        Surface(
+                            color = if (isDark) Color(0xFF3E2208) else BrandRedContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.7f))
+                        ) {
+                            Text(
+                                text = if (row.fullBalance <= 0) "LOW: 0 FULL" else "LOW STOCK (${row.fullBalance})",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) MetallicOrangeBright else BrandRedOnContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }

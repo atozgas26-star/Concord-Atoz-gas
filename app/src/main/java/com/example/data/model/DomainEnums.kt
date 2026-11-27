@@ -9,8 +9,8 @@ enum class UserRole {
 enum class ProductCategory(val displayName: String, val shortCode: String, val sortOrder: Int) {
     INDUSTRIAL_GAS("INDUSTRIAL GAS", "IND", 1),
     SMALL_48_CFT("48 CFT SMALL", "48CFT", 2),
-    COOKING_GAS("COOKING GAS", "LPG", 3),
-    MCG_CUTTING_GAS("MCG CUTTING GAS", "MCG", 4)
+    COOKING_GAS("LPG GAS (ARAB & EMIRATES)", "LPG", 3),
+    MCG_CUTTING_GAS("MCG & CUTTING GAS", "MCG", 4)
 }
 
 /**
@@ -18,6 +18,7 @@ enum class ProductCategory(val displayName: String, val shortCode: String, val s
  * Note:
  * - VEHICLE_FULL_RECEIVED == Store Full Dispatch to Vehicle (reduces Store Full, increases Vehicle Full)
  * - VEHICLE_EMPTY_RETURN_TO_STORE == Vehicle Empty Returned to Store (reduces Vehicle Empty, increases Store Empty)
+ * - Damaged stock types track damaged cylinders separately without altering Full/Empty closing math.
  */
 enum class TransactionType(
     val label: String,
@@ -40,6 +41,8 @@ enum class TransactionType(
     STORE_ADJUST_FULL_OUT("Store Full Adjustment (-)", true, false),
     STORE_ADJUST_EMPTY_IN("Store Empty Adjustment (+)", true, false),
     STORE_ADJUST_EMPTY_OUT("Store Empty Adjustment (-)", true, false),
+    STORE_DAMAGED_ADD("Store Damaged Cylinder (+)", true, false),
+    STORE_DAMAGED_REMOVE("Store Damaged Resolved (-)", true, false),
 
     VEHICLE_FULL_RECEIVED("Full Received from Store", true, true),
     VEHICLE_FULL_RETURN_TO_STORE("Full Returned to Store", true, true),
@@ -60,6 +63,8 @@ enum class TransactionType(
     VEHICLE_ADJUST_FULL_OUT("Vehicle Full Adjustment (-)", false, true),
     VEHICLE_ADJUST_EMPTY_IN("Vehicle Empty Adjustment (+)", false, true),
     VEHICLE_ADJUST_EMPTY_OUT("Vehicle Empty Adjustment (-)", false, true),
+    VEHICLE_DAMAGED_ADD("Vehicle Damaged Cylinder (+)", false, true),
+    VEHICLE_DAMAGED_REMOVE("Vehicle Damaged Resolved (-)", false, true),
 
     CUSTOMER_EMPTY_PENDING_ADD("Customer Pending Empty (+)", false, false)
 }
@@ -71,8 +76,9 @@ enum class CustomerChangeMode(val label: String, val shortLabel: String) {
 }
 
 enum class ReportType(val title: String, val subtitle: String) {
-    DAILY_STORE("Daily Store Report", "Opening, purchases, returns, dispatch & closing"),
-    DAILY_VEHICLE("Daily Vehicle Report", "Vehicle-wise full & empty stock movement"),
+    DAILY_STORE("Daily Store Report", "Opening, purchases, returns, dispatch, damaged & closing"),
+    DAILY_VEHICLE("Daily Vehicle Report", "Vehicle-wise full, empty & damaged stock movement"),
+    LPG_EXCHANGE_REPORT("LPG & Gas Exchange", "Daily, monthly & staff-wise Full & Empty exchange ledger"),
     STAFF_PRODUCT_SALES("Staff Product Sales", "Daily & monthly staff sales breakdown product / cylinder wise"),
     PURCHASE_COMPANY_PRODUCT("Purchase Co. Product", "Daily & monthly purchase company breakdown product / cylinder wise"),
     MONTHLY_SALES("Monthly Sales Report", "Day-by-day & monthly cylinder sales summary"),
@@ -82,6 +88,32 @@ enum class ReportType(val title: String, val subtitle: String) {
     PURCHASE_REGISTER("Purchase Register", "Daily & monthly supplier entry log & complaint replacements"),
     CUSTOMER_PENDING("Customer Pending Empty", "Customer-wise full sold, empty collected & pending balance"),
     STAFF_WORK_HOURS("Staff Work Hours", "Daily punch in, lunch break, duty close & net hours (Admin/Owner)")
+}
+
+enum class StaffFeaturePermission(val label: String, val shortLabel: String) {
+    MY_VEHICLE_STOCK("My Vehicle Stock", "Vehicle Stock"),
+    FULL_OUT("Full Cylinder OUT / Sales", "Full OUT"),
+    EMPTY_IN("Empty Cylinder IN / Return", "Empty IN"),
+    DELIVERY_ENTRIES("Delivery & Transfer Entries", "Deliveries"),
+    LPG_EXCHANGE("Arab & Emirates Gas Exchange", "LPG Exchange"),
+    MY_DAILY_REPORT("My Daily Sales Report", "Daily Report"),
+    MY_ACTIVITY_HISTORY("My Activity History", "Activity");
+
+    companion object {
+        val ALL_DEFAULT_CSV: String = entries.joinToString(",") { it.name }
+
+        fun parseCsv(csv: String?): Set<StaffFeaturePermission> {
+            if (csv.isNullOrBlank()) return entries.toSet()
+            val parsed = csv.split(",")
+                .map { it.trim() }
+                .mapNotNull { raw -> entries.firstOrNull { it.name == raw } }
+                .toSet()
+            return parsed.ifEmpty { entries.toSet() }
+        }
+
+        fun toCsv(permissions: Set<StaffFeaturePermission>): String =
+            entries.filter { it in permissions }.joinToString(",") { it.name }
+    }
 }
 
 enum class StoreTransferDirection(val label: String) {
@@ -102,6 +134,7 @@ enum class NotificationCategory(val label: String) {
     ATTENDANCE("Staff Duty"),
     CHAT_IMPORTANT("Important Message"),
     SYSTEM_UPDATE("App Update"),
+    SECURITY_ALERT("Security Alert"),
     INFO("Information")
 }
 

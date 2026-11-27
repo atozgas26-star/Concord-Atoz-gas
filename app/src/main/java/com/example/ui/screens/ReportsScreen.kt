@@ -256,8 +256,9 @@ fun ReportsScreen(
                 }
             }
 
-            // Period Toggle (Daily / Monthly) for Staff Product Sales, Purchase Co. Product, Purchase Register & Staff-Wise Sales
-            val supportsDailyMonthlyToggle = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+            // Period Toggle (Daily / Monthly) for LPG Exchange, Staff Product Sales, Purchase Co. Product, Purchase Register & Staff-Wise Sales
+            val supportsDailyMonthlyToggle = selectedReport == ReportType.LPG_EXCHANGE_REPORT ||
+                selectedReport == ReportType.STAFF_PRODUCT_SALES ||
                 selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
                 selectedReport == ReportType.PURCHASE_REGISTER ||
                 selectedReport == ReportType.STAFF_WISE_SALES
@@ -345,8 +346,9 @@ fun ReportsScreen(
                 }
             }
 
-            // Staff / Vehicle filter for Daily Vehicle, Staff Product Sales & Customer Pending Reports
+            // Staff / Vehicle filter for Daily Vehicle, LPG Exchange, Staff Product Sales & Customer Pending Reports
             if (selectedReport == ReportType.DAILY_VEHICLE ||
+                selectedReport == ReportType.LPG_EXCHANGE_REPORT ||
                 selectedReport == ReportType.STAFF_PRODUCT_SALES ||
                 selectedReport == ReportType.CUSTOMER_PENDING
             ) {

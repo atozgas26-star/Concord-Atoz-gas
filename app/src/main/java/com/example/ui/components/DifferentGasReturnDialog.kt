@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.CustomerExchangeItem
@@ -90,13 +91,38 @@ import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.PlatinumSilver
+import org.json.JSONArray
 import java.util.UUID
 
+private enum class ExchangeQuickFilter(val label: String) {
+    ALL("All"),
+    ARAB_GAS("Arab Gas"),
+    EMIRATES_GAS("Emirates Gas"),
+    INDUSTRIAL("Industrial"),
+    MCG_CUTTING("MCG / Cutting")
+}
+
+private fun parseExchangeItemsJson(json: String): Map<Long, Int> {
+    if (json.isBlank()) return emptyMap()
+    return runCatching {
+        val arr = JSONArray(json)
+        buildMap {
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val pid = obj.optLong("productId", -1L)
+                val qty = obj.optInt("quantity", 0)
+                if (pid > 0L && qty > 0) {
+                    put(pid, (get(pid) ?: 0) + qty)
+                }
+            }
+        }
+    }.getOrDefault(emptyMap())
+}
+
 /**
- * Luxury C&A GAS V2.3 Different Gas Cylinder Return Dialog.
- * Allows BOTH Admin and Staff to deliver Full cylinder(s) of one or more gas types
- * and receive Empty cylinder(s) of DIFFERENT gas type(s) in a single atomic transaction
- * with immediate stock update (no Admin approval required) and duplicate-submission guard.
+ * Corporate C&A GAS LPG & Different Gas Cylinder Exchange Dialog.
+ * Supports creating and safely editing (atomic reversal + corrected apply) non-1:1 Full/Empty exchanges
+ * across Arab Gas, Emirates Gas, Industrial Gases, MCG, and Cutting Gas.
  */
 @Composable
 fun DifferentGasReturnDialog(
@@ -106,6 +132,7 @@ fun DifferentGasReturnDialog(
     lockToStore: Boolean = false,
     allowVehicleSwitch: Boolean = false,
     recentCustomerNames: List<String> = emptyList(),
+    editingRecord: DifferentGasReturnEntity? = null,
     availableFullLookup: (productId: Long, vehicleId: Long?) -> Int,
     onVehicleSelected: (Long?) -> Unit = {},
     onDismiss: () -> Unit,
@@ -119,30 +146,46 @@ fun DifferentGasReturnDialog(
         submissionKey: String
     ) -> Unit
 ) {
-    val submissionKey = remember { "dgr_${UUID.randomUUID()}" }
+    val isEditMode = editingRecord != null
+    val submissionKey = remember(editingRecord?.id) {
+        editingRecord?.submissionKey ?: "dgr_${UUID.randomUUID()}"
+    }
     var isSubmitting by remember { mutableStateOf(false) }
 
-    var selectedVehicle by remember(fixedVehicle, lockToStore, vehicles) {
+    val initialDeliveredMap = remember(editingRecord?.id) {
+        editingRecord?.let { parseExchangeItemsJson(it.deliveredItemsJson) } ?: emptyMap()
+    }
+    val initialReturnedMap = remember(editingRecord?.id) {
+        editingRecord?.let { parseExchangeItemsJson(it.returnedItemsJson) } ?: emptyMap()
+    }
+
+    var selectedVehicle by remember(fixedVehicle, lockToStore, vehicles, editingRecord?.id) {
         mutableStateOf(
             when {
+                editingRecord != null -> vehicles.firstOrNull { it.id == editingRecord.vehicleId }
                 lockToStore -> null
                 fixedVehicle != null -> fixedVehicle
-                else -> null // Default to Main Store on Admin Dashboard unless vehicle selected
+                else -> null
             }
         )
     }
     var vehicleMenuExpanded by remember { mutableStateOf(false) }
 
-    var customerName by remember { mutableStateOf("") }
-    var customerPhone by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
+    var customerName by remember(editingRecord?.id) { mutableStateOf(editingRecord?.customerName ?: "") }
+    var customerPhone by remember(editingRecord?.id) { mutableStateOf(editingRecord?.customerPhone ?: "") }
+    var notes by remember(editingRecord?.id) { mutableStateOf(editingRecord?.notes ?: "") }
 
     var activeSection by remember { mutableStateOf(0) } // 0 = Delivered Full, 1 = Returned Empty
+    var quickFilter by remember { mutableStateOf(ExchangeQuickFilter.ALL) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val deliveredQtyMap = remember { mutableStateMapOf<Long, Int>() }
-    val returnedQtyMap = remember { mutableStateMapOf<Long, Int>() }
+    val deliveredQtyMap = remember(editingRecord?.id) {
+        mutableStateMapOf<Long, Int>().apply { putAll(initialDeliveredMap) }
+    }
+    val returnedQtyMap = remember(editingRecord?.id) {
+        mutableStateMapOf<Long, Int>().apply { putAll(initialReturnedMap) }
+    }
     var localError by remember { mutableStateOf<String?>(null) }
 
     // Respect exact admin-saved sortOrder
@@ -150,9 +193,17 @@ fun DifferentGasReturnDialog(
         products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.id }))
     }
 
-    val visibleProducts = remember(orderedProducts, selectedCategory, searchQuery) {
+    val visibleProducts = remember(orderedProducts, quickFilter, selectedCategory, searchQuery) {
         orderedProducts.filter { p ->
-            (selectedCategory == null || p.category == selectedCategory) &&
+            val matchesQuick = when (quickFilter) {
+                ExchangeQuickFilter.ALL -> true
+                ExchangeQuickFilter.ARAB_GAS -> p.name.contains("Arab Gas", ignoreCase = true)
+                ExchangeQuickFilter.EMIRATES_GAS -> p.name.contains("Emirates Gas", ignoreCase = true)
+                ExchangeQuickFilter.INDUSTRIAL -> p.category == ProductCategory.INDUSTRIAL_GAS
+                ExchangeQuickFilter.MCG_CUTTING -> p.category == ProductCategory.MCG_CUTTING_GAS
+            }
+            matchesQuick &&
+                (selectedCategory == null || p.category == selectedCategory) &&
                 (searchQuery.isBlank() ||
                     p.name.contains(searchQuery, ignoreCase = true) ||
                     p.cylinderSizeKg.contains(searchQuery, ignoreCase = true) ||
@@ -161,6 +212,14 @@ fun DifferentGasReturnDialog(
     }
 
     val activeVehicleId = if (lockToStore) null else (fixedVehicle?.id ?: selectedVehicle?.id)
+
+    // When editing a record in the same scope, add back its originally delivered qty to show true post-reversal availability
+    fun effectiveAvailableFull(productId: Long, scopeVehicleId: Long?): Int {
+        val liveAvail = availableFullLookup(productId, scopeVehicleId)
+        val sameScope = editingRecord != null && editingRecord.vehicleId == scopeVehicleId
+        val reversedBonus = if (sameScope) (initialDeliveredMap[productId] ?: 0) else 0
+        return liveAvail + reversedBonus
+    }
 
     val deliveredItems = orderedProducts.mapNotNull { prod ->
         val qty = deliveredQtyMap[prod.id] ?: 0
@@ -176,7 +235,7 @@ fun DifferentGasReturnDialog(
 
     val stockShortages = deliveredItems.mapNotNull { item ->
         val prod = orderedProducts.firstOrNull { it.id == item.productId } ?: return@mapNotNull null
-        val avail = availableFullLookup(item.productId, activeVehicleId)
+        val avail = effectiveAvailableFull(item.productId, activeVehicleId)
         if (item.quantity > avail) "${prod.name} (Need ${item.quantity}, Avail $avail)" else null
     }
 
@@ -249,13 +308,17 @@ fun DifferentGasReturnDialog(
                             Spacer(Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "Different Gas Cylinder Return",
+                                    text = if (isEditMode) "Edit LPG / Gas Exchange" else "LPG & Gas Cylinder Exchange",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = ArcticWhite
                                 )
                                 Text(
-                                    text = "Immediate Stock Update • No Admin Approval Required",
+                                    text = if (isEditMode) {
+                                        "Safe Atomic Reversal • Applies Corrected Stock Once"
+                                    } else {
+                                        "Arab Gas, Emirates Gas & Industrial • Independent Full/Empty"
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color(0xFF34D399)
                                 )
@@ -517,6 +580,33 @@ fun DifferentGasReturnDialog(
                         }
                     }
 
+                    // Quick Brand & Corporate Category Filter Pills (Arab Gas / Emirates Gas / Industrial / MCG)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ExchangeQuickFilter.entries.forEach { qf ->
+                            val isSel = quickFilter == qf
+                            FilterChip(
+                                selected = isSel,
+                                onClick = {
+                                    quickFilter = qf
+                                    selectedCategory = null
+                                },
+                                label = { Text(qf.label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = ObsidianElevated,
+                                    labelColor = PlatinumSilver,
+                                    selectedContainerColor = if (qf == ExchangeQuickFilter.EMIRATES_GAS) MetallicOrange else ElectricBlueBright,
+                                    selectedLabelColor = ArcticWhite
+                                ),
+                                modifier = Modifier.testTag("dgr_quick_filter_${qf.name.lowercase()}")
+                            )
+                        }
+                    }
+
                     // Category filter chips
                     Row(
                         modifier = Modifier
@@ -525,8 +615,11 @@ fun DifferentGasReturnDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         FilterChip(
-                            selected = selectedCategory == null,
-                            onClick = { selectedCategory = null },
+                            selected = selectedCategory == null && quickFilter == ExchangeQuickFilter.ALL,
+                            onClick = {
+                                selectedCategory = null
+                                quickFilter = ExchangeQuickFilter.ALL
+                            },
                             label = { Text("All Gases", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = ObsidianElevated,
@@ -540,7 +633,10 @@ fun DifferentGasReturnDialog(
                             val catStyle = categoryVisualStyle(cat)
                             FilterChip(
                                 selected = isSel,
-                                onClick = { selectedCategory = if (isSel) null else cat },
+                                onClick = {
+                                    selectedCategory = if (isSel) null else cat
+                                    quickFilter = ExchangeQuickFilter.ALL
+                                },
                                 label = { Text(cat.shortCode, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = ObsidianElevated,
@@ -601,7 +697,7 @@ fun DifferentGasReturnDialog(
                                 visibleProducts.forEach { prod ->
                                     val qtyMap = if (activeSection == 0) deliveredQtyMap else returnedQtyMap
                                     val currentQty = qtyMap[prod.id] ?: 0
-                                    val availFull = availableFullLookup(prod.id, activeVehicleId)
+                                    val availFull = effectiveAvailableFull(prod.id, activeVehicleId)
                                     val isInsufficient = activeSection == 0 && currentQty > availFull
                                     val accent = if (activeSection == 0) ElectricBlueGlow else MetallicOrangeBright
                                     val rowTagPrefix = if (activeSection == 0) "dgr_del" else "dgr_ret"
@@ -904,7 +1000,11 @@ fun DifferentGasReturnDialog(
                         Icon(Icons.Default.Recycling, contentDescription = null, tint = ArcticWhite, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = if (isSubmitting) "Saving..." else "Save Return ($totalDelivered F / $totalReturned E)",
+                            text = when {
+                                isSubmitting -> "Saving..."
+                                isEditMode -> "Update Exchange ($totalDelivered F / $totalReturned E)"
+                                else -> "Save Exchange ($totalDelivered F / $totalReturned E)"
+                            },
                             fontWeight = FontWeight.Bold,
                             color = ArcticWhite
                         )

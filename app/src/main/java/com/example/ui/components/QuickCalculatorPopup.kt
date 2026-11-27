@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,20 +55,18 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ui.theme.ArcticWhite
-import com.example.ui.theme.BrandRedContainer
-import com.example.ui.theme.BrandRedOnContainer
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
@@ -74,18 +74,49 @@ import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MetallicOrangeGold
-import com.example.ui.theme.ObsidianBorder
-import com.example.ui.theme.ObsidianDeep
-import com.example.ui.theme.ObsidianElevated
-import com.example.ui.theme.ObsidianMidnight
-import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.PlatinumSilver
 import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
+import com.example.ui.theme.SignatureRoyalBackground
+import com.example.ui.theme.SignatureRoyalBorder
+import com.example.ui.theme.SignatureRoyalElevated
+import com.example.ui.theme.SignatureRoyalSurface
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
 import kotlin.math.roundToInt
+
+enum class CalculatorMode(val label: String) {
+    NORMAL("Normal"),
+    BILL_VAT_5("Bill • 5% VAT")
+}
+
+data class VatBillBreakdown(
+    val billAmount: BigDecimal,
+    val vatAmount: BigDecimal,
+    val grandTotal: BigDecimal
+) {
+    val billAmountFormatted: String get() = "AED ${billAmount.setScale(2, RoundingMode.HALF_UP).toPlainString()}"
+    val vatAmountFormatted: String get() = "AED ${vatAmount.setScale(2, RoundingMode.HALF_UP).toPlainString()}"
+    val grandTotalFormatted: String get() = "AED ${grandTotal.setScale(2, RoundingMode.HALF_UP).toPlainString()}"
+}
+
+/**
+ * Pure UAE 5% VAT Bill calculator using BigDecimal with scale 2 (HALF_UP).
+ * Example: 100 -> Bill Amount: 100.00, VAT (5%): 5.00, Grand Total: 105.00.
+ */
+fun calculateVat5Breakdown(billAmount: BigDecimal): VatBillBreakdown {
+    val safeBill = if (billAmount.compareTo(BigDecimal.ZERO) < 0) BigDecimal.ZERO else billAmount
+    val normalizedBill = safeBill.setScale(2, RoundingMode.HALF_UP)
+    val vat = normalizedBill.multiply(BigDecimal("0.05")).setScale(2, RoundingMode.HALF_UP)
+    val grandTotal = normalizedBill.add(vat).setScale(2, RoundingMode.HALF_UP)
+    return VatBillBreakdown(
+        billAmount = normalizedBill,
+        vatAmount = vat,
+        grandTotal = grandTotal
+    )
+}
 
 data class QuickCalculatorState(
     val display: String = "0",
@@ -94,22 +125,38 @@ data class QuickCalculatorState(
     val pendingOperator: String? = null,
     val resetDisplayOnNextDigit: Boolean = false,
     val hasError: Boolean = false,
-    val history: List<String> = emptyList()
-)
+    val history: List<String> = emptyList(),
+    val mode: CalculatorMode = CalculatorMode.NORMAL
+) {
+    val currentNumericValue: BigDecimal
+        get() = if (hasError) BigDecimal.ZERO else (display.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+
+    val vatBreakdown: VatBillBreakdown?
+        get() = if (mode == CalculatorMode.BILL_VAT_5 && !hasError) {
+            calculateVat5Breakdown(currentNumericValue)
+        } else {
+            null
+        }
+}
 
 /**
  * Pure, safe arithmetic engine for the C&A Gas Quick Pop-up Calculator.
- * Uses BigDecimal with zero dynamic code evaluation and safe divide-by-zero handling.
+ * Normal mode performs pure arithmetic and NEVER auto-adds VAT.
+ * Bill 5% VAT mode computes a live UAE 5% VAT breakdown alongside standard calculation.
  */
 object QuickCalculatorEngine {
 
     private val mathContext = MathContext(12, RoundingMode.HALF_UP)
 
+    fun setMode(state: QuickCalculatorState, mode: CalculatorMode): QuickCalculatorState {
+        return state.copy(mode = mode)
+    }
+
     fun onKeyPress(state: QuickCalculatorState, key: String): QuickCalculatorState {
         if (key == "C") {
-            return QuickCalculatorState(history = state.history)
+            return QuickCalculatorState(history = state.history, mode = state.mode)
         }
-        val active = if (state.hasError) QuickCalculatorState(history = state.history) else state
+        val active = if (state.hasError) QuickCalculatorState(history = state.history, mode = state.mode) else state
 
         return when (key) {
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" -> handleDigit(active, key)
@@ -251,8 +298,6 @@ object QuickCalculatorEngine {
 
 /**
  * Full-screen freely movable floating calculator icon overlay.
- * Users can smoothly drag and park the circular calculator button anywhere across the entire screen
- * (top, bottom, left, right, middle) without blocking any content, and tap it anytime to pop up the calculator.
  */
 @Composable
 fun DraggableFloatingCalculatorOverlay(
@@ -318,8 +363,7 @@ fun DraggableFloatingCalculatorOverlay(
 }
 
 /**
- * Compact small circular calculator icon button (with full 48dp accessible hit target)
- * that pops up the Quick Calculator Dialog from any screen in C&A Gas.
+ * Compact circular calculator button (48dp accessible hit target) styled in C&A Royal Blue + Orange.
  */
 @Composable
 fun FloatingCalculatorIconButton(
@@ -336,11 +380,11 @@ fun FloatingCalculatorIconButton(
     ) {
         Surface(
             shape = CircleShape,
-            color = ObsidianMidnight,
+            color = RoyalBlueDeep,
             shadowElevation = 10.dp,
             border = BorderStroke(
                 1.6.dp,
-                androidx.compose.ui.graphics.Brush.linearGradient(
+                Brush.linearGradient(
                     listOf(ElectricBlueBright, MetallicOrangeBright)
                 )
             ),
@@ -349,7 +393,7 @@ fun FloatingCalculatorIconButton(
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Default.Calculate,
-                    contentDescription = "Open Pop-up Calculator (Drag to Move)",
+                    contentDescription = "Open Corporate Calculator (Drag to Move)",
                     tint = Color.White,
                     modifier = Modifier.size(22.dp)
                 )
@@ -359,9 +403,11 @@ fun FloatingCalculatorIconButton(
 }
 
 /**
- * Freely movable, smoothly scrollable pop-up calculator modal for quick cylinder count,
- * billing, and balance math. Drag the top bar to reposition anywhere across the full screen,
- * and scroll smoothly inside on compact displays.
+ * C&A GAS Premium Corporate Calculator Popup.
+ * Features two explicit modes:
+ * 1) Normal Calculator — standard arithmetic (never auto-adds VAT)
+ * 2) Bill Calculator – 5% VAT — live UAE 5% VAT breakdown (Bill Amount, VAT 5%, Grand Total in AED)
+ * Clean Midnight Royal Blue surface (zero black reflection box) + prominent Metallic Orange CLOSE (X) button.
  */
 @Composable
 fun QuickCalculatorPopupDialog(
@@ -370,7 +416,6 @@ fun QuickCalculatorPopupDialog(
 ) {
     var calcState by remember { mutableStateOf(QuickCalculatorState()) }
     val clipboardManager = LocalClipboardManager.current
-    val density = LocalDensity.current
 
     var dialogContainerSize by remember { mutableStateOf(IntSize.Zero) }
 
@@ -398,27 +443,27 @@ fun QuickCalculatorPopupDialog(
 
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = ObsidianSurface,
-                tonalElevation = 8.dp,
+                color = SignatureRoyalBackground,
+                tonalElevation = 0.dp,
                 shadowElevation = 18.dp,
                 border = BorderStroke(
                     1.4.dp,
                     Brush.linearGradient(
                         listOf(
-                            ElectricBlueGlow.copy(alpha = 0.6f),
-                            ObsidianBorder,
-                            MetallicOrangeBright.copy(alpha = 0.55f)
+                            ElectricBlueGlow.copy(alpha = 0.72f),
+                            SignatureRoyalBorder,
+                            MetallicOrangeBright.copy(alpha = 0.65f)
                         )
                     )
                 ),
                 modifier = Modifier
-                    .widthIn(max = 368.dp)
+                    .widthIn(max = 382.dp)
                     .fillMaxWidth()
                     .offset { IntOffset(dialogOffsetX.roundToInt(), dialogOffsetY.roundToInt()) }
                     .testTag("quick_calculator_dialog")
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    SignatureAccentHairline(height = 2.dp)
+                    SignatureAccentHairline(height = 2.5.dp)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -426,14 +471,14 @@ fun QuickCalculatorPopupDialog(
                             .padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Draggable Top Grip + Header Bar with Prominent Orange CLOSE (X) Button
+                        // Draggable Header Bar with Metallic Orange CLOSE (X) Button
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
                                     Brush.horizontalGradient(
-                                        listOf(ObsidianMidnight, ObsidianDeep, RoyalBlueDeep.copy(alpha = 0.85f))
+                                        listOf(RoyalBlueDeep, SignatureRoyalElevated)
                                     )
                                 )
                                 .pointerInput(maxDragX, maxDragY) {
@@ -452,7 +497,7 @@ fun QuickCalculatorPopupDialog(
                                     .width(40.dp)
                                     .height(4.dp)
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(PlatinumSilver.copy(alpha = 0.42f))
+                                    .background(PlatinumSilver.copy(alpha = 0.45f))
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -465,13 +510,17 @@ fun QuickCalculatorPopupDialog(
                                 ) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = ElectricBlueBright.copy(alpha = 0.22f),
-                                        border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.55f)),
+                                        color = ElectricBlueBright.copy(alpha = 0.25f),
+                                        border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.65f)),
                                         modifier = Modifier.size(34.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
-                                                imageVector = Icons.Default.Calculate,
+                                                imageVector = if (calcState.mode == CalculatorMode.BILL_VAT_5) {
+                                                    Icons.Default.ReceiptLong
+                                                } else {
+                                                    Icons.Default.Calculate
+                                                },
                                                 contentDescription = null,
                                                 tint = ElectricBlueGlow,
                                                 modifier = Modifier.size(18.dp)
@@ -482,7 +531,11 @@ fun QuickCalculatorPopupDialog(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
-                                                text = "Quick Calculator",
+                                                text = if (calcState.mode == CalculatorMode.BILL_VAT_5) {
+                                                    "Bill VAT Calculator"
+                                                } else {
+                                                    "C&A Calculator"
+                                                },
                                                 style = MaterialTheme.typography.titleSmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = ArcticWhite,
@@ -498,7 +551,11 @@ fun QuickCalculatorPopupDialog(
                                             )
                                         }
                                         Text(
-                                            text = "Drag header to move",
+                                            text = if (calcState.mode == CalculatorMode.BILL_VAT_5) {
+                                                "UAE 5% VAT Bill Mode • Drag to move"
+                                            } else {
+                                                "Normal Mode (No VAT) • Drag to move"
+                                            },
                                             style = MaterialTheme.typography.labelSmall,
                                             color = PlatinumSilver,
                                             maxLines = 1,
@@ -514,8 +571,16 @@ fun QuickCalculatorPopupDialog(
                                     IconButton(
                                         onClick = {
                                             if (!calcState.hasError) {
-                                                clipboardManager.setText(AnnotatedString(calcState.display))
-                                                onResultCopied("Copied ${calcState.display}")
+                                                val copyVal = calcState.vatBreakdown?.grandTotal?.setScale(2, RoundingMode.HALF_UP)?.toPlainString()
+                                                    ?: calcState.display
+                                                clipboardManager.setText(AnnotatedString(copyVal))
+                                                onResultCopied(
+                                                    if (calcState.mode == CalculatorMode.BILL_VAT_5) {
+                                                        "Copied Grand Total: AED $copyVal"
+                                                    } else {
+                                                        "Copied $copyVal"
+                                                    }
+                                                )
                                             }
                                         },
                                         modifier = Modifier.testTag("calc_copy_button")
@@ -528,7 +593,7 @@ fun QuickCalculatorPopupDialog(
                                         )
                                     }
 
-                                    // Clearly Visible Premium Metallic Orange CLOSE (X) Button at Top-Right Corner
+                                    // Prominent Metallic Orange CLOSE (X) Button
                                     Surface(
                                         onClick = onDismiss,
                                         shape = RoundedCornerShape(12.dp),
@@ -570,11 +635,82 @@ fun QuickCalculatorPopupDialog(
                             }
                         }
 
-                        // Display Panel
+                        // Explicit Two-Mode Selector: Normal Calculator vs Bill Calculator – 5% VAT
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val isNormal = calcState.mode == CalculatorMode.NORMAL
+                            Surface(
+                                onClick = { calcState = QuickCalculatorEngine.setMode(calcState, CalculatorMode.NORMAL) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isNormal) RoyalElectricBlue else SignatureRoyalSurface,
+                                border = BorderStroke(
+                                    1.2.dp,
+                                    if (isNormal) ElectricBlueGlow else SignatureRoyalBorder
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("calc_mode_normal")
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 9.dp, horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Normal Calculator",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isNormal) Color.White else PlatinumSilver,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            val isVat = calcState.mode == CalculatorMode.BILL_VAT_5
+                            Surface(
+                                onClick = { calcState = QuickCalculatorEngine.setMode(calcState, CalculatorMode.BILL_VAT_5) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isVat) MetallicOrange else SignatureRoyalSurface,
+                                border = BorderStroke(
+                                    1.2.dp,
+                                    if (isVat) MetallicOrangeGold else SignatureRoyalBorder
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("calc_mode_vat5")
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 9.dp, horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Bill – 5% VAT",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isVat) Color.White else PlatinumSilver,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        // Clean Royal Blue Display Panel (no harsh black box or reflection artifacts)
                         Surface(
                             shape = RoundedCornerShape(16.dp),
-                            color = ObsidianMidnight,
-                            border = BorderStroke(1.2.dp, ElectricBlueBright.copy(alpha = 0.45f)),
+                            color = SignatureRoyalSurface,
+                            border = BorderStroke(
+                                1.2.dp,
+                                if (calcState.mode == CalculatorMode.BILL_VAT_5) {
+                                    MetallicOrangeBright.copy(alpha = 0.65f)
+                                } else {
+                                    ElectricBlueBright.copy(alpha = 0.55f)
+                                }
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -583,15 +719,27 @@ fun QuickCalculatorPopupDialog(
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                                 horizontalAlignment = Alignment.End
                             ) {
-                                Text(
-                                    text = calcState.expression.ifBlank { " " },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontFamily = JetBrainsMono,
-                                    color = PlatinumSilver,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.testTag("calc_expression_text")
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (calcState.mode == CalculatorMode.BILL_VAT_5) "BILL INPUT (AED)" else "STANDARD",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (calcState.mode == CalculatorMode.BILL_VAT_5) MetallicOrangeBright else ElectricBlueGlow
+                                    )
+                                    Text(
+                                        text = calcState.expression.ifBlank { " " },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontFamily = JetBrainsMono,
+                                        color = PlatinumSilver,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.testTag("calc_expression_text")
+                                    )
+                                }
                                 Spacer(Modifier.height(2.dp))
                                 Text(
                                     text = calcState.display,
@@ -606,6 +754,57 @@ fun QuickCalculatorPopupDialog(
                                         .fillMaxWidth()
                                         .testTag("calc_display_text")
                                 )
+
+                                // Bill Calculator – 5% VAT Live Breakdown Panel
+                                val breakdown = calcState.vatBreakdown
+                                if (breakdown != null) {
+                                    Spacer(Modifier.height(8.dp))
+                                    HorizontalDivider(color = SignatureRoyalBorder.copy(alpha = 0.7f))
+                                    Spacer(Modifier.height(8.dp))
+                                    VatBreakdownRow(
+                                        label = "Bill Amount",
+                                        value = breakdown.billAmountFormatted,
+                                        valueColor = ArcticWhite,
+                                        tag = "calc_vat_bill_amount"
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    VatBreakdownRow(
+                                        label = "VAT (5%)",
+                                        value = breakdown.vatAmountFormatted,
+                                        valueColor = ElectricBlueGlow,
+                                        tag = "calc_vat_tax_amount"
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = RoyalBlueDeep,
+                                        border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.7f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Grand Total",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = MetallicOrangeBright
+                                            )
+                                            Text(
+                                                text = breakdown.grandTotalFormatted,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontFamily = JetBrainsMono,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = ArcticWhite,
+                                                modifier = Modifier.testTag("calc_vat_grand_total")
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -620,8 +819,8 @@ fun QuickCalculatorPopupDialog(
                                 calcState.history.forEach { entry ->
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = ObsidianElevated,
-                                        border = BorderStroke(1.dp, ObsidianBorder),
+                                        color = SignatureRoyalElevated,
+                                        border = BorderStroke(1.dp, SignatureRoyalBorder),
                                         modifier = Modifier.clickable {
                                             calcState = QuickCalculatorEngine.applyHistoryResult(calcState, entry)
                                         }
@@ -638,7 +837,7 @@ fun QuickCalculatorPopupDialog(
                             }
                         }
 
-                        // 4x5 Tactile Keypad
+                        // 4x5 Tactile Keypad (Midnight Royal Blue + Electric Blue + Metallic Orange)
                         val rows = listOf(
                             listOf("C", "DEL", "%", "÷"),
                             listOf("7", "8", "9", "×"),
@@ -659,21 +858,21 @@ fun QuickCalculatorPopupDialog(
                                         val isOperator = key in setOf("÷", "×", "-", "+", "%")
                                         val containerColor = when {
                                             isEquals -> MetallicOrange
-                                            isClear -> BrandRedContainer.copy(alpha = 0.22f)
+                                            isClear -> Color(0xFF3E1826)
                                             isOperator -> RoyalBlueDeep
-                                            else -> ObsidianElevated
+                                            else -> SignatureRoyalElevated
                                         }
                                         val contentColor = when {
                                             isEquals -> Color.White
-                                            isClear -> BrandRedOnContainer.let { Color(0xFFFCA5A5) }
+                                            isClear -> Color(0xFFFCA5A5)
                                             isOperator -> ElectricBlueGlow
                                             else -> ArcticWhite
                                         }
                                         val borderColor = when {
                                             isEquals -> MetallicOrangeBright
-                                            isClear -> BrandRedSecondary.copy(alpha = 0.6f)
-                                            isOperator -> ElectricBlueBright.copy(alpha = 0.55f)
-                                            else -> ObsidianBorder
+                                            isClear -> BrandRedSecondary.copy(alpha = 0.7f)
+                                            isOperator -> ElectricBlueBright.copy(alpha = 0.6f)
+                                            else -> SignatureRoyalBorder
                                         }
 
                                         Surface(
@@ -717,5 +916,33 @@ fun QuickCalculatorPopupDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun VatBreakdownRow(
+    label: String,
+    value: String,
+    valueColor: Color,
+    tag: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = PlatinumMuted
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            fontFamily = JetBrainsMono,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            modifier = Modifier.testTag(tag)
+        )
     }
 }

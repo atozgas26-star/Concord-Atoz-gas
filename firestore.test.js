@@ -1213,3 +1213,302 @@ test("Full Return to Store and Customer Product Change (Full-to-Full, Empty-to-E
   }
 });
 
+test("OWNER_VIEW has executive read-only access and is DENIED all writes across every workspace collection", async () => {
+  const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
+  const OWNER_UID = "owner_exec_001";
+  const ownerDb = testEnv.authenticatedContext(OWNER_UID).firestore();
+
+  // Seed OWNER_VIEW profile via admin bypass (since self-signup creates STAFF)
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection("users").doc(OWNER_UID).set({
+      userId: OWNER_UID,
+      displayName: "Executive Owner",
+      role: "OWNER_VIEW",
+      activeWorkspaceId: WORKSPACE_ID,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+    await db.collection("workspaces").doc(WORKSPACE_ID).update({
+      memberUids: [ADMIN_UID, OWNER_UID],
+      updatedAt: ts,
+    });
+  });
+
+  const members = [ADMIN_UID, OWNER_UID];
+
+  // Admin seeds an LPG_EXCHANGE_REPORT, a security log, a registered device, and a protected Owner UAE mobile
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_reports").doc("rep_lpg_001").set({
+      reportId: "rep_lpg_001",
+      reportType: "LPG_EXCHANGE_REPORT",
+      reportTitle: "LPG Full & Empty Exchange Report",
+      subtitle: "Arab Gas & Emirates Gas",
+      businessDate: "2026-11-27",
+      yearMonth: "2026-11",
+      generatedBy: "Ragavan",
+      rowCount: 3,
+      summaryTotals: "Delivered 5 | Returned 4",
+      createdByUid: ADMIN_UID,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("authorized_mobiles").doc("mob_971501234567").set({
+      mobileId: "mob_971501234567",
+      phoneE164: "+971501234567",
+      displayName: "Concord Owner",
+      role: "OWNER_VIEW",
+      allowedFeaturesCsv: "MY_VEHICLE_STOCK",
+      isActive: true,
+      isProtectedOwner: true,
+      createdAtMs: Date.now() - 1000,
+      updatedAtMs: Date.now() - 1000,
+      updatedByUid: ADMIN_UID,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("security_logs").doc("sec_log_001").set({
+      logId: "sec_log_001",
+      eventType: "LOGIN_SUCCESS",
+      role: "ADMIN",
+      actorName: "Ragavan",
+      phoneE164: "+971509876543",
+      deviceLabel: "Samsung S24",
+      details: "Signed in",
+      isAlert: false,
+      timestampMs: Date.now() - 1000,
+      createdByUid: ADMIN_UID,
+      createdAt: ts,
+    })
+  );
+
+  // OWNER_VIEW CAN read executive reports, authorized mobiles, and security logs
+  await assertSucceeds(ownerDb.collection("workspaces").doc(WORKSPACE_ID).collection("admin_reports").doc("rep_lpg_001").get());
+  await assertSucceeds(ownerDb.collection("workspaces").doc(WORKSPACE_ID).collection("authorized_mobiles").doc("mob_971501234567").get());
+  await assertSucceeds(ownerDb.collection("workspaces").doc(WORKSPACE_ID).collection("security_logs").doc("sec_log_001").get());
+
+  // OWNER_VIEW is DENIED writing transactions, attendance, notifications, security logs, or mobiles
+  await assertFails(
+    ownerDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc("tx_owner_write_blocked").set({
+      clientTxId: "tx_owner_write_blocked",
+      businessDate: "2026-11-27",
+      clientTimestampMs: Date.now() - 500,
+      type: "VEHICLE_CUSTOMER_SALE",
+      productId: 1,
+      vehicleId: 1,
+      vehicleName: "NADEEM",
+      staffId: 1,
+      staffName: "Owner",
+      quantity: 1,
+      notes: "Should fail",
+      createdByUid: OWNER_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  await assertFails(
+    ownerDb.collection("workspaces").doc(WORKSPACE_ID).collection("security_logs").doc("sec_owner_blocked").set({
+      logId: "sec_owner_blocked",
+      eventType: "LOGIN_SUCCESS",
+      role: "OWNER_VIEW",
+      actorName: "Owner",
+      phoneE164: "",
+      deviceLabel: "Pixel",
+      details: "Blocked write",
+      isAlert: false,
+      timestampMs: Date.now() - 500,
+      createdByUid: OWNER_UID,
+      createdAt: ts,
+    })
+  );
+
+  await assertFails(
+    ownerDb.collection("workspaces").doc(WORKSPACE_ID).collection("app_notifications").doc("notif_owner_blocked").set({
+      notifId: "notif_owner_blocked",
+      targetScope: "ALL",
+      targetStaffId: 0,
+      category: "INFO",
+      title: "Blocked",
+      message: "Owner cannot write",
+      isUrgent: false,
+      createdAtMs: Date.now() - 500,
+      createdByUid: OWNER_UID,
+      memberUids: members,
+      createdAt: ts,
+    })
+  );
+
+  // Admin CANNOT update or delete a Protected Owner mobile record!
+  await assertFails(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("authorized_mobiles").doc("mob_971501234567").update({
+      isActive: false,
+      updatedAtMs: Date.now(),
+      updatedByUid: ADMIN_UID,
+      updatedAt: pastDate(500),
+    })
+  );
+  await assertFails(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("authorized_mobiles").doc("mob_971501234567").delete()
+  );
+
+  // Admin CAN manage non-protected Staff UAE mobile records (and invalid non-UAE numbers are rejected)
+  await assertFails(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("authorized_mobiles").doc("mob_invalid").set({
+      mobileId: "mob_invalid",
+      phoneE164: "+15551234567",
+      displayName: "Invalid US Phone",
+      role: "STAFF",
+      allowedFeaturesCsv: "MY_VEHICLE_STOCK",
+      isActive: true,
+      isProtectedOwner: false,
+      createdAtMs: Date.now() - 500,
+      updatedAtMs: Date.now() - 500,
+      updatedByUid: ADMIN_UID,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("authorized_mobiles").doc("mob_971551112222").set({
+      mobileId: "mob_971551112222",
+      phoneE164: "+971551112222",
+      displayName: "Nadeem",
+      role: "STAFF",
+      staffUserId: 2,
+      allowedFeaturesCsv: "MY_VEHICLE_STOCK,LPG_EXCHANGE",
+      isActive: true,
+      isProtectedOwner: false,
+      createdAtMs: Date.now() - 500,
+      updatedAtMs: Date.now() - 500,
+      updatedByUid: ADMIN_UID,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Security logs are immutable (update denied even for Admin)
+  await assertFails(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("security_logs").doc("sec_log_001").update({
+      details: "Tampered log",
+    })
+  );
+});
+
+test("Damaged Stock transaction types and Registered Device revocation enforce role bounds", async () => {
+  const { adminDb, ts } = await seedWorkspaceWithAdminAndInvite();
+  const staffDb = testEnv.authenticatedContext(STAFF_NADEEM_UID).firestore();
+
+  await assertSucceeds(
+    staffDb.collection("users").doc(STAFF_NADEEM_UID).set({
+      userId: STAFF_NADEEM_UID,
+      displayName: "Nadeem",
+      role: "STAFF",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).update({
+      memberUids: [ADMIN_UID, STAFF_NADEEM_UID],
+      lastJoinInviteCode: INVITE_CODE,
+      updatedAt: pastDate(1000),
+    })
+  );
+  const members = [ADMIN_UID, STAFF_NADEEM_UID];
+
+  // Staff CAN record VEHICLE_DAMAGED_ADD, CANNOT record STORE_DAMAGED_ADD
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc("tx_veh_dmg_001").set({
+      clientTxId: "tx_veh_dmg_001",
+      businessDate: "2026-11-27",
+      clientTimestampMs: Date.now() - 500,
+      type: "VEHICLE_DAMAGED_ADD",
+      productId: 1,
+      vehicleId: 1,
+      vehicleName: "NADEEM",
+      staffId: 2,
+      staffName: "Nadeem",
+      quantity: 1,
+      notes: "Valve leak",
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  await assertFails(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc("tx_store_dmg_hack").set({
+      clientTxId: "tx_store_dmg_hack",
+      businessDate: "2026-11-27",
+      clientTimestampMs: Date.now() - 500,
+      type: "STORE_DAMAGED_ADD",
+      productId: 1,
+      staffId: 2,
+      staffName: "Nadeem",
+      quantity: 1,
+      notes: "Staff cannot mutate store damaged stock",
+      createdByUid: STAFF_NADEEM_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Admin CAN record STORE_DAMAGED_ADD
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("transactions").doc("tx_store_dmg_001").set({
+      clientTxId: "tx_store_dmg_001",
+      businessDate: "2026-11-27",
+      clientTimestampMs: Date.now() - 400,
+      type: "STORE_DAMAGED_ADD",
+      productId: 1,
+      staffId: 1,
+      staffName: "Ragavan",
+      quantity: 2,
+      notes: "Dented base",
+      createdByUid: ADMIN_UID,
+      memberUids: members,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Staff registers own device (isRevoked=false); Admin can revoke it
+  await assertSucceeds(
+    staffDb.collection("workspaces").doc(WORKSPACE_ID).collection("registered_devices").doc("dev_nadeem_01").set({
+      deviceId: "dev_nadeem_01",
+      deviceLabel: "Samsung A55",
+      phoneE164: "+971551112222",
+      userId: 2,
+      displayName: "Nadeem",
+      role: "STAFF",
+      sessionVersion: 1,
+      isRevoked: false,
+      lastActiveMs: Date.now() - 500,
+      registeredAtMs: Date.now() - 500,
+      ownerUid: STAFF_NADEEM_UID,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("workspaces").doc(WORKSPACE_ID).collection("registered_devices").doc("dev_nadeem_01").update({
+      isRevoked: true,
+      sessionVersion: 2,
+      updatedAt: pastDate(200),
+    })
+  );
+});
+
+

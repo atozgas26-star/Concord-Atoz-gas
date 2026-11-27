@@ -90,7 +90,10 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.auth.AdminRecoveryUiState
 import com.example.auth.BiometricAvailability
+import com.example.auth.PhoneOtpStage
+import com.example.auth.PhoneOtpUiState
 import com.example.auth.RecoveryPurpose
+import com.example.auth.UaePhoneValidator
 import com.example.data.local.AdminCredentialsState
 import com.example.data.local.BiometricUnlockState
 import com.example.data.local.UserAccountEntity
@@ -171,6 +174,10 @@ fun LoginScreen(
     onUpdateRecoveredUsername: (String) -> Unit = {},
     onClearRecoveryError: () -> Unit = {},
     onDismissRecovery: () -> Unit = {},
+    phoneOtpState: PhoneOtpUiState = PhoneOtpUiState(),
+    onSendUaeOtp: (phoneInput: String) -> Unit = {},
+    onVerifyUaeOtp: (code: String) -> Unit = {},
+    onResetPhoneOtp: () -> Unit = {},
     onClearError: () -> Unit
 ) {
     val isStaffRestrictedCloud = workspaceState is WorkspaceConnectionState.Connected &&
@@ -1462,6 +1469,171 @@ fun LoginScreen(
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Text("Quick Unlock with Fingerprint / Face")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // UAE +971 Authorized Mobile + SMS OTP Sign In (Allowlisted Owner / Admin / Staff)
+                var showUaeOtpSection by remember { mutableStateOf(false) }
+                var uaePhoneInput by remember { mutableStateOf("+971") }
+                var uaeOtpCodeInput by remember { mutableStateOf("") }
+                val otpActive = showUaeOtpSection || phoneOtpState.stage != PhoneOtpStage.IDLE
+
+                LuxuryGlassCard(
+                    shape = RoundedCornerShape(18.dp),
+                    accentGlow = MetallicOrange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("uae_phone_otp_card")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showUaeOtpSection = !showUaeOtpSection },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(MetallicOrange.copy(alpha = 0.18f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.VerifiedUser,
+                                        contentDescription = "UAE Mobile OTP Login",
+                                        tint = MetallicOrange,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "UAE +971 Mobile OTP Sign In",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Authorized numbers only • Firebase SMS verification",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            TextButton(
+                                onClick = { showUaeOtpSection = !showUaeOtpSection },
+                                modifier = Modifier.testTag("toggle_uae_otp_button")
+                            ) {
+                                Text(if (otpActive) "Hide" else "Open", fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (otpActive) {
+                            OutlinedTextField(
+                                value = uaePhoneInput,
+                                onValueChange = { uaePhoneInput = it.take(18) },
+                                label = { Text("Authorized UAE Mobile (+971 5X XXX XXXX)") },
+                                placeholder = { Text("+971501234567") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                singleLine = true,
+                                enabled = phoneOtpState.stage == PhoneOtpStage.IDLE || phoneOtpState.stage == PhoneOtpStage.ERROR,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("uae_phone_input")
+                            )
+
+                            if (phoneOtpState.stage == PhoneOtpStage.CODE_SENT || phoneOtpState.stage == PhoneOtpStage.VERIFYING) {
+                                OutlinedTextField(
+                                    value = uaeOtpCodeInput,
+                                    onValueChange = { raw -> uaeOtpCodeInput = raw.filter { it.isDigit() }.take(6) },
+                                    label = { Text("6-Digit SMS OTP Code") },
+                                    placeholder = { Text("Enter 6-digit SMS code") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                    singleLine = true,
+                                    enabled = phoneOtpState.stage == PhoneOtpStage.CODE_SENT,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("uae_otp_code_input")
+                                )
+                            }
+
+                            if (phoneOtpState.message.isNotBlank()) {
+                                if (phoneOtpState.stage == PhoneOtpStage.ERROR) {
+                                    Surface(
+                                        color = BrandRedContainer,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = phoneOtpState.message,
+                                            color = BrandRedBright,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.padding(8.dp)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = phoneOtpState.message,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = BrandGreenPrimary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (phoneOtpState.stage == PhoneOtpStage.CODE_SENT || phoneOtpState.stage == PhoneOtpStage.VERIFYING) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            uaeOtpCodeInput = ""
+                                            onResetPhoneOtp()
+                                        },
+                                        modifier = Modifier.weight(0.8f)
+                                    ) {
+                                        Text("Change #")
+                                    }
+                                    Button(
+                                        enabled = phoneOtpState.stage == PhoneOtpStage.CODE_SENT && uaeOtpCodeInput.length == 6,
+                                        onClick = { onVerifyUaeOtp(uaeOtpCodeInput) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
+                                        modifier = Modifier
+                                            .weight(1.4f)
+                                            .testTag("uae_otp_verify_button")
+                                    ) {
+                                        Text(
+                                            if (phoneOtpState.stage == PhoneOtpStage.VERIFYING) "Verifying..." else "Verify OTP & Sign In",
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                } else {
+                                    val isValidUae = UaePhoneValidator.normalizeUaePhone(uaePhoneInput) != null
+                                    Button(
+                                        enabled = isValidUae && phoneOtpState.stage != PhoneOtpStage.SENDING,
+                                        onClick = { onSendUaeOtp(uaePhoneInput) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("uae_otp_send_button")
+                                    ) {
+                                        Text(
+                                            if (phoneOtpState.stage == PhoneOtpStage.SENDING) "Sending SMS OTP..." else "Send UAE +971 SMS OTP",
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }

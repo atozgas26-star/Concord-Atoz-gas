@@ -22,9 +22,12 @@ import com.example.data.model.UserRole
         PendingStoreTransferEntity::class,
         AppNotificationEntity::class,
         ChatMessageEntity::class,
-        DifferentGasReturnEntity::class
+        DifferentGasReturnEntity::class,
+        AuthorizedMobileEntity::class,
+        RegisteredDeviceEntity::class,
+        SecurityAuditLogEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -39,14 +42,16 @@ abstract class ConcordDatabase : RoomDatabase() {
     abstract fun appNotificationDao(): AppNotificationDao
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun differentGasReturnDao(): DifferentGasReturnDao
+    abstract fun authorizedMobileDao(): AuthorizedMobileDao
+    abstract fun registeredDeviceDao(): RegisteredDeviceDao
+    abstract fun securityAuditLogDao(): SecurityAuditLogDao
 
     suspend fun ensureSeeded() {
         val existingUsers = userDao().getAllUsersOnce()
         val existingProducts = productDao().getAllProductsOnce()
-        if (existingUsers.isNotEmpty() && existingProducts.isNotEmpty()) return
 
         withTransaction {
-            if (userDao().getAllUsersOnce().isEmpty()) {
+            if (existingUsers.isEmpty()) {
                 val adminId = userDao().insert(
                     UserAccountEntity(
                         username = "admin_ragavan",
@@ -55,7 +60,6 @@ abstract class ConcordDatabase : RoomDatabase() {
                         pin = "1725"
                     )
                 )
-                // Keep unused variable check happy while maintaining clarity
                 check(adminId > 0)
 
                 val staffSpecs = listOf(
@@ -90,7 +94,7 @@ abstract class ConcordDatabase : RoomDatabase() {
                 vehicleDao().insertAll(vehicles)
             }
 
-            if (productDao().getAllProductsOnce().isEmpty()) {
+            if (existingProducts.isEmpty()) {
                 val seededProducts = listOf(
                     // INDUSTRIAL GAS
                     ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Oxygen", sortOrder = 101, cylinderSizeKg = "47L Industrial"),
@@ -109,16 +113,44 @@ abstract class ConcordDatabase : RoomDatabase() {
                     ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "CO2 5kg", sortOrder = 205, cylinderSizeKg = "5 KG"),
                     ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Nitrogen", sortOrder = 206, cylinderSizeKg = "48 CFT"),
 
-                    // COOKING GAS
+                    // COOKING / LPG GAS — exact Arab Gas & Emirates Gas plus legacy cylinder sizes
                     ProductEntity(category = ProductCategory.COOKING_GAS, name = "11kg", sortOrder = 301, cylinderSizeKg = "11 KG"),
                     ProductEntity(category = ProductCategory.COOKING_GAS, name = "22kg", sortOrder = 302, cylinderSizeKg = "22 KG"),
                     ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303, cylinderSizeKg = "44 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 11kg", sortOrder = 304, cylinderSizeKg = "11 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 22kg", sortOrder = 305, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 44kg", sortOrder = 306, cylinderSizeKg = "44 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 11kg", sortOrder = 307, cylinderSizeKg = "11 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 22kg", sortOrder = 308, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 44kg", sortOrder = 309, cylinderSizeKg = "44 KG"),
 
-                    // MCG CUTTING GAS
+                    // MCG & CUTTING GAS
                     ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "22kg", sortOrder = 401, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "44kg", sortOrder = 402, cylinderSizeKg = "44 KG")
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "44kg", sortOrder = 402, cylinderSizeKg = "44 KG"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 22kg", sortOrder = 403, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 44kg", sortOrder = 404, cylinderSizeKg = "44 KG"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "Cutting Gas", sortOrder = 405, cylinderSizeKg = "Cutting Gas")
                 )
                 productDao().insertAll(seededProducts)
+            } else {
+                // Non-destructively ensure corporate LPG & MCG/Cutting Gas products exist on upgraded installs
+                val existingKeys = existingProducts.map { it.category to it.name.lowercase() }.toSet()
+                val corporateAdditions = listOf(
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 11kg", sortOrder = 304, cylinderSizeKg = "11 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 22kg", sortOrder = 305, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 44kg", sortOrder = 306, cylinderSizeKg = "44 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 11kg", sortOrder = 307, cylinderSizeKg = "11 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 22kg", sortOrder = 308, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 44kg", sortOrder = 309, cylinderSizeKg = "44 KG"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 22kg", sortOrder = 403, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 44kg", sortOrder = 404, cylinderSizeKg = "44 KG"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "Cutting Gas", sortOrder = 405, cylinderSizeKg = "Cutting Gas")
+                ).filter { (it.category to it.name.lowercase()) !in existingKeys }
+                if (corporateAdditions.isNotEmpty()) {
+                    corporateAdditions.forEach { product ->
+                        runCatching { productDao().insert(product) }
+                    }
+                }
             }
         }
     }
@@ -270,6 +302,89 @@ abstract class ConcordDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Extend different_gas_returns for atomic edit/delete stock reversal
+                db.execSQL("ALTER TABLE different_gas_returns ADD COLUMN linkedTxRemoteIds TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE different_gas_returns ADD COLUMN updatedAtMs INTEGER NOT NULL DEFAULT 0")
+
+                // 2. Authorized UAE (+971) mobile allowlist & staff permissions
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS authorized_mobiles (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        phoneE164 TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        staffUserId INTEGER,
+                        allowedFeaturesCsv TEXT NOT NULL,
+                        isActive INTEGER NOT NULL,
+                        isProtectedOwner INTEGER NOT NULL,
+                        createdAtMs INTEGER NOT NULL,
+                        updatedAtMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_authorized_mobiles_phoneE164 ON authorized_mobiles(phoneE164)")
+
+                // 3. Registered devices & remote session revocation
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS registered_devices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        deviceId TEXT NOT NULL,
+                        deviceLabel TEXT NOT NULL,
+                        phoneE164 TEXT NOT NULL,
+                        userId INTEGER NOT NULL,
+                        displayName TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        sessionVersion INTEGER NOT NULL,
+                        isRevoked INTEGER NOT NULL,
+                        lastActiveMs INTEGER NOT NULL,
+                        registeredAtMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_registered_devices_deviceId ON registered_devices(deviceId)")
+
+                // 4. Security & login activity audit trail
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS security_audit_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        eventType TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        actorName TEXT NOT NULL,
+                        phoneE164 TEXT NOT NULL,
+                        deviceLabel TEXT NOT NULL,
+                        details TEXT NOT NULL,
+                        isAlert INTEGER NOT NULL,
+                        timestampMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_security_audit_logs_timestampMs ON security_audit_logs(timestampMs)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_security_audit_logs_eventType ON security_audit_logs(eventType)")
+
+                // 5. Sanitize any accidental legacy naming typos (never Arabic Gas or Emergency Gas)
+                db.execSQL("UPDATE products SET name = REPLACE(name, 'Arabic Gas', 'Arab Gas') WHERE name LIKE '%Arabic Gas%'")
+                db.execSQL("UPDATE products SET name = REPLACE(name, 'Emergency Gas', 'Emirates Gas') WHERE name LIKE '%Emergency Gas%'")
+                db.execSQL("UPDATE stock_transactions SET purchaseCompanyName = REPLACE(purchaseCompanyName, 'Arabic Gas', 'Arab Gas') WHERE purchaseCompanyName LIKE '%Arabic Gas%'")
+                db.execSQL("UPDATE stock_transactions SET purchaseCompanyName = REPLACE(purchaseCompanyName, 'Emergency Gas', 'Emirates Gas') WHERE purchaseCompanyName LIKE '%Emergency Gas%'")
+
+                // 6. Seed exact Arab Gas, Emirates Gas, MCG & Cutting Gas entries without touching existing stock
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', 'Arab Gas 11kg', 304, 1, '11 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', 'Arab Gas 22kg', 305, 1, '22 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', 'Arab Gas 44kg', 306, 1, '44 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', 'Emirates Gas 11kg', 307, 1, '11 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', 'Emirates Gas 22kg', 308, 1, '22 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', 'Emirates Gas 44kg', 309, 1, '44 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('MCG_CUTTING_GAS', 'MCG 22kg', 403, 1, '22 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('MCG_CUTTING_GAS', 'MCG 44kg', 404, 1, '44 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('MCG_CUTTING_GAS', 'Cutting Gas', 405, 1, 'Cutting Gas')")
+            }
+        }
+
         fun getInstance(context: Context): ConcordDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -277,7 +392,14 @@ abstract class ConcordDatabase : RoomDatabase() {
                     ConcordDatabase::class.java,
                     "concord_gas_inventory.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
+                    )
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { INSTANCE = it }
@@ -285,3 +407,4 @@ abstract class ConcordDatabase : RoomDatabase() {
         }
     }
 }
+

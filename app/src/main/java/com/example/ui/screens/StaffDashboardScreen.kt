@@ -79,6 +79,7 @@ import com.example.data.model.CustomerChangeMode
 import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.ProductCategory
+import com.example.data.model.StaffFeaturePermission
 import com.example.data.model.StoreStockRow
 import com.example.data.model.StoreTransferDirection
 import com.example.data.model.TransactionDisplayItem
@@ -219,8 +220,17 @@ fun StaffDashboardScreen(
     onDismissAppUpdateBanner: () -> Unit = {},
     onOpenDifferentGasReturn: () -> Unit = {},
     onOpenReturnHistory: () -> Unit = {},
+    allowedFeatures: Set<StaffFeaturePermission> = StaffFeaturePermission.entries.toSet(),
     onLogout: () -> Unit
 ) {
+    val canViewVehicleStock = StaffFeaturePermission.MY_VEHICLE_STOCK in allowedFeatures
+    val canFullOut = StaffFeaturePermission.FULL_OUT in allowedFeatures
+    val canEmptyIn = StaffFeaturePermission.EMPTY_IN in allowedFeatures
+    val canDeliveries = StaffFeaturePermission.DELIVERY_ENTRIES in allowedFeatures
+    val canLpgExchange = StaffFeaturePermission.LPG_EXCHANGE in allowedFeatures
+    val canDailyReport = StaffFeaturePermission.MY_DAILY_REPORT in allowedFeatures
+    val canActivityHistory = StaffFeaturePermission.MY_ACTIVITY_HISTORY in allowedFeatures
+
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var selectedSalesCategory by remember { mutableStateOf<ProductCategory?>(null) }
@@ -480,150 +490,172 @@ fun StaffDashboardScreen(
                             accentColor = RoyalElectricBlue
                         )
                         Spacer(Modifier.height(2.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StaffBigActionButton(
-                                label = "Receive Full\nfrom Store",
-                                icon = Icons.AutoMirrored.Filled.Input,
-                                containerColor = Color(0xFF0F766E),
-                                onClick = {
-                                    prefillCustomerName = ""
-                                    prefillQuantity = 1
-                                    activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_receive_full")
-                            )
-                            StaffBigActionButton(
-                                label = "Customer\nSale",
-                                icon = Icons.Default.Sell,
-                                containerColor = Color(0xFFDC2626),
-                                onClick = {
-                                    prefillCustomerName = ""
-                                    prefillQuantity = 1
-                                    activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_customer_sale")
-                            )
+                        if (canDeliveries || canFullOut) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (canDeliveries) {
+                                    StaffBigActionButton(
+                                        label = "Receive Full\nfrom Store",
+                                        icon = Icons.AutoMirrored.Filled.Input,
+                                        containerColor = Color(0xFF0F766E),
+                                        onClick = {
+                                            prefillCustomerName = ""
+                                            prefillQuantity = 1
+                                            activeTxType = TransactionType.VEHICLE_FULL_RECEIVED
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("staff_action_receive_full")
+                                    )
+                                }
+                                if (canFullOut) {
+                                    StaffBigActionButton(
+                                        label = "Customer\nSale",
+                                        icon = Icons.Default.Sell,
+                                        containerColor = Color(0xFFDC2626),
+                                        onClick = {
+                                            prefillCustomerName = ""
+                                            prefillQuantity = 1
+                                            activeTxType = TransactionType.VEHICLE_CUSTOMER_SALE
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("staff_action_customer_sale")
+                                    )
+                                }
+                            }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StaffBigActionButton(
-                                label = "Empty Recd\n(Customer)",
-                                icon = Icons.Default.Recycling,
-                                containerColor = Color(0xFF1D4ED8),
-                                onClick = {
-                                    prefillCustomerName = ""
-                                    prefillQuantity = 1
-                                    activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_empty_customer")
-                            )
-                            StaffBigActionButton(
-                                label = "Return Empty\nto Store",
-                                icon = Icons.Default.Output,
-                                containerColor = Color(0xFFC2410C),
-                                onClick = {
-                                    prefillCustomerName = ""
-                                    prefillQuantity = 1
-                                    activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_return_empty")
-                            )
+                        if (canEmptyIn || canDeliveries) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (canEmptyIn) {
+                                    StaffBigActionButton(
+                                        label = "Empty Recd\n(Customer)",
+                                        icon = Icons.Default.Recycling,
+                                        containerColor = Color(0xFF1D4ED8),
+                                        onClick = {
+                                            prefillCustomerName = ""
+                                            prefillQuantity = 1
+                                            activeTxType = TransactionType.VEHICLE_EMPTY_FROM_CUSTOMER
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("staff_action_empty_customer")
+                                    )
+                                }
+                                if (canDeliveries) {
+                                    StaffBigActionButton(
+                                        label = "Return Empty\nto Store",
+                                        icon = Icons.Default.Output,
+                                        containerColor = Color(0xFFC2410C),
+                                        onClick = {
+                                            prefillCustomerName = ""
+                                            prefillQuantity = 1
+                                            activeTxType = TransactionType.VEHICLE_EMPTY_RETURN_TO_STORE
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("staff_action_return_empty")
+                                    )
+                                }
+                            }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StaffBigActionButton(
-                                label = "New Cust\nFull Set",
-                                icon = Icons.Default.PersonAddAlt1,
-                                containerColor = Color(0xFF4338CA),
-                                onClick = {
-                                    prefillCustomerName = ""
-                                    prefillQuantity = 1
-                                    activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_new_customer_sale")
-                            )
-                            StaffBigActionButton(
-                                label = "Complaint\nReplace",
-                                icon = Icons.Default.SwapHoriz,
-                                containerColor = Color(0xFF7E22CE),
-                                onClick = {
-                                    prefillCustomerName = ""
-                                    prefillQuantity = 1
-                                    activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_complaint_replace")
-                            )
+                        if (canFullOut || canDeliveries) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (canFullOut) {
+                                    StaffBigActionButton(
+                                        label = "New Cust\nFull Set",
+                                        icon = Icons.Default.PersonAddAlt1,
+                                        containerColor = Color(0xFF4338CA),
+                                        onClick = {
+                                            prefillCustomerName = ""
+                                            prefillQuantity = 1
+                                            activeTxType = TransactionType.VEHICLE_NEW_CUSTOMER_SALE
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("staff_action_new_customer_sale")
+                                    )
+                                }
+                                if (canDeliveries) {
+                                    StaffBigActionButton(
+                                        label = "Complaint\nReplace",
+                                        icon = Icons.Default.SwapHoriz,
+                                        containerColor = Color(0xFF7E22CE),
+                                        onClick = {
+                                            prefillCustomerName = ""
+                                            prefillQuantity = 1
+                                            activeTxType = TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("staff_action_complaint_replace")
+                                    )
+                                }
+                            }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StaffBigActionButton(
-                                label = "Full Return\nto Store",
-                                icon = Icons.Default.Output,
-                                containerColor = Color(0xFF047857),
-                                onClick = {
-                                    prefillCustomerName = ""
-                                    prefillQuantity = 1
-                                    activeTxType = TransactionType.VEHICLE_FULL_RETURN_TO_STORE
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_return_full")
-                            )
-                            StaffBigActionButton(
-                                label = "Customer Change\n(Full / Empty)",
-                                icon = Icons.Default.SwapHoriz,
-                                containerColor = Color(0xFF9333EA),
-                                onClick = { showCustomerChangeDialog = true },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_customer_change")
-                            )
+                        if (canDeliveries) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                StaffBigActionButton(
+                                    label = "Full Return\nto Store",
+                                    icon = Icons.Default.Output,
+                                    containerColor = Color(0xFF047857),
+                                    onClick = {
+                                        prefillCustomerName = ""
+                                        prefillQuantity = 1
+                                        activeTxType = TransactionType.VEHICLE_FULL_RETURN_TO_STORE
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("staff_action_return_full")
+                                )
+                                StaffBigActionButton(
+                                    label = "Customer Change\n(Full / Empty)",
+                                    icon = Icons.Default.SwapHoriz,
+                                    containerColor = Color(0xFF9333EA),
+                                    onClick = { showCustomerChangeDialog = true },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("staff_action_customer_change")
+                                )
+                            }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StaffBigActionButton(
-                                label = "Different Gas\nReturn",
-                                icon = Icons.Default.SwapHoriz,
-                                containerColor = MetallicOrange,
-                                onClick = onOpenDifferentGasReturn,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_different_gas_return")
-                            )
-                            StaffBigActionButton(
-                                label = "Return\nHistory",
-                                icon = Icons.Default.History,
-                                containerColor = RoyalElectricBlue,
-                                onClick = onOpenReturnHistory,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("staff_action_return_history")
-                            )
+                        if (canLpgExchange) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                StaffBigActionButton(
+                                    label = "LPG & Gas\nExchange",
+                                    icon = Icons.Default.SwapHoriz,
+                                    containerColor = MetallicOrange,
+                                    onClick = onOpenDifferentGasReturn,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("staff_action_different_gas_return")
+                                )
+                                StaffBigActionButton(
+                                    label = "Exchange\nHistory",
+                                    icon = Icons.Default.History,
+                                    containerColor = RoyalElectricBlue,
+                                    onClick = onOpenReturnHistory,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("staff_action_return_history")
+                                )
+                            }
                         }
-                        if (assignedVehicle != null && allVehicles.any { it.id != assignedVehicle.id }) {
+                        if (canDeliveries && assignedVehicle != null && allVehicles.any { it.id != assignedVehicle.id }) {
                             Button(
                                 onClick = { showVehicleTransferDialog = true },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0369A1)),
@@ -722,62 +754,70 @@ fun StaffDashboardScreen(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilterChip(
-                        selected = activeTab == 0,
-                        onClick = { activeTab = 0 },
-                        leadingIcon = {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                        label = { Text("Folders & Stock", fontWeight = FontWeight.SemiBold) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF0F766E),
-                            selectedLabelColor = Color.White,
-                            selectedLeadingIconColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("staff_tab_stock")
-                    )
-                    FilterChip(
-                        selected = activeTab == 1,
-                        onClick = { activeTab = 1 },
-                        leadingIcon = {
-                            Icon(Icons.Default.TrendingUp, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                        label = { Text("Sales", fontWeight = FontWeight.SemiBold) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF1D4ED8),
-                            selectedLabelColor = Color.White,
-                            selectedLeadingIconColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("staff_tab_sales")
-                    )
-                    FilterChip(
-                        selected = activeTab == 2,
-                        onClick = { activeTab = 2 },
-                        leadingIcon = {
-                            Icon(Icons.Default.PendingActions, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                        label = { Text("Pending ($activePendingCount)", fontWeight = FontWeight.SemiBold) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFFC2410C),
-                            selectedLabelColor = Color.White,
-                            selectedLeadingIconColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("staff_tab_pending")
-                    )
-                    FilterChip(
-                        selected = activeTab == 3,
-                        onClick = { activeTab = 3 },
-                        leadingIcon = {
-                            Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                        label = { Text("Activity (${myVehicleTransactions.size})", fontWeight = FontWeight.SemiBold) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF7E22CE),
-                            selectedLabelColor = Color.White,
-                            selectedLeadingIconColor = Color.White
-                        ),
-                        modifier = Modifier.testTag("staff_tab_activity")
-                    )
+                    if (canViewVehicleStock) {
+                        FilterChip(
+                            selected = activeTab == 0,
+                            onClick = { activeTab = 0 },
+                            leadingIcon = {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                            },
+                            label = { Text("Folders & Stock", fontWeight = FontWeight.SemiBold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF0F766E),
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("staff_tab_stock")
+                        )
+                    }
+                    if (canDailyReport) {
+                        FilterChip(
+                            selected = activeTab == 1,
+                            onClick = { activeTab = 1 },
+                            leadingIcon = {
+                                Icon(Icons.Default.TrendingUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                            },
+                            label = { Text("Sales", fontWeight = FontWeight.SemiBold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF1D4ED8),
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("staff_tab_sales")
+                        )
+                    }
+                    if (canEmptyIn || canDeliveries) {
+                        FilterChip(
+                            selected = activeTab == 2,
+                            onClick = { activeTab = 2 },
+                            leadingIcon = {
+                                Icon(Icons.Default.PendingActions, contentDescription = null, modifier = Modifier.size(16.dp))
+                            },
+                            label = { Text("Pending ($activePendingCount)", fontWeight = FontWeight.SemiBold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFC2410C),
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("staff_tab_pending")
+                        )
+                    }
+                    if (canActivityHistory) {
+                        FilterChip(
+                            selected = activeTab == 3,
+                            onClick = { activeTab = 3 },
+                            leadingIcon = {
+                                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                            },
+                            label = { Text("Activity (${myVehicleTransactions.size})", fontWeight = FontWeight.SemiBold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF7E22CE),
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("staff_tab_activity")
+                        )
+                    }
                 }
             }
 

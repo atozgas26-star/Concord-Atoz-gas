@@ -121,7 +121,9 @@ private enum class StoreModalAction {
     ADJUST_FULL_IN,
     ADJUST_FULL_OUT,
     ADJUST_EMPTY_IN,
-    ADJUST_EMPTY_OUT
+    ADJUST_EMPTY_OUT,
+    DAMAGED_ADD,
+    DAMAGED_REMOVE
 }
 
 @Composable
@@ -193,6 +195,7 @@ fun StoreManagementScreen(
 
     val totalFull = storeRows.sumOf { it.storeFullBalance }
     val totalEmpty = storeRows.sumOf { it.storeEmptyBalance }
+    val totalDamaged = storeRows.sumOf { it.damagedBalance }
 
     val folderStats = remember(storeRows) {
         ProductCategory.entries.map { cat ->
@@ -222,7 +225,9 @@ fun StoreManagementScreen(
     ) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Inside Store (View Only)" else "Inside Store • Main Yard",
-            subtitle = "Yard Full: $totalFull  •  Yard Empty: $totalEmpty" + if (isReadOnly) " • Read-Only" else "",
+            subtitle = "Yard Full: $totalFull  •  Empty: $totalEmpty" +
+                (if (totalDamaged > 0) "  •  Damaged: $totalDamaged" else "") +
+                (if (isReadOnly) " • Read-Only" else ""),
             headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.InsideStoreGradient,
             accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.InsideStoreAccent
         )
@@ -529,6 +534,20 @@ fun StoreManagementScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Deduct Empty Cylinders (-)") }
+                    OutlinedButton(
+                        onClick = {
+                            showAdjustmentPicker = false
+                            activeModal = StoreModalAction.DAMAGED_ADD
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Mark Damaged Cylinder (+)") }
+                    OutlinedButton(
+                        onClick = {
+                            showAdjustmentPicker = false
+                            activeModal = StoreModalAction.DAMAGED_REMOVE
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Resolve Damaged Cylinder (-)") }
                 }
             },
             confirmButton = {},
@@ -554,6 +573,8 @@ fun StoreManagementScreen(
             StoreModalAction.ADJUST_FULL_OUT -> Triple("Store Full Adjustment (-)", TransactionType.STORE_ADJUST_FULL_OUT, false)
             StoreModalAction.ADJUST_EMPTY_IN -> Triple("Store Empty Adjustment (+)", TransactionType.STORE_ADJUST_EMPTY_IN, false)
             StoreModalAction.ADJUST_EMPTY_OUT -> Triple("Store Empty Adjustment (-)", TransactionType.STORE_ADJUST_EMPTY_OUT, false)
+            StoreModalAction.DAMAGED_ADD -> Triple("Mark Store Damaged Cylinder (+)", TransactionType.STORE_DAMAGED_ADD, false)
+            StoreModalAction.DAMAGED_REMOVE -> Triple("Resolve Store Damaged Cylinder (-)", TransactionType.STORE_DAMAGED_REMOVE, false)
         }
 
         val isPurchaseAction = txType == TransactionType.STORE_PURCHASE_FULL ||
@@ -815,6 +836,45 @@ private fun StoreProductCard(
                     color = MetallicOrangeBright,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
+            }
+            if (row.damagedBalance > 0 || row.storeFullBalance <= 5) {
+                Spacer(Modifier.height(5.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (row.damagedBalance > 0) {
+                        Surface(
+                            color = Color(0xFF45141E),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(0.8.dp, BrandRedBright.copy(alpha = 0.65f))
+                        ) {
+                            Text(
+                                text = "DAMAGED: ${row.damagedBalance} (+${row.damagedAddedToday} / -${row.damagedResolvedToday})",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMono,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFCA5A5),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    if (row.storeFullBalance <= 5) {
+                        Surface(
+                            color = Color(0xFF3E2208),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.7f))
+                        ) {
+                            Text(
+                                text = if (row.storeFullBalance <= 0) "OUT OF STOCK" else "LOW STOCK (${row.storeFullBalance})",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MetallicOrangeBright,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

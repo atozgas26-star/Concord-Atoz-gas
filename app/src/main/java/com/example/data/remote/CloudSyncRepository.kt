@@ -4,15 +4,19 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.example.R
 import com.example.data.local.AppNotificationEntity
+import com.example.data.local.AuthorizedMobileEntity
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.OpeningStockEntity
 import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.RegisteredDeviceEntity
+import com.example.data.local.SecurityAuditLogEntity
 import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.local.VehicleEntity
+import com.example.data.model.StaffFeaturePermission
 import com.example.data.model.UserRole
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
@@ -434,8 +438,9 @@ class CloudSyncRepository(
                     }
             }
 
-            // Admin-only listeners: Sensitive Settings & Reports (never opened on Staff-only accounts)
+            // Admin & Owner Executive listeners: Reports, Login Events, Security & Devices
             val isPrivilegedAdmin = isAdminEmail || _loginMetadata.value.cloudUserRole == UserRole.ADMIN
+            val isExecutiveReader = isPrivilegedAdmin || _loginMetadata.value.cloudUserRole == UserRole.OWNER_VIEW
             if (isPrivilegedAdmin) {
                 launch {
                     val settingsRef = wsRef.collection("admin_settings").document("drive_backup")
@@ -451,6 +456,11 @@ class CloudSyncRepository(
                             _adminSettings.value = settings
                         }
                 }
+            } else {
+                _adminSettings.value = null
+            }
+
+            if (isExecutiveReader) {
                 launch {
                     val reportsCol = wsRef.collection("admin_reports")
                     reportsCol.snapshots()
@@ -480,8 +490,72 @@ class CloudSyncRepository(
                             _staffLoginEvents.value = events
                         }
                 }
+                launch {
+                    val mobilesCol = wsRef.collection("authorized_mobiles")
+                    mobilesCol.snapshots()
+                        .catch { error -> logListenerErrorIfAuthenticated(error, uid, mobilesCol.path) }
+                        .collectLatest { snap ->
+                            localDb.withTransaction {
+                                snap.documents.forEach { doc ->
+                                    val phone = doc.getString("phoneE164").orEmpty()
+                                    val name = doc.getString("displayName").orEmpty()
+                                    val role = UserRole.entries.firstOrNull { it.name == doc.getString("role") } ?: UserRole.STAFF
+                                    if (phone.isNotBlank() && name.isNotBlank()) {
+                                        val existing = localDb.authorizedMobileDao().getByPhone(phone)
+                                        val entity = AuthorizedMobileEntity(
+                                            id = existing?.id ?: 0L,
+                                            phoneE164 = phone,
+                                            displayName = name,
+                                            role = role,
+                                            staffUserId = doc.getLong("staffUserId"),
+                                            allowedFeaturesCsv = doc.getString("allowedFeaturesCsv") ?: StaffFeaturePermission.ALL_DEFAULT_CSV,
+                                            isActive = doc.getBoolean("isActive") ?: true,
+                                            isProtectedOwner = doc.getBoolean("isProtectedOwner") ?: false,
+                                            createdAtMs = doc.getLong("createdAtMs") ?: System.currentTimeMillis(),
+                                            updatedAtMs = doc.getLong("updatedAtMs") ?: System.currentTimeMillis()
+                                        )
+                                        if (existing == null || entity.updatedAtMs >= existing.updatedAtMs) {
+                                            localDb.authorizedMobileDao().upsert(entity)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                }
+                launch {
+                    val devicesCol = wsRef.collection("registered_devices")
+                    devicesCol.snapshots()
+                        .catch { error -> logListenerErrorIfAuthenticated(error, uid, devicesCol.path) }
+                        .collectLatest { snap ->
+                            localDb.withTransaction {
+                                snap.documents.forEach { doc ->
+                                    val devId = doc.getString("deviceId").orEmpty()
+                                    val devLabel = doc.getString("deviceLabel").orEmpty()
+                                    val role = UserRole.entries.firstOrNull { it.name == doc.getString("role") } ?: UserRole.STAFF
+                                    if (devId.isNotBlank()) {
+                                        val existing = localDb.registeredDeviceDao().getByDeviceId(devId)
+                                        val entity = RegisteredDeviceEntity(
+                                            id = existing?.id ?: 0L,
+                                            deviceId = devId,
+                                            deviceLabel = devLabel.ifBlank { "Android Device" },
+                                            phoneE164 = doc.getString("phoneE164").orEmpty(),
+                                            userId = doc.getLong("userId") ?: 0L,
+                                            displayName = doc.getString("displayName").orEmpty().ifBlank { "User" },
+                                            role = role,
+                                            sessionVersion = doc.getLong("sessionVersion") ?: 1L,
+                                            isRevoked = doc.getBoolean("isRevoked") ?: false,
+                                            lastActiveMs = doc.getLong("lastActiveMs") ?: System.currentTimeMillis(),
+                                            registeredAtMs = doc.getLong("registeredAtMs") ?: System.currentTimeMillis()
+                                        )
+                                        if (existing == null || entity.sessionVersion >= existing.sessionVersion) {
+                                            localDb.registeredDeviceDao().upsert(entity)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                }
             } else {
-                _adminSettings.value = null
                 _adminReports.value = emptyList()
                 _staffLoginEvents.value = emptyList()
             }
@@ -1799,6 +1873,141 @@ class CloudSyncRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun pushAuthorizedMobile(entity: AuthorizedMobileEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        if (_loginMetadata.value.cloudUserRole == UserRole.OWNER_VIEW) return Result.success(Unit)
+        val docId = "mob_${entity.phoneE164.replace(Regex("[^0-9]"), "")}"
+        val docPath = "workspaces/$wsId/authorized_mobiles/$docId"
+        return try {
+            val uid = requireUserId()
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("authorized_mobiles").document(docId)
+            val existingSnap = docRef.get().await()
+            val payload = linkedMapOf<String, Any?>(
+                "mobileId" to docId,
+                "phoneE164" to entity.phoneE164,
+                "displayName" to entity.displayName.trim().take(100),
+                "role" to entity.role.name,
+                "staffUserId" to entity.staffUserId,
+                "allowedFeaturesCsv" to entity.allowedFeaturesCsv.take(300),
+                "isActive" to entity.isActive,
+                "isProtectedOwner" to entity.isProtectedOwner,
+                "createdAtMs" to entity.createdAtMs.coerceAtLeast(1L),
+                "updatedAtMs" to entity.updatedAtMs.coerceAtLeast(1L),
+                "updatedByUid" to uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            ).filterValues { it != null }
+            if (existingSnap.exists()) {
+                docRef.update(payload).await()
+            } else {
+                val createMap = payload.toMutableMap().apply {
+                    put("createdAt", FieldValue.serverTimestamp())
+                }
+                docRef.set(createMap).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteAuthorizedMobile(phoneE164: String): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        if (_loginMetadata.value.cloudUserRole == UserRole.OWNER_VIEW) return Result.success(Unit)
+        val docId = "mob_${phoneE164.replace(Regex("[^0-9]"), "")}"
+        val docPath = "workspaces/$wsId/authorized_mobiles/$docId"
+        return try {
+            requireUserId()
+            db.collection("workspaces").document(wsId)
+                .collection("authorized_mobiles").document(docId)
+                .delete()
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun pushRegisteredDevice(entity: RegisteredDeviceEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        if (_loginMetadata.value.cloudUserRole == UserRole.OWNER_VIEW) return Result.success(Unit)
+        val docId = entity.deviceId.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(80)
+        val docPath = "workspaces/$wsId/registered_devices/$docId"
+        return try {
+            val uid = requireUserId()
+            val docRef = db.collection("workspaces").document(wsId)
+                .collection("registered_devices").document(docId)
+            val existingSnap = docRef.get().await()
+            val payload = mapOf(
+                "deviceId" to docId,
+                "deviceLabel" to entity.deviceLabel.trim().take(120).ifBlank { "Android Device" },
+                "phoneE164" to entity.phoneE164.trim().take(30),
+                "userId" to entity.userId.coerceAtLeast(0L),
+                "displayName" to entity.displayName.trim().take(100).ifBlank { "User" },
+                "role" to entity.role.name,
+                "sessionVersion" to entity.sessionVersion.coerceAtLeast(1L),
+                "isRevoked" to entity.isRevoked,
+                "lastActiveMs" to entity.lastActiveMs.coerceAtLeast(1L),
+                "registeredAtMs" to entity.registeredAtMs.coerceAtLeast(1L),
+                "ownerUid" to uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (existingSnap.exists()) {
+                docRef.update(payload).await()
+            } else {
+                val createMap = payload.toMutableMap().apply {
+                    put("createdAt", FieldValue.serverTimestamp())
+                }
+                docRef.set(createMap).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun pushSecurityAuditLog(entity: SecurityAuditLogEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        if (_loginMetadata.value.cloudUserRole == UserRole.OWNER_VIEW) return Result.success(Unit)
+        val docId = generateRemoteId("sec")
+        val docPath = "workspaces/$wsId/security_logs/$docId"
+        return try {
+            val uid = requireUserId()
+            val payload = mapOf(
+                "logId" to docId,
+                "eventType" to entity.eventType.trim().take(60).ifBlank { "SECURITY_EVENT" },
+                "role" to entity.role.trim().take(30).ifBlank { "SYSTEM" },
+                "actorName" to entity.actorName.trim().take(100).ifBlank { "System" },
+                "phoneE164" to entity.phoneE164.trim().take(30),
+                "deviceLabel" to entity.deviceLabel.trim().take(120),
+                "details" to entity.details.trim().take(300),
+                "isAlert" to entity.isAlert,
+                "timestampMs" to entity.timestampMs.coerceAtLeast(1L),
+                "createdByUid" to uid,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("workspaces").document(wsId)
+                .collection("security_logs").document(docId)
+                .set(payload)
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docPath)
             Result.failure(e)
         }
     }

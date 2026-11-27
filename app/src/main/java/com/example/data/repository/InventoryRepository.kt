@@ -1,13 +1,17 @@
 package com.example.data.repository
 
 import androidx.room.withTransaction
+import com.example.auth.UaePhoneValidator
 import com.example.data.local.AppNotificationEntity
+import com.example.data.local.AuthorizedMobileEntity
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.OpeningStockEntity
 import com.example.data.local.PendingStoreTransferEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.RegisteredDeviceEntity
+import com.example.data.local.SecurityAuditLogEntity
 import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
@@ -21,10 +25,12 @@ import com.example.data.model.CustomerPendingRow
 import com.example.data.model.CustomerReturnHistoryGroup
 import com.example.data.model.DashboardSummary
 import com.example.data.model.DifferentGasLineItem
+import com.example.data.model.GasNamingSanitizer
 import com.example.data.model.MonthlyDailySaleRow
 import com.example.data.model.OperationResult
 import com.example.data.model.ProductCategory
 import com.example.data.model.ProductSalesRow
+import com.example.data.model.StaffFeaturePermission
 import com.example.data.model.StaffReturnHistoryGroup
 import com.example.data.model.StaffSalesRow
 import com.example.data.model.StockCalculator
@@ -59,6 +65,9 @@ class InventoryRepository(
     private val notificationDao = db.appNotificationDao()
     private val chatMessageDao = db.chatMessageDao()
     private val differentGasReturnDao = db.differentGasReturnDao()
+    private val authorizedMobileDao = db.authorizedMobileDao()
+    private val registeredDeviceDao = db.registeredDeviceDao()
+    private val securityAuditLogDao = db.securityAuditLogDao()
 
     val usersFlow: Flow<List<UserAccountEntity>> = userDao.observeAllUsers()
     val vehiclesFlow: Flow<List<VehicleEntity>> = vehicleDao.observeActiveVehicles()
@@ -71,6 +80,9 @@ class InventoryRepository(
     val allNotificationsFlow: Flow<List<AppNotificationEntity>> = notificationDao.observeAll()
     val allChatMessagesFlow: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAll()
     val differentGasReturnsFlow: Flow<List<DifferentGasReturnEntity>> = differentGasReturnDao.observeAll()
+    val authorizedMobilesFlow: Flow<List<AuthorizedMobileEntity>> = authorizedMobileDao.observeAll()
+    val registeredDevicesFlow: Flow<List<RegisteredDeviceEntity>> = registeredDeviceDao.observeAll()
+    val securityAuditLogsFlow: Flow<List<SecurityAuditLogEntity>> = securityAuditLogDao.observeRecent()
 
     val customerReturnHistoryFlow: Flow<List<CustomerReturnHistoryGroup>> = differentGasReturnsFlow.map { records ->
         records
@@ -341,7 +353,7 @@ class InventoryRepository(
         name: String,
         cylinderSizeKg: String = ""
     ): OperationResult {
-        val cleanName = name.trim().take(100)
+        val cleanName = GasNamingSanitizer.sanitizeCompanyOrProductName(name).take(100)
         val cleanSize = cylinderSizeKg.trim().take(40)
         if (cleanName.isEmpty()) {
             return OperationResult.ValidationError("Product name cannot be empty.")
@@ -375,7 +387,7 @@ class InventoryRepository(
         if (actor.role != UserRole.ADMIN) {
             return OperationResult.ValidationError("Only Admin can edit gas products.")
         }
-        val cleanName = name.trim().take(100)
+        val cleanName = GasNamingSanitizer.sanitizeCompanyOrProductName(name).take(100)
         val cleanSize = cylinderSizeKg.trim().take(40)
         if (cleanName.isEmpty()) {
             return OperationResult.ValidationError("Product name cannot be empty.")
@@ -726,6 +738,7 @@ class InventoryRepository(
             }
 
             // 3. Persist audit & history record (unique submissionKey guarantees no duplicates)
+            val linkedRemoteIdsCsv = insertedTransactions.mapNotNull { it.remoteId }.joinToString(",")
             val returnRecord = DifferentGasReturnEntity(
                 submissionKey = cleanKey,
                 businessDate = businessDate,
@@ -742,11 +755,13 @@ class InventoryRepository(
                 returnedItemsJson = serializeDifferentGasLineItems(returnedLines),
                 totalDeliveredQty = deliveredLines.sumOf { it.quantity },
                 totalReturnedQty = returnedLines.sumOf { it.quantity },
-                notes = cleanNotes
+                notes = cleanNotes,
+                linkedTxRemoteIds = linkedRemoteIdsCsv,
+                updatedAtMs = nowMs
             )
             differentGasReturnDao.insert(returnRecord)
 
-            successMessage = "Saved Different Gas Return ($scopeLabel): Delivered $deliveredSummary | Returned $returnedSummary."
+            successMessage = "Saved Gas Exchange ($scopeLabel): Delivered $deliveredSummary | Returned $returnedSummary."
             OperationResult.Success(successMessage)
         }
 
@@ -762,6 +777,304 @@ class InventoryRepository(
             }
         }
         return localResult
+    }
+
+    /**
+     * Atomically edits an existing LPG / Different Gas Exchange record:
+     * 1. Locates and reverses the previous linked stock transactions.
+     * 2. Validates the corrected quantities against post-reversal stock (strictly preventing negative balances).
+     * 3. Applies the corrected Full OUT and Empty IN stock movements exactly once.
+     * 4. Updates the exchange history record and syncs deletions & new entries to Firestore.
+     */
+    suspend fun updateDifferentGasReturn(
+        recordId: Long,
+        deliveredItems: List<CustomerExchangeItem>,
+        returnedItems: List<CustomerExchangeItem>,
+        vehicleId: Long?,
+        actor: UserAccountEntity,
+        customerName: String,
+        customerPhone: String,
+        notes: String = ""
+    ): OperationResult {
+        if (actor.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Owner View is strictly read-only and cannot edit gas exchanges.")
+        }
+        val cleanCustomer = customerName.trim().take(120)
+        if (cleanCustomer.isEmpty()) {
+            return OperationResult.ValidationError("Please enter customer name.")
+        }
+        val cleanPhone = customerPhone.trim().take(40)
+        val cleanNotes = notes.trim().take(240)
+
+        val mergedDelivered = deliveredItems
+            .filter { it.quantity > 0 }
+            .groupBy { it.productId }
+            .map { (pid, list) -> CustomerExchangeItem(pid, list.sumOf { it.quantity }) }
+        val mergedReturned = returnedItems
+            .filter { it.quantity > 0 }
+            .groupBy { it.productId }
+            .map { (pid, list) -> CustomerExchangeItem(pid, list.sumOf { it.quantity }) }
+
+        if (mergedDelivered.isEmpty()) {
+            return OperationResult.ValidationError("Select at least one delivered Full gas cylinder.")
+        }
+        if (mergedReturned.isEmpty()) {
+            return OperationResult.ValidationError("Select at least one returned Empty gas cylinder.")
+        }
+        for (item in mergedDelivered + mergedReturned) {
+            if (item.quantity <= 0 || item.quantity > 100000) {
+                return OperationResult.ValidationError("Cylinder quantity must be between 1 and 100,000.")
+            }
+        }
+
+        val deletedRemoteIds = mutableListOf<String>()
+        val insertedTransactions = mutableListOf<StockTransactionEntity>()
+        var summaryMsg = ""
+
+        val localResult = db.withTransaction {
+            val existing = differentGasReturnDao.getById(recordId)
+                ?: return@withTransaction OperationResult.ValidationError("Exchange record not found.")
+            if (actor.role == UserRole.STAFF && existing.staffId != actor.id) {
+                return@withTransaction OperationResult.ValidationError("Staff can only edit their own exchange entries.")
+            }
+
+            val vehicle = if (vehicleId != null) {
+                vehicleDao.getVehicleById(vehicleId)
+                    ?: return@withTransaction OperationResult.ValidationError("Selected vehicle not found.")
+            } else {
+                null
+            }
+            if (actor.role == UserRole.STAFF && vehicle == null) {
+                return@withTransaction OperationResult.ValidationError("Staff must have an assigned vehicle for cylinder exchange.")
+            }
+
+            val productMap = mutableMapOf<Long, ProductEntity>()
+            for (item in mergedDelivered + mergedReturned) {
+                if (!productMap.containsKey(item.productId)) {
+                    val prod = productDao.getProductById(item.productId)
+                        ?: return@withTransaction OperationResult.ValidationError("Selected gas product not found.")
+                    productMap[item.productId] = prod
+                }
+            }
+
+            val allTxs = txDao.getAllTransactionsOnce()
+            val oldLinkedTxs = findLinkedTransactionsForReturn(existing, allTxs)
+            val oldLinkedIds = oldLinkedTxs.map { it.id }.toSet()
+            val baseTxsWithoutOld = allTxs.filter { it.id !in oldLinkedIds }
+            val openings = openingDao.getAllOpeningsOnce()
+            val scopeLabel = vehicle?.name ?: "Main Store"
+
+            // Build candidate new transactions
+            val nowMs = System.currentTimeMillis()
+            var offsetMs = 0L
+            val deliveredLines = mergedDelivered.map { item ->
+                val p = productMap[item.productId]!!
+                DifferentGasLineItem(p.id, p.name, p.category.displayName, item.quantity)
+            }
+            val returnedLines = mergedReturned.map { item ->
+                val p = productMap[item.productId]!!
+                DifferentGasLineItem(p.id, p.name, p.category.displayName, item.quantity)
+            }
+            val deliveredSummary = deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
+            val returnedSummary = returnedLines.joinToString(", ") { "${it.productName} Empty ×${it.quantity}" }
+            val phoneTag = if (cleanPhone.isNotBlank()) " • Tel: $cleanPhone" else ""
+            val noteTag = if (cleanNotes.isNotBlank()) " • $cleanNotes" else ""
+
+            val fullOutType = if (vehicle != null) TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT else TransactionType.STORE_CUSTOMER_CHANGE_FULL_OUT
+            val emptyInType = if (vehicle != null) TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_IN else TransactionType.STORE_CUSTOMER_CHANGE_EMPTY_IN
+
+            val candidateNewTxs = mutableListOf<StockTransactionEntity>()
+            for (item in mergedDelivered) {
+                candidateNewTxs.add(
+                    StockTransactionEntity(
+                        businessDate = existing.businessDate,
+                        timestamp = existing.timestamp + offsetMs++,
+                        type = fullOutType,
+                        productId = item.productId,
+                        vehicleId = vehicle?.id,
+                        vehicleName = vehicle?.name,
+                        staffId = existing.staffId,
+                        staffName = existing.staffName,
+                        quantity = item.quantity,
+                        customerName = cleanCustomer,
+                        notes = "Diff Gas Return (Edited) • Delivered vs ($returnedSummary)$phoneTag$noteTag".take(300),
+                        remoteId = CloudSyncRepository.generateRemoteTxId()
+                    )
+                )
+            }
+            for (item in mergedReturned) {
+                candidateNewTxs.add(
+                    StockTransactionEntity(
+                        businessDate = existing.businessDate,
+                        timestamp = existing.timestamp + offsetMs++,
+                        type = emptyInType,
+                        productId = item.productId,
+                        vehicleId = vehicle?.id,
+                        vehicleName = vehicle?.name,
+                        staffId = existing.staffId,
+                        staffName = existing.staffName,
+                        quantity = item.quantity,
+                        customerName = cleanCustomer,
+                        notes = "Diff Gas Return (Edited) • Returned vs ($deliveredSummary)$phoneTag$noteTag".take(300),
+                        remoteId = CloudSyncRepository.generateRemoteTxId()
+                    )
+                )
+            }
+
+            // Simulate post-edit balances across ALL affected products and scopes (old + new)
+            val simulatedTxs = baseTxsWithoutOld + candidateNewTxs
+            val affectedProducts = (oldLinkedTxs.map { it.productId } + candidateNewTxs.map { it.productId }).toSet()
+            val affectedVehicleIds = (oldLinkedTxs.mapNotNull { it.vehicleId } + listOfNotNull(vehicle?.id)).toSet()
+
+            for (pid in affectedProducts) {
+                val (sFull, sEmpty) = StockCalculator.currentStoreBalance(pid, openings, simulatedTxs)
+                if (sFull < 0 || sEmpty < 0) {
+                    val pName = productMap[pid]?.name ?: productDao.getProductById(pid)?.name ?: "Product"
+                    return@withTransaction OperationResult.InsufficientStock(
+                        title = "Negative Store Balance Prevented",
+                        message = "Editing this exchange would make Main Store $pName negative (Full=$sFull, Empty=$sEmpty)."
+                    )
+                }
+                for (vid in affectedVehicleIds) {
+                    val (vFull, vEmpty) = StockCalculator.currentVehicleBalance(vid, pid, openings, simulatedTxs)
+                    if (vFull < 0 || vEmpty < 0) {
+                        val pName = productMap[pid]?.name ?: productDao.getProductById(pid)?.name ?: "Product"
+                        val vName = vehicleDao.getVehicleById(vid)?.name ?: "Vehicle"
+                        return@withTransaction OperationResult.InsufficientStock(
+                            title = "Negative Vehicle Balance Prevented",
+                            message = "Editing this exchange would make $vName $pName negative (Full=$vFull, Empty=$vEmpty)."
+                        )
+                    }
+                }
+            }
+
+            // Atomically reverse old transactions & insert corrected transactions once
+            for (oldTx in oldLinkedTxs) {
+                oldTx.remoteId?.let { deletedRemoteIds.add(it) }
+                txDao.deleteById(oldTx.id)
+            }
+            for (newTx in candidateNewTxs) {
+                val rowId = txDao.insert(newTx)
+                insertedTransactions.add(newTx.copy(id = rowId))
+            }
+
+            val updatedRecord = existing.copy(
+                customerName = cleanCustomer,
+                customerPhone = cleanPhone,
+                vehicleId = vehicle?.id,
+                vehicleName = vehicle?.name,
+                deliveredSummary = deliveredSummary,
+                returnedSummary = returnedSummary,
+                deliveredItemsJson = serializeDifferentGasLineItems(deliveredLines),
+                returnedItemsJson = serializeDifferentGasLineItems(returnedLines),
+                totalDeliveredQty = deliveredLines.sumOf { it.quantity },
+                totalReturnedQty = returnedLines.sumOf { it.quantity },
+                notes = cleanNotes,
+                linkedTxRemoteIds = insertedTransactions.mapNotNull { it.remoteId }.joinToString(","),
+                updatedAtMs = nowMs
+            )
+            differentGasReturnDao.update(updatedRecord)
+            summaryMsg = "Updated Gas Exchange ($scopeLabel): Delivered $deliveredSummary | Returned $returnedSummary."
+            OperationResult.Success(summaryMsg)
+        }
+
+        if (localResult is OperationResult.Success && cloudSync != null) {
+            deletedRemoteIds.forEach { cloudSync.deleteCloudTransaction(it) }
+            insertedTransactions.forEach { cloudSync.pushTransaction(it) }
+        }
+        return localResult
+    }
+
+    /**
+     * Atomically deletes an LPG / Different Gas Exchange record and safely reverses its linked
+     * stock movements while verifying no subsequent transaction becomes negative.
+     */
+    suspend fun deleteDifferentGasReturn(
+        recordId: Long,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Owner View is strictly read-only and cannot delete gas exchanges.")
+        }
+        val deletedRemoteIds = mutableListOf<String>()
+
+        val localResult = db.withTransaction {
+            val existing = differentGasReturnDao.getById(recordId)
+                ?: return@withTransaction OperationResult.ValidationError("Exchange record not found.")
+            if (actor.role == UserRole.STAFF && existing.staffId != actor.id) {
+                return@withTransaction OperationResult.ValidationError("Staff can only delete their own exchange entries.")
+            }
+
+            val allTxs = txDao.getAllTransactionsOnce()
+            val oldLinkedTxs = findLinkedTransactionsForReturn(existing, allTxs)
+            val oldLinkedIds = oldLinkedTxs.map { it.id }.toSet()
+            val remainingTxs = allTxs.filter { it.id !in oldLinkedIds }
+            val openings = openingDao.getAllOpeningsOnce()
+
+            val affectedProducts = oldLinkedTxs.map { it.productId }.toSet()
+            val affectedVehicleIds = oldLinkedTxs.mapNotNull { it.vehicleId }.toSet()
+            for (pid in affectedProducts) {
+                val (sFull, sEmpty) = StockCalculator.currentStoreBalance(pid, openings, remainingTxs)
+                if (sFull < 0 || sEmpty < 0) {
+                    return@withTransaction OperationResult.InsufficientStock(
+                        title = "Cannot Reverse Exchange",
+                        message = "Deleting this exchange would cause negative Store stock (Full=$sFull, Empty=$sEmpty) due to subsequent transactions."
+                    )
+                }
+                for (vid in affectedVehicleIds) {
+                    val (vFull, vEmpty) = StockCalculator.currentVehicleBalance(vid, pid, openings, remainingTxs)
+                    if (vFull < 0 || vEmpty < 0) {
+                        return@withTransaction OperationResult.InsufficientStock(
+                            title = "Cannot Reverse Exchange",
+                            message = "Deleting this exchange would cause negative Vehicle stock (Full=$vFull, Empty=$vEmpty) due to subsequent transactions."
+                        )
+                    }
+                }
+            }
+
+            for (oldTx in oldLinkedTxs) {
+                oldTx.remoteId?.let { deletedRemoteIds.add(it) }
+                txDao.deleteById(oldTx.id)
+            }
+            differentGasReturnDao.deleteById(existing.id)
+            OperationResult.Success("Deleted Gas Exchange and reversed ${oldLinkedTxs.size} stock movement(s).")
+        }
+
+        if (localResult is OperationResult.Success && cloudSync != null) {
+            deletedRemoteIds.forEach { cloudSync.deleteCloudTransaction(it) }
+        }
+        return localResult
+    }
+
+    private fun findLinkedTransactionsForReturn(
+        record: DifferentGasReturnEntity,
+        allTxs: List<StockTransactionEntity>
+    ): List<StockTransactionEntity> {
+        val remoteIds = record.linkedTxRemoteIds
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        if (remoteIds.isNotEmpty()) {
+            val matched = allTxs.filter { it.remoteId != null && it.remoteId in remoteIds }
+            if (matched.isNotEmpty()) return matched
+        }
+        // Fallback for legacy V2.3 records created before linkedTxRemoteIds existed
+        val allowedTypes = setOf(
+            TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT,
+            TransactionType.VEHICLE_CUSTOMER_CHANGE_EMPTY_IN,
+            TransactionType.STORE_CUSTOMER_CHANGE_FULL_OUT,
+            TransactionType.STORE_CUSTOMER_CHANGE_EMPTY_IN
+        )
+        return allTxs.filter { tx ->
+            tx.type in allowedTypes &&
+                tx.businessDate == record.businessDate &&
+                tx.staffId == record.staffId &&
+                tx.vehicleId == record.vehicleId &&
+                tx.customerName.equals(record.customerName, ignoreCase = true) &&
+                tx.notes.startsWith("Diff Gas Return") &&
+                kotlin.math.abs(tx.timestamp - record.timestamp) <= 10_000L
+        }
     }
 
     private fun serializeDifferentGasLineItems(items: List<DifferentGasLineItem>): String {
@@ -809,6 +1122,7 @@ class InventoryRepository(
 
             val storeFull = storeRows.sumOf { it.storeFullBalance }
             val storeEmpty = storeRows.sumOf { it.storeEmptyBalance }
+            val storeDamaged = storeRows.sumOf { it.damagedBalance }
             val todayFullPurchases = storeRows.sumOf { it.fullPurchases }
             val todayEmptyPurchases = storeRows.sumOf { it.emptyPurchases }
             val todayFullDispatch = storeRows.sumOf { it.fullDispatch }
@@ -836,12 +1150,14 @@ class InventoryRepository(
                     totalComplaintReplaced = vRows.sumOf { it.complaintReplaced },
                     totalFullTransferredOut = vRows.sumOf { it.fullTransferredOut },
                     totalEmptyTransferredOut = vRows.sumOf { it.emptyTransferredOut },
-                    totalFullReturnedToStore = vRows.sumOf { it.fullReturnedToStore }
+                    totalFullReturnedToStore = vRows.sumOf { it.fullReturnedToStore },
+                    totalDamagedBalance = vRows.sumOf { it.damagedBalance }
                 )
             }
 
             val allVehiclesFull = vehicleOverviews.sumOf { it.totalFullBalance }
             val allVehiclesEmpty = vehicleOverviews.sumOf { it.totalEmptyBalance }
+            val allVehiclesDamaged = vehicleOverviews.sumOf { it.totalDamagedBalance }
             val todaySales = vehicleOverviews.sumOf { it.totalCustomerSales }
 
             val dayTxs = txs
@@ -875,7 +1191,9 @@ class InventoryRepository(
                 pendingDeliveryCylinders = allVehiclesFull,
                 activeDeliveryVehiclesCount = vehicleOverviews.count { it.totalFullBalance > 0 },
                 todayStoreActivityCount = storeActivityTxs.size,
-                recentStoreActivity = storeActivityTxs.take(6)
+                recentStoreActivity = storeActivityTxs.take(6),
+                storeDamagedBalance = storeDamaged,
+                allVehiclesDamagedBalance = allVehiclesDamaged
             )
         }.flowOn(Dispatchers.Default)
 
@@ -893,6 +1211,9 @@ class InventoryRepository(
         purchaseCompanyName: String = "",
         customerName: String = ""
     ): OperationResult {
+        if (actor.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Owner View is strictly read-only and cannot modify stock.")
+        }
         if (quantity <= 0 || quantity > 100000) {
             return OperationResult.ValidationError("Quantity must be between 1 and 100,000.")
         }
@@ -934,6 +1255,12 @@ class InventoryRepository(
             } else {
                 0 to 0
             }
+            val liveStoreDamaged = StockCalculator.currentStoreDamagedBalance(productId, allTxs)
+            val liveVehicleDamaged = if (vehicle != null) {
+                StockCalculator.currentVehicleDamagedBalance(vehicle.id, productId, allTxs)
+            } else {
+                0
+            }
 
             val productLabel = "${product.category.displayName} • ${product.name}"
             productNameLabel = product.name
@@ -968,6 +1295,14 @@ class InventoryRepository(
                         )
                     }
                 }
+                TransactionType.STORE_DAMAGED_REMOVE -> {
+                    if (liveStoreDamaged < quantity) {
+                        return@withTransaction OperationResult.InsufficientStock(
+                            title = "Insufficient Store Damaged Stock",
+                            message = "Cannot resolve $quantity damaged $productLabel cylinders.\n\nTracked Store Damaged Balance: $liveStoreDamaged"
+                        )
+                    }
+                }
                 TransactionType.VEHICLE_FULL_RETURN_TO_STORE,
                 TransactionType.VEHICLE_CUSTOMER_SALE,
                 TransactionType.VEHICLE_NEW_CUSTOMER_SALE,
@@ -993,6 +1328,14 @@ class InventoryRepository(
                         )
                     }
                 }
+                TransactionType.VEHICLE_DAMAGED_REMOVE -> {
+                    if (liveVehicleDamaged < quantity) {
+                        return@withTransaction OperationResult.InsufficientStock(
+                            title = "Insufficient Vehicle Damaged Stock",
+                            message = "${vehicle!!.name} cannot resolve $quantity damaged $productLabel cylinders.\n\nTracked Vehicle Damaged Balance: $liveVehicleDamaged"
+                        )
+                    }
+                }
                 else -> Unit
             }
 
@@ -1006,7 +1349,7 @@ class InventoryRepository(
                 staffId = actor.id,
                 staffName = actor.displayName,
                 quantity = quantity,
-                purchaseCompanyName = purchaseCompanyName.trim().take(120),
+                purchaseCompanyName = GasNamingSanitizer.sanitizeCompanyOrProductName(purchaseCompanyName).take(120),
                 customerName = customerName.trim().take(120),
                 notes = notes.trim().take(300),
                 remoteId = remoteId
@@ -1042,6 +1385,9 @@ class InventoryRepository(
         purchaseCompanyName: String = "",
         customerName: String = ""
     ): OperationResult {
+        if (actor.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Owner View is strictly read-only and cannot modify stock.")
+        }
         val mergedItems = items
             .filter { it.quantity > 0 || it.emptyCollectedNow > 0 }
             .groupBy { it.productId }
@@ -1080,7 +1426,7 @@ class InventoryRepository(
 
             val openings = openingDao.getAllOpeningsOnce()
             val allTxs = txDao.getAllTransactionsOnce()
-            val cleanCompany = purchaseCompanyName.trim().take(120)
+            val cleanCompany = GasNamingSanitizer.sanitizeCompanyOrProductName(purchaseCompanyName).take(120)
             val cleanCustomer = customerName.trim().take(120)
             val cleanNotes = notes.trim().take(300)
             val nowMs = System.currentTimeMillis()
@@ -1285,6 +1631,9 @@ class InventoryRepository(
         customerName: String = "",
         notes: String = ""
     ): OperationResult {
+        if (actor.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Owner View is strictly read-only and cannot modify stock.")
+        }
         val mergedReturned = returnedItems
             .filter { it.quantity > 0 }
             .groupBy { it.productId }
@@ -1574,6 +1923,9 @@ class InventoryRepository(
         extraFullQuantity: Int = 0,
         extraEmptyQuantity: Int = 0
     ): OperationResult {
+        if (actor.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Owner View is strictly read-only and cannot transfer stock.")
+        }
         if (sourceVehicleId == targetVehicleId) {
             return OperationResult.ValidationError("Source and destination vehicles must be different.")
         }
@@ -1952,7 +2304,7 @@ class InventoryRepository(
             val candidate = existing.copy(
                 productId = newProductId,
                 quantity = newQuantity,
-                purchaseCompanyName = newPurchaseCompanyName.trim().take(120),
+                purchaseCompanyName = GasNamingSanitizer.sanitizeCompanyOrProductName(newPurchaseCompanyName).take(120),
                 customerName = newCustomerName.trim().take(120),
                 notes = newNotes.trim().take(300)
             )
@@ -2194,6 +2546,225 @@ class InventoryRepository(
             }
         }.flowOn(Dispatchers.Default)
 
+    // --- Corporate Security: UAE (+971) Authorized Mobiles, Devices & Audit Logs ---
+
+    suspend fun findAuthorizedMobileByPhone(rawPhone: String): AuthorizedMobileEntity? {
+        val normalized = UaePhoneValidator.normalizeUaePhone(rawPhone) ?: return null
+        return authorizedMobileDao.getByPhone(normalized)
+    }
+
+    suspend fun getStaffPermissionsForUser(staffUserId: Long): Set<StaffFeaturePermission> {
+        val mobile = authorizedMobileDao.getActiveByStaffUserId(staffUserId)
+            ?: return StaffFeaturePermission.entries.toSet()
+        return StaffFeaturePermission.parseCsv(mobile.allowedFeaturesCsv)
+    }
+
+    /**
+     * Admin-only registration & management of UAE (+971) authorized mobile numbers.
+     * Enforces strict Protected Owner immutability: Admin can NEVER alter, demote,
+     * deactivate, or overwrite an existing Protected Owner mobile record.
+     */
+    suspend fun upsertAuthorizedMobile(
+        phoneRaw: String,
+        displayName: String,
+        role: UserRole,
+        staffUserId: Long?,
+        allowedFeatures: Set<StaffFeaturePermission>,
+        isActive: Boolean,
+        isProtectedOwner: Boolean,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can manage authorized UAE mobile numbers.")
+        }
+        val normalizedPhone = UaePhoneValidator.normalizeUaePhone(phoneRaw)
+            ?: return OperationResult.ValidationError("Enter a valid UAE mobile number (+971 5X XXX XXXX).")
+        val cleanName = displayName.trim().take(100)
+        if (cleanName.isEmpty()) {
+            return OperationResult.ValidationError("Display name is required.")
+        }
+
+        val nowMs = System.currentTimeMillis()
+        var savedEntity: AuthorizedMobileEntity? = null
+        val result = db.withTransaction {
+            val existing = authorizedMobileDao.getByPhone(normalizedPhone)
+            if (existing != null && existing.isProtectedOwner) {
+                return@withTransaction OperationResult.ValidationError(
+                    "Protected Owner account cannot be modified, demoted, or deactivated by Admin."
+                )
+            }
+            val effectiveProtectedOwner = if (role == UserRole.OWNER_VIEW) isProtectedOwner else false
+            val featuresCsv = if (role == UserRole.STAFF) {
+                StaffFeaturePermission.toCsv(allowedFeatures.ifEmpty { setOf(StaffFeaturePermission.MY_VEHICLE_STOCK) })
+            } else {
+                StaffFeaturePermission.ALL_DEFAULT_CSV
+            }
+            val entity = AuthorizedMobileEntity(
+                id = existing?.id ?: 0L,
+                phoneE164 = normalizedPhone,
+                displayName = cleanName,
+                role = role,
+                staffUserId = if (role == UserRole.STAFF) staffUserId else null,
+                allowedFeaturesCsv = featuresCsv,
+                isActive = isActive,
+                isProtectedOwner = effectiveProtectedOwner,
+                createdAtMs = existing?.createdAtMs ?: nowMs,
+                updatedAtMs = nowMs
+            )
+            val rowId = authorizedMobileDao.upsert(entity)
+            savedEntity = entity.copy(id = if (entity.id > 0L) entity.id else rowId)
+            OperationResult.Success("Authorized ${UaePhoneValidator.formatDisplay(normalizedPhone)} ($cleanName • ${role.name}).")
+        }
+
+        if (result is OperationResult.Success && savedEntity != null) {
+            cloudSync?.pushAuthorizedMobile(savedEntity!!)
+            logSecurityEvent(
+                eventType = "MOBILE_ACCESS_UPDATED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                phoneE164 = savedEntity!!.phoneE164,
+                deviceLabel = "",
+                details = "Authorized ${savedEntity!!.displayName} (${savedEntity!!.role.name}, active=${savedEntity!!.isActive})",
+                isAlert = false
+            )
+        }
+        return result
+    }
+
+    suspend fun deleteAuthorizedMobile(mobileId: Long, actor: UserAccountEntity): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can remove authorized mobile numbers.")
+        }
+        var deletedPhone: String? = null
+        val result = db.withTransaction {
+            val existing = authorizedMobileDao.getById(mobileId)
+                ?: return@withTransaction OperationResult.ValidationError("Authorized mobile record not found.")
+            if (existing.isProtectedOwner) {
+                return@withTransaction OperationResult.ValidationError(
+                    "Protected Owner mobile number cannot be deleted or overridden by Admin."
+                )
+            }
+            deletedPhone = existing.phoneE164
+            authorizedMobileDao.deleteById(mobileId)
+            OperationResult.Success("Removed authorized mobile ${UaePhoneValidator.formatDisplay(existing.phoneE164)}.")
+        }
+        if (result is OperationResult.Success && deletedPhone != null) {
+            cloudSync?.deleteAuthorizedMobile(deletedPhone!!)
+            logSecurityEvent(
+                eventType = "MOBILE_ACCESS_REMOVED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                phoneE164 = deletedPhone!!,
+                deviceLabel = "",
+                details = "Removed authorized UAE mobile $deletedPhone",
+                isAlert = true
+            )
+        }
+        return result
+    }
+
+    suspend fun registerOrTouchDevice(
+        deviceId: String,
+        deviceLabel: String,
+        phoneE164: String,
+        userId: Long,
+        displayName: String,
+        role: UserRole
+    ): RegisteredDeviceEntity {
+        val nowMs = System.currentTimeMillis()
+        val existing = registeredDeviceDao.getByDeviceId(deviceId)
+        val entity = RegisteredDeviceEntity(
+            id = existing?.id ?: 0L,
+            deviceId = deviceId.take(100),
+            deviceLabel = deviceLabel.take(120),
+            phoneE164 = phoneE164.take(30),
+            userId = userId,
+            displayName = displayName.take(100),
+            role = role,
+            sessionVersion = (existing?.sessionVersion ?: 0L) + 1L,
+            isRevoked = false,
+            lastActiveMs = nowMs,
+            registeredAtMs = existing?.registeredAtMs ?: nowMs
+        )
+        val rowId = registeredDeviceDao.upsert(entity)
+        val saved = entity.copy(id = if (entity.id > 0L) entity.id else rowId)
+        if (role != UserRole.OWNER_VIEW) {
+            cloudSync?.pushRegisteredDevice(saved)
+        }
+        return saved
+    }
+
+    suspend fun isDeviceRevoked(deviceId: String): Boolean {
+        return registeredDeviceDao.getByDeviceId(deviceId)?.isRevoked == true
+    }
+
+    suspend fun revokeDevice(deviceId: String, actor: UserAccountEntity): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can revoke registered devices.")
+        }
+        val existing = registeredDeviceDao.getByDeviceId(deviceId)
+            ?: return OperationResult.ValidationError("Device not found.")
+        registeredDeviceDao.revokeDevice(deviceId)
+        val updated = existing.copy(isRevoked = true, sessionVersion = existing.sessionVersion + 1L)
+        cloudSync?.pushRegisteredDevice(updated)
+        logSecurityEvent(
+            eventType = "DEVICE_REVOKED",
+            role = actor.role.name,
+            actorName = actor.displayName,
+            phoneE164 = existing.phoneE164,
+            deviceLabel = existing.deviceLabel,
+            details = "Revoked device ${existing.deviceLabel} (${existing.displayName})",
+            isAlert = true
+        )
+        return OperationResult.Success("Revoked device ${existing.deviceLabel}.")
+    }
+
+    suspend fun logoutAllDevices(actor: UserAccountEntity): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can sign out all registered devices.")
+        }
+        val activeDevices = registeredDeviceDao.getAllOnce().filter { !it.isRevoked }
+        registeredDeviceDao.revokeAllDevices()
+        activeDevices.forEach { dev ->
+            cloudSync?.pushRegisteredDevice(dev.copy(isRevoked = true, sessionVersion = dev.sessionVersion + 1L))
+        }
+        logSecurityEvent(
+            eventType = "LOGOUT_ALL_DEVICES",
+            role = actor.role.name,
+            actorName = actor.displayName,
+            phoneE164 = "",
+            deviceLabel = "All Devices (${activeDevices.size})",
+            details = "Admin terminated all active device sessions (${activeDevices.size}).",
+            isAlert = true
+        )
+        return OperationResult.Success("Signed out all ${activeDevices.size} registered device(s).")
+    }
+
+    suspend fun logSecurityEvent(
+        eventType: String,
+        role: String,
+        actorName: String,
+        phoneE164: String = "",
+        deviceLabel: String = "",
+        details: String = "",
+        isAlert: Boolean = false
+    ) {
+        val entity = SecurityAuditLogEntity(
+            eventType = eventType.take(60),
+            role = role.take(30),
+            actorName = actorName.take(100),
+            phoneE164 = phoneE164.take(30),
+            deviceLabel = deviceLabel.take(120),
+            details = details.take(300),
+            isAlert = isAlert,
+            timestampMs = System.currentTimeMillis()
+        )
+        securityAuditLogDao.insert(entity)
+        if (role != UserRole.OWNER_VIEW.name) {
+            cloudSync?.pushSecurityAuditLog(entity)
+        }
+    }
+
     companion object {
         fun todayIsoDate(): String {
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -2206,3 +2777,4 @@ class InventoryRepository(
         }
     }
 }
+

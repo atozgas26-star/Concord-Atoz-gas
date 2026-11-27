@@ -284,6 +284,9 @@ interface DifferentGasReturnDao {
     @Query("SELECT * FROM different_gas_returns ORDER BY timestamp DESC, id DESC")
     suspend fun getAllOnce(): List<DifferentGasReturnEntity>
 
+    @Query("SELECT * FROM different_gas_returns WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): DifferentGasReturnEntity?
+
     @Query("SELECT * FROM different_gas_returns WHERE submissionKey = :submissionKey LIMIT 1")
     suspend fun getBySubmissionKey(submissionKey: String): DifferentGasReturnEntity?
 
@@ -293,7 +296,83 @@ interface DifferentGasReturnDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<DifferentGasReturnEntity>)
 
+    @Update
+    suspend fun update(entity: DifferentGasReturnEntity)
+
+    @Query("DELETE FROM different_gas_returns WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("DELETE FROM different_gas_returns")
     suspend fun deleteAll()
 }
+
+@Dao
+interface AuthorizedMobileDao {
+    @Query("SELECT * FROM authorized_mobiles ORDER BY isProtectedOwner DESC, role ASC, displayName ASC")
+    fun observeAll(): Flow<List<AuthorizedMobileEntity>>
+
+    @Query("SELECT * FROM authorized_mobiles ORDER BY isProtectedOwner DESC, role ASC, displayName ASC")
+    suspend fun getAllOnce(): List<AuthorizedMobileEntity>
+
+    @Query("SELECT * FROM authorized_mobiles WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): AuthorizedMobileEntity?
+
+    @Query("SELECT * FROM authorized_mobiles WHERE phoneE164 = :phoneE164 LIMIT 1")
+    suspend fun getByPhone(phoneE164: String): AuthorizedMobileEntity?
+
+    @Query("SELECT * FROM authorized_mobiles WHERE staffUserId = :staffUserId AND isActive = 1 LIMIT 1")
+    suspend fun getActiveByStaffUserId(staffUserId: Long): AuthorizedMobileEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AuthorizedMobileEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<AuthorizedMobileEntity>)
+
+    @Query("DELETE FROM authorized_mobiles WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM authorized_mobiles")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface RegisteredDeviceDao {
+    @Query("SELECT * FROM registered_devices ORDER BY isRevoked ASC, lastActiveMs DESC")
+    fun observeAll(): Flow<List<RegisteredDeviceEntity>>
+
+    @Query("SELECT * FROM registered_devices ORDER BY lastActiveMs DESC")
+    suspend fun getAllOnce(): List<RegisteredDeviceEntity>
+
+    @Query("SELECT * FROM registered_devices WHERE deviceId = :deviceId LIMIT 1")
+    suspend fun getByDeviceId(deviceId: String): RegisteredDeviceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: RegisteredDeviceEntity): Long
+
+    @Query("UPDATE registered_devices SET isRevoked = 1, sessionVersion = sessionVersion + 1 WHERE deviceId = :deviceId")
+    suspend fun revokeDevice(deviceId: String)
+
+    @Query("UPDATE registered_devices SET isRevoked = 1, sessionVersion = sessionVersion + 1 WHERE isRevoked = 0")
+    suspend fun revokeAllDevices()
+
+    @Query("DELETE FROM registered_devices")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface SecurityAuditLogDao {
+    @Query("SELECT * FROM security_audit_logs ORDER BY timestampMs DESC, id DESC LIMIT 200")
+    fun observeRecent(): Flow<List<SecurityAuditLogEntity>>
+
+    @Query("SELECT * FROM security_audit_logs ORDER BY timestampMs DESC, id DESC LIMIT 200")
+    suspend fun getRecentOnce(): List<SecurityAuditLogEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: SecurityAuditLogEntity): Long
+
+    @Query("DELETE FROM security_audit_logs")
+    suspend fun deleteAll()
+}
+
 

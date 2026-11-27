@@ -19,8 +19,8 @@
         },
         "role": {
           "type": "string",
-          "enum": ["ADMIN", "STAFF"],
-          "description": "Server-validated user role distinguishing Admin vs Staff privileges."
+          "enum": ["ADMIN", "STAFF", "OWNER_VIEW"],
+          "description": "Server-validated user role distinguishing Admin, Staff, and strictly read-only Owner View privileges."
         },
         "activeWorkspaceId": {
           "type": "string",
@@ -170,6 +170,8 @@
             "STORE_ADJUST_FULL_OUT",
             "STORE_ADJUST_EMPTY_IN",
             "STORE_ADJUST_EMPTY_OUT",
+            "STORE_DAMAGED_ADD",
+            "STORE_DAMAGED_REMOVE",
             "VEHICLE_FULL_RECEIVED",
             "VEHICLE_CUSTOMER_SALE",
             "VEHICLE_NEW_CUSTOMER_SALE",
@@ -180,6 +182,8 @@
             "VEHICLE_ADJUST_FULL_OUT",
             "VEHICLE_ADJUST_EMPTY_IN",
             "VEHICLE_ADJUST_EMPTY_OUT",
+            "VEHICLE_DAMAGED_ADD",
+            "VEHICLE_DAMAGED_REMOVE",
             "VEHICLE_TRANSFER_FULL_OUT",
             "VEHICLE_TRANSFER_FULL_IN",
             "VEHICLE_TRANSFER_EMPTY_OUT",
@@ -244,7 +248,9 @@
             "STAFF_WISE_SALES",
             "FULL_EMPTY_STOCK",
             "PURCHASE_REGISTER",
-            "CUSTOMER_PENDING"
+            "CUSTOMER_PENDING",
+            "STAFF_WORK_HOURS",
+            "LPG_EXCHANGE_REPORT"
           ]
         },
         "reportTitle": { "type": "string" },
@@ -275,12 +281,73 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["eventId", "staffId", "staffName", "loginTimestampMs", "loginByUid", "createdAt"]
+    },
+    "AuthorizedMobile": {
+      "title": "AuthorizedMobile",
+      "description": "Admin-managed UAE (+971) authorized mobile access allowlist with protected Owner immutability and Staff feature permissions.",
+      "type": "object",
+      "properties": {
+        "mobileId": { "type": "string" },
+        "phoneE164": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "STAFF", "OWNER_VIEW"] },
+        "staffUserId": { "type": "integer" },
+        "allowedFeaturesCsv": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "isProtectedOwner": { "type": "boolean" },
+        "createdAtMs": { "type": "integer" },
+        "updatedAtMs": { "type": "integer" },
+        "updatedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["mobileId", "phoneE164", "displayName", "role", "allowedFeaturesCsv", "isActive", "isProtectedOwner", "createdAtMs", "updatedAtMs", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "RegisteredDevice": {
+      "title": "RegisteredDevice",
+      "description": "Registered device record supporting active session tracking and Admin remote device revocation.",
+      "type": "object",
+      "properties": {
+        "deviceId": { "type": "string" },
+        "deviceLabel": { "type": "string" },
+        "phoneE164": { "type": "string" },
+        "userId": { "type": "integer" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "STAFF", "OWNER_VIEW"] },
+        "sessionVersion": { "type": "integer" },
+        "isRevoked": { "type": "boolean" },
+        "lastActiveMs": { "type": "integer" },
+        "registeredAtMs": { "type": "integer" },
+        "ownerUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["deviceId", "deviceLabel", "phoneE164", "userId", "displayName", "role", "sessionVersion", "isRevoked", "lastActiveMs", "registeredAtMs", "ownerUid", "createdAt", "updatedAt"]
+    },
+    "SecurityAuditLog": {
+      "title": "SecurityAuditLog",
+      "description": "Immutable login, failed-attempt alert, and device revocation security audit log.",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string" },
+        "eventType": { "type": "string" },
+        "role": { "type": "string" },
+        "actorName": { "type": "string" },
+        "phoneE164": { "type": "string" },
+        "deviceLabel": { "type": "string" },
+        "details": { "type": "string" },
+        "isAlert": { "type": "boolean" },
+        "timestampMs": { "type": "integer" },
+        "createdByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["logId", "eventType", "role", "actorName", "phoneE164", "deviceLabel", "details", "isAlert", "timestampMs", "createdByUid", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
-      "description": "Per-user Google profile storing server-enforced ADMIN/STAFF role and active workspace binding."
+      "description": "Per-user Google profile storing server-enforced ADMIN/STAFF/OWNER_VIEW role and active workspace binding."
     },
     "/workspace_invites/{inviteCode}": {
       "schema": { "$ref": "#/entities/WorkspaceInvite" },
@@ -308,7 +375,7 @@
     },
     "/workspaces/{workspaceId}/transactions/{txId}": {
       "schema": { "$ref": "#/entities/StockTransaction" },
-      "description": "Stock transactions (Staff create vehicle/customer entries only; Admin manages all)."
+      "description": "Stock transactions (Staff create vehicle/customer entries only; Admin manages all; Owner View strictly read-only)."
     },
     "/workspaces/{workspaceId}/admin_settings/{settingId}": {
       "schema": { "$ref": "#/entities/AdminSettings" },
@@ -316,11 +383,23 @@
     },
     "/workspaces/{workspaceId}/admin_reports/{reportId}": {
       "schema": { "$ref": "#/entities/AdminReportSnapshot" },
-      "description": "Restricted Admin-only report snapshots and Drive export archive records."
+      "description": "Executive and Admin report snapshots (Owner View strictly read-only)."
     },
     "/workspaces/{workspaceId}/staff_login_events/{eventId}": {
       "schema": { "$ref": "#/entities/StaffLoginEvent" },
       "description": "Staff sign-in audit and live login notification events."
+    },
+    "/workspaces/{workspaceId}/authorized_mobiles/{mobileId}": {
+      "schema": { "$ref": "#/entities/AuthorizedMobile" },
+      "description": "Authorized UAE (+971) mobile allowlist with Protected Owner immutability."
+    },
+    "/workspaces/{workspaceId}/registered_devices/{deviceId}": {
+      "schema": { "$ref": "#/entities/RegisteredDevice" },
+      "description": "Registered devices and remote session revocation registry."
+    },
+    "/workspaces/{workspaceId}/security_logs/{logId}": {
+      "schema": { "$ref": "#/entities/SecurityAuditLog" },
+      "description": "Immutable security activity and failed login alert audit trail."
     }
   }
 }

@@ -1,8 +1,10 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -82,12 +84,15 @@ import com.example.auth.BiometricAvailability
 import com.example.auth.GoogleAuthScreen
 import com.example.auth.authStateFlow
 import com.example.auth.signOutGoogle
+import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.model.AutoLogoutMode
 import com.example.data.model.ReportType
 import com.example.data.model.StockCalculator
 import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
+import com.example.export.ReportExporter
+import com.example.export.ReportTable
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.DifferentGasReturnDialog
 import com.example.ui.components.DifferentGasReturnHistoryDialog
@@ -97,6 +102,7 @@ import com.example.ui.components.LuxurySuccessCheckOverlay
 import com.example.ui.components.NotificationsBellDialog
 import com.example.ui.components.QuickCalculatorPopupDialog
 import com.example.ui.components.RoleWelcomeOverlay
+import com.example.ui.components.SecurityCenterDialog
 import com.example.ui.components.StartupSplashOverlay
 import com.example.ui.components.TeamChatDialog
 import com.example.ui.screens.AdminDashboardScreen
@@ -314,11 +320,25 @@ fun ConcordGasRootApp(
     val customerReturnHistory by viewModel.customerReturnHistory.collectAsStateWithLifecycle()
     val staffReturnHistory by viewModel.staffReturnHistory.collectAsStateWithLifecycle()
     val successFeedbackMessage by viewModel.successFeedbackMessage.collectAsStateWithLifecycle()
+    val phoneOtpState by viewModel.phoneOtpState.collectAsStateWithLifecycle()
+    val authorizedMobiles by viewModel.authorizedMobiles.collectAsStateWithLifecycle()
+    val registeredDevices by viewModel.registeredDevices.collectAsStateWithLifecycle()
+    val securityAuditLogs by viewModel.securityAuditLogs.collectAsStateWithLifecycle()
+    val currentStaffPermissions by viewModel.currentStaffPermissions.collectAsStateWithLifecycle()
+
+    val allLpgExchanges = remember(customerReturnHistory) {
+        customerReturnHistory.flatMap { it.records }.distinctBy { it.id }.sortedByDescending { it.timestamp }
+    }
+    val rawTransactions = remember(allTransactions) {
+        allTransactions.map { it.transaction }
+    }
 
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
     var showNotificationsBell by rememberSaveable { mutableStateOf(false) }
     var showTeamChat by rememberSaveable { mutableStateOf(false) }
+    var showSecurityCenter by rememberSaveable { mutableStateOf(false) }
     var showDifferentGasReturnDialog by rememberSaveable { mutableStateOf(false) }
+    var editingDifferentGasReturn by remember { mutableStateOf<DifferentGasReturnEntity?>(null) }
     var differentGasReturnLockStore by rememberSaveable { mutableStateOf(false) }
     var differentGasReturnVehicleId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showDifferentGasReturnHistory by rememberSaveable { mutableStateOf(false) }
@@ -330,6 +350,67 @@ fun ConcordGasRootApp(
     var promptedNotifPermission by rememberSaveable { mutableStateOf(false) }
     var lastUnreadNotificationCount by remember { mutableStateOf(-1) }
     var lastUnreadChatCount by remember { mutableStateOf(-1) }
+
+    val shareLpgExchanges: (List<DifferentGasReturnEntity>, Boolean) -> Unit = { records, isPdf ->
+        if (records.isEmpty()) {
+            viewModel.showMessage("No exchange records match the current filter to export.")
+        } else {
+            scope.launch {
+                try {
+                    val actorName = authSession?.user?.displayName ?: "C&A Gas User"
+                    val table = ReportTable(
+                        reportTitle = "LPG & Gas Exchange Register",
+                        subtitle = "Filtered Entries: ${records.size}",
+                        generatedBy = actorName,
+                        headers = listOf("Date", "Customer", "Phone", "Staff", "Location", "Delivered Full", "Returned Empty", "Notes"),
+                        rows = records.map { r ->
+                            listOf(
+                                r.businessDate,
+                                r.customerName.ifBlank { "Walk-in Customer" },
+                                r.customerPhone.ifBlank { "-" },
+                                r.staffName,
+                                r.vehicleName ?: "Main Store Yard",
+                                "${r.deliveredSummary} (${r.totalDeliveredQty})",
+                                "${r.returnedSummary} (${r.totalReturnedQty})",
+                                r.notes.ifBlank { "-" }
+                            )
+                        },
+                        footerTotals = listOf(
+                            "TOTAL (${records.size})",
+                            "",
+                            "",
+                            "",
+                            "",
+                            records.sumOf { it.totalDeliveredQty }.toString(),
+                            records.sumOf { it.totalReturnedQty }.toString(),
+                            ""
+                        )
+                    )
+                    val file = withContext(Dispatchers.IO) {
+                        val ext = if (isPdf) "pdf" else "xlsx"
+                        val outFile = ReportExporter.createExportFile(context, "lpg_exchanges", ext)
+                        if (isPdf) {
+                            ReportExporter.writePdfToFile(table, outFile)
+                        } else {
+                            ReportExporter.writeXlsxToFile(table, outFile)
+                        }
+                        outFile
+                    }
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    val mime = if (isPdf) "application/pdf" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = mime
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_SUBJECT, "C&A Gas — LPG Exchange Report")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, if (isPdf) "Share Exchange PDF" else "Share Exchange Excel"))
+                } catch (e: Exception) {
+                    viewModel.showMessage("Export failed: ${e.message ?: "Unable to share file"}")
+                }
+            }
+        }
+    }
 
     LaunchedEffect(authSession?.user?.id, authSession?.user?.role, isSplashVisible) {
         val active = authSession
@@ -626,7 +707,18 @@ fun ConcordGasRootApp(
                         onUpdateRecoveredUsername = viewModel::updateAdminUsernameAfterRecovery,
                         onClearRecoveryError = viewModel::clearAdminRecoveryError,
                         onDismissRecovery = viewModel::dismissAdminRecovery,
-                        onClearError = viewModel::clearLoginError
+                        onClearError = viewModel::clearLoginError,
+                        phoneOtpState = phoneOtpState,
+                        onSendUaeOtp = { phone ->
+                            val activity = context as? FragmentActivity
+                            if (activity != null) {
+                                viewModel.startUaePhoneOtp(activity, phone)
+                            } else {
+                                viewModel.showMessage("SMS OTP requires an active screen context.")
+                            }
+                        },
+                        onVerifyUaeOtp = viewModel::verifyUaePhoneOtp,
+                        onResetPhoneOtp = viewModel::resetPhoneOtpState
                     )
                 }
             }
@@ -710,7 +802,9 @@ fun ConcordGasRootApp(
                             viewModel.checkForAppUpdate(silent = false)
                         },
                         onDismissAppUpdateBanner = viewModel::dismissAppUpdateBanner,
+                        allowedFeatures = currentStaffPermissions,
                         onOpenDifferentGasReturn = {
+                            editingDifferentGasReturn = null
                             differentGasReturnLockStore = false
                             differentGasReturnVehicleId = session.assignedVehicle?.id
                             showDifferentGasReturnDialog = true
@@ -919,6 +1013,7 @@ fun ConcordGasRootApp(
                                     },
                                     onOpenDifferentGasReturn = {
                                         if (!isReadOnly) {
+                                            editingDifferentGasReturn = null
                                             differentGasReturnLockStore = false
                                             differentGasReturnVehicleId = activeVehicle?.id
                                             showDifferentGasReturnDialog = true
@@ -994,6 +1089,7 @@ fun ConcordGasRootApp(
                                         onUpdateTransaction = viewModel::updateTransaction,
                                         onOpenDifferentGasReturn = {
                                             if (!isReadOnly) {
+                                                editingDifferentGasReturn = null
                                                 differentGasReturnLockStore = false
                                                 differentGasReturnVehicleId = null
                                                 showDifferentGasReturnDialog = true
@@ -1001,6 +1097,14 @@ fun ConcordGasRootApp(
                                         },
                                         onOpenReturnHistory = {
                                             showDifferentGasReturnHistory = true
+                                        },
+                                        lpgExchanges = allLpgExchanges,
+                                        registeredDevices = registeredDevices,
+                                        securityLogs = securityAuditLogs,
+                                        allTransactions = rawTransactions,
+                                        onOpenSecurityCenter = {
+                                            SoundEffectsManager.playTapTick(soundEnabled)
+                                            showSecurityCenter = true
                                         },
                                         onLogout = viewModel::logout
                                     )
@@ -1043,6 +1147,7 @@ fun ConcordGasRootApp(
                                         onDeleteTransaction = viewModel::deleteTransaction,
                                         onOpenDifferentGasReturn = {
                                             if (!isReadOnly) {
+                                                editingDifferentGasReturn = null
                                                 differentGasReturnLockStore = true
                                                 differentGasReturnVehicleId = null
                                                 showDifferentGasReturnDialog = true
@@ -1143,6 +1248,13 @@ fun ConcordGasRootApp(
                                         onToggleProductActive = viewModel::toggleProductActive,
                                         onExportBackupJson = viewModel::exportBackupJson,
                                         onRestoreBackupJson = viewModel::restoreBackupJson,
+                                        authorizedMobileCount = authorizedMobiles.size,
+                                        activeDeviceCount = registeredDevices.count { !it.isRevoked },
+                                        securityAlertCount = securityAuditLogs.count { it.isAlert },
+                                        onOpenSecurityCenter = {
+                                            SoundEffectsManager.playTapTick(soundEnabled)
+                                            showSecurityCenter = true
+                                        },
                                         onMessage = viewModel::showMessage,
                                         onLogout = viewModel::logout
                                     )
@@ -1185,20 +1297,23 @@ fun ConcordGasRootApp(
 
     if (showDifferentGasReturnDialog && session != null && session.user.role != UserRole.OWNER_VIEW) {
         val isStaffRole = session.user.role == UserRole.STAFF
+        val activeEditing = editingDifferentGasReturn
         val fixedVeh = when {
             isStaffRole -> session.assignedVehicle
+            activeEditing != null -> activeEditing.vehicleId?.let { vid -> vehicles.firstOrNull { it.id == vid } }
             differentGasReturnLockStore -> null
             differentGasReturnVehicleId != null -> vehicles.firstOrNull { it.id == differentGasReturnVehicleId }
             else -> null
         }
-        val allowVehSwitch = !isStaffRole && !differentGasReturnLockStore && differentGasReturnVehicleId == null
+        val allowVehSwitch = activeEditing == null && !isStaffRole && !differentGasReturnLockStore && differentGasReturnVehicleId == null
         DifferentGasReturnDialog(
             products = activeProducts,
             vehicles = vehicles,
             fixedVehicle = fixedVeh,
-            lockToStore = differentGasReturnLockStore && !isStaffRole,
+            lockToStore = (activeEditing != null && activeEditing.vehicleId == null) || (differentGasReturnLockStore && !isStaffRole),
             allowVehicleSwitch = allowVehSwitch,
             recentCustomerNames = recentCustomerNames,
+            editingRecord = activeEditing,
             availableFullLookup = { prodId, vehId ->
                 when {
                     vehId == null -> storeRows.firstOrNull { it.product.id == prodId }?.storeFullBalance ?: 0
@@ -1210,27 +1325,82 @@ fun ConcordGasRootApp(
             onVehicleSelected = { vehId ->
                 if (vehId != null) viewModel.selectVehicle(vehId)
             },
-            onDismiss = { showDifferentGasReturnDialog = false },
-            onConfirm = { deliveredItems, returnedItems, vehicleId, custName, custPhone, notes, submissionKey ->
-                viewModel.recordDifferentGasReturn(
-                    deliveredItems = deliveredItems,
-                    returnedItems = returnedItems,
-                    vehicleId = vehicleId,
-                    customerName = custName,
-                    customerPhone = custPhone,
-                    notes = notes,
-                    submissionKey = submissionKey
-                )
+            onDismiss = {
                 showDifferentGasReturnDialog = false
+                editingDifferentGasReturn = null
+            },
+            onConfirm = { deliveredItems, returnedItems, vehicleId, custName, custPhone, notes, submissionKey ->
+                if (activeEditing != null) {
+                    viewModel.updateDifferentGasReturn(
+                        recordId = activeEditing.id,
+                        deliveredItems = deliveredItems,
+                        returnedItems = returnedItems,
+                        vehicleId = vehicleId,
+                        customerName = custName,
+                        customerPhone = custPhone,
+                        notes = notes
+                    )
+                } else {
+                    viewModel.recordDifferentGasReturn(
+                        deliveredItems = deliveredItems,
+                        returnedItems = returnedItems,
+                        vehicleId = vehicleId,
+                        customerName = custName,
+                        customerPhone = custPhone,
+                        notes = notes,
+                        submissionKey = submissionKey
+                    )
+                }
+                showDifferentGasReturnDialog = false
+                editingDifferentGasReturn = null
             }
         )
     }
 
     if (showDifferentGasReturnHistory && session != null) {
+        val isOwnerReadOnly = session.user.role == UserRole.OWNER_VIEW
         DifferentGasReturnHistoryDialog(
             customerGroups = customerReturnHistory,
             staffGroups = staffReturnHistory,
+            isReadOnly = isOwnerReadOnly,
+            onEditRecord = if (isOwnerReadOnly) null else { rec ->
+                showDifferentGasReturnHistory = false
+                editingDifferentGasReturn = rec
+                differentGasReturnLockStore = rec.vehicleId == null
+                differentGasReturnVehicleId = rec.vehicleId
+                showDifferentGasReturnDialog = true
+            },
+            onDeleteRecord = if (isOwnerReadOnly) null else { rec ->
+                viewModel.deleteDifferentGasReturn(rec.id)
+            },
+            onExportPdf = { filtered -> shareLpgExchanges(filtered, true) },
+            onExportExcel = { filtered -> shareLpgExchanges(filtered, false) },
             onDismiss = { showDifferentGasReturnHistory = false }
+        )
+    }
+
+    if (showSecurityCenter && session != null && session.user.role != UserRole.STAFF) {
+        SecurityCenterDialog(
+            authorizedMobiles = authorizedMobiles,
+            registeredDevices = registeredDevices,
+            securityLogs = securityAuditLogs,
+            staffUsers = users.filter { it.role == UserRole.STAFF },
+            isReadOnly = session.user.role == UserRole.OWNER_VIEW,
+            onUpsertAuthorizedMobile = { phone, name, role, staffId, perms, isProtected ->
+                viewModel.upsertAuthorizedMobile(
+                    phoneRaw = phone,
+                    displayName = name,
+                    role = role,
+                    staffUserId = staffId,
+                    allowedFeatures = perms,
+                    isActive = true,
+                    isProtectedOwner = isProtected
+                )
+            },
+            onDeleteAuthorizedMobile = { mobile -> viewModel.deleteAuthorizedMobile(mobile.id) },
+            onRevokeDevice = { device -> viewModel.revokeRegisteredDevice(device.deviceId) },
+            onLogoutAllDevices = viewModel::logoutAllRegisteredDevices,
+            onDismiss = { showSecurityCenter = false }
         )
     }
 
