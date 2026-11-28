@@ -129,7 +129,8 @@ service cloud.firestore {
              data.username is string && data.username.size() >= 1 && data.username.size() <= 64 &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
              data.role in ['ADMIN', 'STAFF'] &&
-             data.pin is string && data.pin.matches('^[0-9]{4}$') &&
+             (!('pin' in data) || (data.pin is string && (data.pin == '' || data.pin.matches('^[0-9]{4}$')))) &&
+             (!('pinHash' in data) || (data.pinHash is string && data.pinHash.size() <= 256)) &&
              data.active is bool &&
              isValidMemberUids(data.memberUids) &&
              data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
@@ -148,12 +149,34 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
+    function isValidProductCategory(data) {
+      return data.localId is int && data.localId >= 1 &&
+             data.code is string && data.code.size() >= 1 && data.code.size() <= 64 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 240)) &&
+             (!('iconKey' in data) || (data.iconKey is string && data.iconKey.size() <= 40)) &&
+             (!('categoryType' in data) || (data.categoryType is string && data.categoryType.size() <= 40)) &&
+             data.legacyEnum in ['INDUSTRIAL_GAS', 'SMALL_48_CFT', 'COOKING_GAS', 'MCG_CUTTING_GAS'] &&
+             data.sortOrder is int && data.sortOrder >= 0 &&
+             data.active is bool &&
+             (!('systemDefault' in data) || (data.systemDefault is bool)) &&
+             isValidMemberUids(data.memberUids) &&
+             data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
     function isValidProduct(data) {
       return data.localId is int && data.localId >= 1 &&
              data.category in ['INDUSTRIAL_GAS', 'SMALL_48_CFT', 'COOKING_GAS', 'MCG_CUTTING_GAS'] &&
+             (!('categoryId' in data) || (data.categoryId is int && data.categoryId >= 1)) &&
              data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
              data.sortOrder is int && data.sortOrder >= 0 &&
              data.active is bool &&
+             (!('cylinderSizeKg' in data) || (data.cylinderSizeKg is string && data.cylinderSizeKg.size() <= 40)) &&
+             (!('unit' in data) || (data.unit is string && data.unit.size() <= 30)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 240)) &&
+             (!('iconKey' in data) || (data.iconKey is string && data.iconKey.size() <= 40)) &&
              isValidMemberUids(data.memberUids) &&
              data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
              isValidTimestamp(data.createdAt) &&
@@ -411,6 +434,10 @@ service cloud.firestore {
              data.allowedFeaturesCsv is string && data.allowedFeaturesCsv.size() <= 300 &&
              data.isActive is bool &&
              data.isProtectedOwner is bool &&
+             (!('firstTimeRegEnabled' in data) || (data.firstTimeRegEnabled is bool)) &&
+             (!('isRegistered' in data) || (data.isRegistered is bool)) &&
+             (!('otpVerifiedAtMs' in data) || (data.otpVerifiedAtMs is int && data.otpVerifiedAtMs >= 0)) &&
+             (!('registeredDeviceId' in data) || (data.registeredDeviceId is string && data.registeredDeviceId.size() <= 120)) &&
              data.createdAtMs is int && data.createdAtMs > 0 &&
              data.updatedAtMs is int && data.updatedAtMs > 0 &&
              data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
@@ -570,8 +597,8 @@ service cloud.firestore {
                          isValidId(accountId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
-                         incoming().keys().hasAll(['localId', 'username', 'displayName', 'role', 'pin', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['localId', 'username', 'displayName', 'role', 'pin', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasAll(['localId', 'username', 'displayName', 'role', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'username', 'displayName', 'role', 'pin', 'pinHash', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          isValidStaffAccount(incoming());
 
         allow update: if isWorkspaceAdmin(workspaceId) &&
@@ -585,7 +612,7 @@ service cloud.firestore {
                          (existing().role != 'ADMIN' || isWorkspaceOwner(workspaceId)) &&
                          (
                            (incoming().updatedByUid == request.auth.uid &&
-                            incoming().diff(existing()).affectedKeys().hasOnly(['pin', 'displayName', 'active', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
+                            incoming().diff(existing()).affectedKeys().hasOnly(['pin', 'pinHash', 'displayName', 'active', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
                            (incoming().updatedByUid == existing().updatedByUid &&
                             incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
                             incoming().memberUids == workspaceData(workspaceId).memberUids)
@@ -638,7 +665,7 @@ service cloud.firestore {
                          incoming().updatedByUid == request.auth.uid &&
                          request.auth.uid in incoming().memberUids &&
                          incoming().keys().hasAll(['localId', 'category', 'name', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['localId', 'category', 'name', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'category', 'categoryId', 'name', 'sortOrder', 'active', 'cylinderSizeKg', 'unit', 'description', 'iconKey', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          isValidProduct(incoming());
 
         allow update: if isWorkspaceAdmin(workspaceId) &&
@@ -649,13 +676,46 @@ service cloud.firestore {
                          incoming().createdAt == existing().createdAt &&
                          (
                            (incoming().updatedByUid == request.auth.uid &&
-                            incoming().diff(existing()).affectedKeys().hasOnly(['category', 'name', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
+                            incoming().diff(existing()).affectedKeys().hasOnly(['category', 'categoryId', 'name', 'sortOrder', 'active', 'cylinderSizeKg', 'unit', 'description', 'iconKey', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
                            (incoming().updatedByUid == existing().updatedByUid &&
                             incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
                             incoming().memberUids == workspaceData(workspaceId).memberUids)
                          );
 
         allow delete: if isWorkspaceOwner(workspaceId) && isValidId(productId);
+      }
+
+      // --- 3C-2. Dynamic Product Category Folders (Read by members; mutated ONLY by Admin) ---
+      match /product_categories/{categoryId} {
+        allow get: if isSignedIn() && isValidId(categoryId) &&
+                      (request.auth.uid in existing().memberUids || isWorkspaceMember(workspaceId));
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(categoryId) &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['localId', 'code', 'name', 'legacyEnum', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'code', 'name', 'description', 'iconKey', 'categoryType', 'legacyEnum', 'sortOrder', 'active', 'systemDefault', 'memberUids', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         isValidProductCategory(incoming());
+
+        allow update: if isWorkspaceAdmin(workspaceId) &&
+                         isValidId(workspaceId) &&
+                         isValidId(categoryId) &&
+                         isValidProductCategory(incoming()) &&
+                         incoming().localId == existing().localId &&
+                         incoming().code == existing().code &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           (incoming().updatedByUid == request.auth.uid &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'iconKey', 'categoryType', 'legacyEnum', 'sortOrder', 'active', 'memberUids', 'updatedByUid', 'updatedAt'])) ||
+                           (incoming().updatedByUid == existing().updatedByUid &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+                            incoming().memberUids == workspaceData(workspaceId).memberUids)
+                         );
+
+        allow delete: if isWorkspaceOwner(workspaceId) && isValidId(categoryId);
       }
 
       // --- 3D. Opening Stocks (Read by members; mutated ONLY by Admin) ---
@@ -929,7 +989,7 @@ service cloud.firestore {
                          isValidId(mobileId) &&
                          incoming().updatedByUid == request.auth.uid &&
                          incoming().keys().hasAll(['mobileId', 'phoneE164', 'displayName', 'role', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'createdAtMs', 'updatedAtMs', 'updatedByUid', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['mobileId', 'phoneE164', 'displayName', 'role', 'staffUserId', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'createdAtMs', 'updatedAtMs', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['mobileId', 'phoneE164', 'displayName', 'role', 'staffUserId', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'firstTimeRegEnabled', 'isRegistered', 'otpVerifiedAtMs', 'registeredDeviceId', 'createdAtMs', 'updatedAtMs', 'updatedByUid', 'createdAt', 'updatedAt']) &&
                          isValidAuthorizedMobile(incoming(), mobileId);
 
         // Admin CANNOT alter, demote, or deactivate an existing Protected Owner mobile record
@@ -941,7 +1001,7 @@ service cloud.firestore {
                          incoming().phoneE164 == existing().phoneE164 &&
                          incoming().createdAt == existing().createdAt &&
                          incoming().updatedByUid == request.auth.uid &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'staffUserId', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'updatedAtMs', 'updatedByUid', 'updatedAt']) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'staffUserId', 'allowedFeaturesCsv', 'isActive', 'isProtectedOwner', 'firstTimeRegEnabled', 'isRegistered', 'otpVerifiedAtMs', 'registeredDeviceId', 'updatedAtMs', 'updatedByUid', 'updatedAt']) &&
                          isValidAuthorizedMobile(incoming(), mobileId);
 
         allow delete: if isWorkspaceAdmin(workspaceId) &&

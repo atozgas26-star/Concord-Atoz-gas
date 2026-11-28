@@ -1,10 +1,12 @@
 package com.example.export
 
 import androidx.room.withTransaction
+import com.example.auth.AdminCredentialCrypto
 import com.example.data.local.AuthorizedMobileEntity
 import com.example.data.local.ConcordDatabase
 import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.OpeningStockEntity
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
@@ -22,6 +24,7 @@ class BackupManager(private val db: ConcordDatabase) {
     suspend fun exportBackupJson(): String {
         val users = db.userDao().getAllUsersOnce()
         val vehicles = db.vehicleDao().getAllVehiclesOnce()
+        val categories = db.productCategoryDao().getAllOnce()
         val products = db.productDao().getAllProductsOnce()
         val openings = db.openingStockDao().getAllOpeningsOnce()
         val transactions = db.transactionDao().getAllTransactionsOnce()
@@ -30,17 +33,20 @@ class BackupManager(private val db: ConcordDatabase) {
 
         val root = JSONObject().apply {
             put("app", "Concord & A to Z Gas")
-            put("schemaVersion", 4)
+            put("schemaVersion", 5)
             put("exportedAt", System.currentTimeMillis())
 
             put("users", JSONArray().apply {
                 users.forEach { u ->
+                    val safeHash = u.pinHash.ifBlank {
+                        if (u.pin.isNotBlank()) AdminCredentialCrypto.hashPassword(u.pin) else ""
+                    }
                     put(JSONObject().apply {
                         put("id", u.id)
                         put("username", u.username)
                         put("displayName", u.displayName)
                         put("role", u.role.name)
-                        put("pin", u.pin)
+                        put("pinHash", safeHash)
                         put("isActive", u.isActive)
                     })
                 }
@@ -57,15 +63,38 @@ class BackupManager(private val db: ConcordDatabase) {
                 }
             })
 
+            put("productCategories", JSONArray().apply {
+                categories.forEach { c ->
+                    put(JSONObject().apply {
+                        put("id", c.id)
+                        put("code", c.code)
+                        put("name", c.name)
+                        put("description", c.description)
+                        put("iconKey", c.iconKey)
+                        put("categoryType", c.categoryType)
+                        put("legacyEnum", c.legacyEnum.name)
+                        put("sortOrder", c.sortOrder)
+                        put("isActive", c.isActive)
+                        put("isSystemDefault", c.isSystemDefault)
+                        put("createdAtMs", c.createdAtMs)
+                        put("updatedAtMs", c.updatedAtMs)
+                    })
+                }
+            })
+
             put("products", JSONArray().apply {
                 products.forEach { p ->
                     put(JSONObject().apply {
                         put("id", p.id)
                         put("category", p.category.name)
+                        put("categoryId", p.categoryId)
                         put("name", p.name)
                         put("sortOrder", p.sortOrder)
                         put("isActive", p.isActive)
                         put("cylinderSizeKg", p.cylinderSizeKg)
+                        put("unit", p.unit)
+                        put("description", p.description)
+                        put("iconKey", p.iconKey)
                     })
                 }
             })
@@ -146,6 +175,10 @@ class BackupManager(private val db: ConcordDatabase) {
                         put("isProtectedOwner", m.isProtectedOwner)
                         put("createdAtMs", m.createdAtMs)
                         put("updatedAtMs", m.updatedAtMs)
+                        put("firstTimeRegEnabled", m.firstTimeRegEnabled)
+                        put("isRegistered", m.isRegistered)
+                        put("otpVerifiedAtMs", m.otpVerifiedAtMs)
+                        put("registeredDeviceId", m.registeredDeviceId)
                     })
                 }
             })
@@ -168,13 +201,19 @@ class BackupManager(private val db: ConcordDatabase) {
 
             val users = (0 until usersArr.length()).map { i ->
                 val o = usersArr.getJSONObject(i)
+                val rawPin = o.optString("pin", "")
+                val existingHash = o.optString("pinHash", "")
+                val resolvedHash = existingHash.ifBlank {
+                    if (rawPin.isNotBlank()) AdminCredentialCrypto.hashPassword(rawPin) else ""
+                }
                 UserAccountEntity(
                     id = o.getLong("id"),
                     username = o.getString("username"),
                     displayName = o.getString("displayName"),
                     role = UserRole.valueOf(o.getString("role")),
-                    pin = o.getString("pin"),
-                    isActive = o.optBoolean("isActive", true)
+                    pin = "",
+                    isActive = o.optBoolean("isActive", true),
+                    pinHash = resolvedHash
                 )
             }
 
@@ -192,15 +231,44 @@ class BackupManager(private val db: ConcordDatabase) {
                 )
             }
 
+            val categoriesArr = root.optJSONArray("productCategories")
+            val categories = if (categoriesArr != null) {
+                (0 until categoriesArr.length()).map { i ->
+                    val o = categoriesArr.getJSONObject(i)
+                    ProductCategoryEntity(
+                        id = o.getLong("id"),
+                        code = o.getString("code"),
+                        name = o.getString("name"),
+                        description = o.optString("description", ""),
+                        iconKey = o.optString("iconKey", "INDUSTRIAL"),
+                        categoryType = o.optString("categoryType", "INDUSTRIAL"),
+                        legacyEnum = runCatching { ProductCategory.valueOf(o.optString("legacyEnum", "INDUSTRIAL_GAS")) }
+                            .getOrDefault(ProductCategory.INDUSTRIAL_GAS),
+                        sortOrder = o.optInt("sortOrder", 100),
+                        isActive = o.optBoolean("isActive", true),
+                        isSystemDefault = o.optBoolean("isSystemDefault", false),
+                        createdAtMs = o.optLong("createdAtMs", System.currentTimeMillis()),
+                        updatedAtMs = o.optLong("updatedAtMs", System.currentTimeMillis())
+                    )
+                }
+            } else {
+                null
+            }
+
             val products = (0 until productsArr.length()).map { i ->
                 val o = productsArr.getJSONObject(i)
+                val cat = ProductCategory.valueOf(o.getString("category"))
                 ProductEntity(
                     id = o.getLong("id"),
-                    category = ProductCategory.valueOf(o.getString("category")),
+                    category = cat,
                     name = o.getString("name"),
                     sortOrder = o.optInt("sortOrder", 0),
                     isActive = o.optBoolean("isActive", true),
-                    cylinderSizeKg = o.optString("cylinderSizeKg", "")
+                    cylinderSizeKg = o.optString("cylinderSizeKg", ""),
+                    categoryId = o.optLong("categoryId", cat.defaultCategoryId),
+                    unit = o.optString("unit", "Cylinder"),
+                    description = o.optString("description", ""),
+                    iconKey = o.optString("iconKey", "CYLINDER")
                 )
             }
 
@@ -283,7 +351,11 @@ class BackupManager(private val db: ConcordDatabase) {
                         isActive = o.optBoolean("isActive", true),
                         isProtectedOwner = o.optBoolean("isProtectedOwner", false),
                         createdAtMs = o.optLong("createdAtMs", System.currentTimeMillis()),
-                        updatedAtMs = o.optLong("updatedAtMs", System.currentTimeMillis())
+                        updatedAtMs = o.optLong("updatedAtMs", System.currentTimeMillis()),
+                        firstTimeRegEnabled = o.optBoolean("firstTimeRegEnabled", true),
+                        isRegistered = o.optBoolean("isRegistered", false),
+                        otpVerifiedAtMs = o.optLong("otpVerifiedAtMs", 0L),
+                        registeredDeviceId = o.optString("registeredDeviceId", "")
                     )
                 }
             } else {
@@ -295,11 +367,17 @@ class BackupManager(private val db: ConcordDatabase) {
                 db.transactionDao().deleteAll()
                 db.openingStockDao().deleteAll()
                 db.productDao().deleteAll()
+                if (categories != null) {
+                    db.productCategoryDao().deleteAll()
+                }
                 db.vehicleDao().deleteAll()
                 db.userDao().deleteAll()
 
                 db.userDao().insertAll(users)
                 db.vehicleDao().insertAll(vehicles)
+                if (categories != null && categories.isNotEmpty()) {
+                    db.productCategoryDao().insertAll(categories)
+                }
                 db.productDao().insertAll(products)
                 db.openingStockDao().insertAll(openings)
                 db.transactionDao().insertAll(transactions)

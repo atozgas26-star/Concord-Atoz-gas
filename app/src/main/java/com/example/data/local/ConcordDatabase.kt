@@ -8,6 +8,7 @@ import androidx.room.TypeConverters
 import androidx.room.withTransaction
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.auth.AdminCredentialCrypto
 import com.example.data.model.ProductCategory
 import com.example.data.model.UserRole
 
@@ -15,6 +16,7 @@ import com.example.data.model.UserRole
     entities = [
         UserAccountEntity::class,
         VehicleEntity::class,
+        ProductCategoryEntity::class,
         ProductEntity::class,
         OpeningStockEntity::class,
         StockTransactionEntity::class,
@@ -27,13 +29,14 @@ import com.example.data.model.UserRole
         RegisteredDeviceEntity::class,
         SecurityAuditLogEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class ConcordDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun vehicleDao(): VehicleDao
+    abstract fun productCategoryDao(): ProductCategoryDao
     abstract fun productDao(): ProductDao
     abstract fun openingStockDao(): OpeningStockDao
     abstract fun transactionDao(): TransactionDao
@@ -48,16 +51,19 @@ abstract class ConcordDatabase : RoomDatabase() {
 
     suspend fun ensureSeeded() {
         val existingUsers = userDao().getAllUsersOnce()
+        val existingCategories = productCategoryDao().getAllOnce()
         val existingProducts = productDao().getAllProductsOnce()
 
         withTransaction {
+            // 1. Seed initial users with salted PBKDF2 PIN hashes (never storing plain-text PINs)
             if (existingUsers.isEmpty()) {
                 val adminId = userDao().insert(
                     UserAccountEntity(
                         username = "admin_ragavan",
                         displayName = "Ragavan",
                         role = UserRole.ADMIN,
-                        pin = "1725"
+                        pin = "",
+                        pinHash = AdminCredentialCrypto.hashPassword("1725")
                     )
                 )
                 check(adminId > 0)
@@ -74,13 +80,14 @@ abstract class ConcordDatabase : RoomDatabase() {
 
                 val vehicles = mutableListOf<VehicleEntity>()
                 for ((staffTriple, vehicleName) in staffSpecs) {
-                    val (username, displayName, pin) = staffTriple
+                    val (username, displayName, rawPin) = staffTriple
                     val userId = userDao().insert(
                         UserAccountEntity(
                             username = username,
                             displayName = displayName,
                             role = UserRole.STAFF,
-                            pin = pin
+                            pin = "",
+                            pinHash = AdminCredentialCrypto.hashPassword(rawPin)
                         )
                     )
                     vehicles.add(
@@ -92,53 +99,142 @@ abstract class ConcordDatabase : RoomDatabase() {
                     )
                 }
                 vehicleDao().insertAll(vehicles)
+            } else {
+                // Transparently upgrade any legacy plain-text PINs into salted PBKDF2 hashes while preserving exact PINs
+                existingUsers.forEach { user ->
+                    if (user.pinHash.isBlank() && user.pin.isNotBlank()) {
+                        val saltedHash = AdminCredentialCrypto.hashPassword(user.pin)
+                        userDao().updatePinHash(user.id, saltedHash)
+                    }
+                }
             }
 
+            // 2. Ensure the 4 permanent system Product Master category folders exist
+            val defaultCategories = listOf(
+                ProductCategoryEntity(
+                    id = 1L,
+                    code = "INDUSTRIAL_GAS",
+                    name = "INDUSTRIAL GAS – REGULAR",
+                    description = "Regular Industrial Cylinders (Oxygen, Acetylene, Argon, Argon Mix, CO2 20/30 KG, Nitrogen)",
+                    iconKey = "INDUSTRIAL",
+                    categoryType = "INDUSTRIAL",
+                    legacyEnum = ProductCategory.INDUSTRIAL_GAS,
+                    sortOrder = 1,
+                    isActive = true,
+                    isSystemDefault = true
+                ),
+                ProductCategoryEntity(
+                    id = 2L,
+                    code = "CUTTING_GAS",
+                    name = "CUTTING GAS",
+                    description = "Cutting Gas Cylinders (MCG 22 KG & MCG 44 KG)",
+                    iconKey = "CUTTING",
+                    categoryType = "CUTTING",
+                    legacyEnum = ProductCategory.MCG_CUTTING_GAS,
+                    sortOrder = 2,
+                    isActive = true,
+                    isSystemDefault = true
+                ),
+                ProductCategoryEntity(
+                    id = 3L,
+                    code = "COOKING_GAS",
+                    name = "LPG GAS",
+                    description = "LPG Cylinders (11 KG, 22 KG, 44 KG) — Arab Gas & Emirates Gas tracked as empty return companies",
+                    iconKey = "LPG",
+                    categoryType = "LPG",
+                    legacyEnum = ProductCategory.COOKING_GAS,
+                    sortOrder = 3,
+                    isActive = true,
+                    isSystemDefault = true
+                ),
+                ProductCategoryEntity(
+                    id = 4L,
+                    code = "SMALL_48_CFT",
+                    name = "INDUSTRIAL GAS – 48 CFT SMALL",
+                    description = "Independent 48 CFT Small Industrial Cylinders & CO2 5 KG",
+                    iconKey = "SMALL_48",
+                    categoryType = "SMALL_48",
+                    legacyEnum = ProductCategory.SMALL_48_CFT,
+                    sortOrder = 4,
+                    isActive = true,
+                    isSystemDefault = true
+                )
+            )
+            if (existingCategories.isEmpty()) {
+                productCategoryDao().insertAll(defaultCategories)
+            } else {
+                val existingCodes = existingCategories.map { it.code }.toSet()
+                defaultCategories.filter { it.code !in existingCodes }.forEach { cat ->
+                    runCatching { productCategoryDao().insert(cat) }
+                }
+            }
+
+            // 3. Ensure initial 4-folder Product Master catalog (preserving all existing IDs & stock balances)
             if (existingProducts.isEmpty()) {
                 val seededProducts = listOf(
-                    // INDUSTRIAL GAS
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Oxygen", sortOrder = 101, cylinderSizeKg = "47L Industrial"),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Acetylene", sortOrder = 102, cylinderSizeKg = "40L Industrial"),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Argon", sortOrder = 103, cylinderSizeKg = "47L Industrial"),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Argon Mix", sortOrder = 104, cylinderSizeKg = "47L Industrial"),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "CO2 20kg", sortOrder = 105, cylinderSizeKg = "20 KG"),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "CO2 30kg", sortOrder = 106, cylinderSizeKg = "30 KG"),
-                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, name = "Nitrogen", sortOrder = 107, cylinderSizeKg = "47L Industrial"),
+                    // 1. INDUSTRIAL GAS – REGULAR (7 active products)
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, categoryId = 1L, name = "Oxygen", sortOrder = 101, cylinderSizeKg = "47L", unit = "Cylinder", description = "Regular Industrial Oxygen"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, categoryId = 1L, name = "Acetylene", sortOrder = 102, cylinderSizeKg = "40L", unit = "Cylinder", description = "Regular Industrial Acetylene"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, categoryId = 1L, name = "Argon", sortOrder = 103, cylinderSizeKg = "47L", unit = "Cylinder", description = "Regular Industrial Argon"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, categoryId = 1L, name = "Argon Mix", sortOrder = 104, cylinderSizeKg = "47L", unit = "Cylinder", description = "Regular Industrial Argon Mix"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, categoryId = 1L, name = "CO2 20 KG", sortOrder = 105, cylinderSizeKg = "20 KG", unit = "KG", description = "Regular Industrial CO2 20 KG"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, categoryId = 1L, name = "CO2 30 KG", sortOrder = 106, cylinderSizeKg = "30 KG", unit = "KG", description = "Regular Industrial CO2 30 KG"),
+                    ProductEntity(category = ProductCategory.INDUSTRIAL_GAS, categoryId = 1L, name = "Nitrogen", sortOrder = 107, cylinderSizeKg = "47L", unit = "Cylinder", description = "Regular Industrial Nitrogen"),
 
-                    // 48 CFT SMALL
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Oxygen", sortOrder = 201, cylinderSizeKg = "48 CFT"),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Acetylene", sortOrder = 202, cylinderSizeKg = "48 CFT"),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Argon", sortOrder = 203, cylinderSizeKg = "48 CFT"),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Argon Mix", sortOrder = 204, cylinderSizeKg = "48 CFT"),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "CO2 5kg", sortOrder = 205, cylinderSizeKg = "5 KG"),
-                    ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Nitrogen", sortOrder = 206, cylinderSizeKg = "48 CFT"),
+                    // 2. CUTTING GAS (MCG 22 KG & MCG 44 KG)
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, categoryId = 2L, name = "MCG 22 KG", sortOrder = 201, cylinderSizeKg = "22 KG", unit = "KG", description = "Cutting Gas MCG 22 KG", iconKey = "CUTTING"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, categoryId = 2L, name = "MCG 44 KG", sortOrder = 202, cylinderSizeKg = "44 KG", unit = "KG", description = "Cutting Gas MCG 44 KG", iconKey = "CUTTING"),
 
-                    // LPG GAS — strictly 11 KG, 22 KG, 44 KG (Arab Gas & Emirates Gas are tracked as returned empty companies)
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "11kg", sortOrder = 301, cylinderSizeKg = "11 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "22kg", sortOrder = 302, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303, cylinderSizeKg = "44 KG")
+                    // 3. LPG GAS — strictly 11 KG, 22 KG, 44 KG (Arab Gas & Emirates Gas are empty-return company identifiers only)
+                    ProductEntity(category = ProductCategory.COOKING_GAS, categoryId = 3L, name = "11 KG", sortOrder = 301, cylinderSizeKg = "11 KG", unit = "KG", description = "LPG Cooking Cylinder 11 KG", iconKey = "LPG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, categoryId = 3L, name = "22 KG", sortOrder = 302, cylinderSizeKg = "22 KG", unit = "KG", description = "LPG Cooking Cylinder 22 KG", iconKey = "LPG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, categoryId = 3L, name = "44 KG", sortOrder = 303, cylinderSizeKg = "44 KG", unit = "KG", description = "LPG Cooking Cylinder 44 KG", iconKey = "LPG"),
+
+                    // 4. INDUSTRIAL GAS – 48 CFT SMALL (6 independent small products)
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Oxygen 48 CFT", sortOrder = 401, cylinderSizeKg = "48 CFT", unit = "CFT", description = "Small 48 CFT Oxygen", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Acetylene 48 CFT", sortOrder = 402, cylinderSizeKg = "48 CFT", unit = "CFT", description = "Small 48 CFT Acetylene", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Argon 48 CFT", sortOrder = 403, cylinderSizeKg = "48 CFT", unit = "CFT", description = "Small 48 CFT Argon", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Argon Mix 48 CFT", sortOrder = 404, cylinderSizeKg = "48 CFT", unit = "CFT", description = "Small 48 CFT Argon Mix", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "CO2 5 KG", sortOrder = 405, cylinderSizeKg = "5 KG", unit = "KG", description = "Small CO2 5 KG Cylinder", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Nitrogen 48 CFT", sortOrder = 406, cylinderSizeKg = "48 CFT", unit = "CFT", description = "Small 48 CFT Nitrogen", iconKey = "SMALL_48")
                 )
                 productDao().insertAll(seededProducts)
             } else {
-                // Non-destructively ensure core 11kg/22kg/44kg LPG products are active while retiring
-                // MCG/Cutting Gas and standalone Arab/Emirates product rows (preserving all historical stock & ledger records).
-                val existingKeys = existingProducts.map { it.category to it.name.lowercase() }.toSet()
-                val requiredCoreLpg = listOf(
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "11kg", sortOrder = 301, cylinderSizeKg = "11 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "22kg", sortOrder = 302, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303, cylinderSizeKg = "44 KG")
-                ).filter { (it.category to it.name.lowercase()) !in existingKeys }
-                requiredCoreLpg.forEach { product ->
-                    runCatching { productDao().insert(product) }
+                // Preserve existing IDs while ensuring Cutting Gas (MCG 22 KG / MCG 44 KG),
+                // LPG (11/22/44 KG), and all six 48 CFT Small products exist and are active,
+                // and standalone Arab/Emirates LPG product rows remain inactive.
+                val existingNormalized = existingProducts.map {
+                    it.category to it.name.replace(" ", "").lowercase()
+                }.toSet()
+                val requiredCoreProducts = listOf(
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, categoryId = 2L, name = "MCG 22 KG", sortOrder = 201, cylinderSizeKg = "22 KG", unit = "KG", iconKey = "CUTTING"),
+                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, categoryId = 2L, name = "MCG 44 KG", sortOrder = 202, cylinderSizeKg = "44 KG", unit = "KG", iconKey = "CUTTING"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, categoryId = 3L, name = "11 KG", sortOrder = 301, cylinderSizeKg = "11 KG", unit = "KG", iconKey = "LPG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, categoryId = 3L, name = "22 KG", sortOrder = 302, cylinderSizeKg = "22 KG", unit = "KG", iconKey = "LPG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, categoryId = 3L, name = "44 KG", sortOrder = 303, cylinderSizeKg = "44 KG", unit = "KG", iconKey = "LPG"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Oxygen 48 CFT", sortOrder = 401, cylinderSizeKg = "48 CFT", unit = "CFT", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Acetylene 48 CFT", sortOrder = 402, cylinderSizeKg = "48 CFT", unit = "CFT", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Argon 48 CFT", sortOrder = 403, cylinderSizeKg = "48 CFT", unit = "CFT", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Argon Mix 48 CFT", sortOrder = 404, cylinderSizeKg = "48 CFT", unit = "CFT", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "CO2 5 KG", sortOrder = 405, cylinderSizeKg = "5 KG", unit = "KG", iconKey = "SMALL_48"),
+                    ProductEntity(category = ProductCategory.SMALL_48_CFT, categoryId = 4L, name = "Nitrogen 48 CFT", sortOrder = 406, cylinderSizeKg = "48 CFT", unit = "CFT", iconKey = "SMALL_48")
+                )
+                requiredCoreProducts.forEach { req ->
+                    val normKey = req.category to req.name.replace(" ", "").lowercase()
+                    val alt48Key = req.category to req.name.replace(" 48 CFT", "", ignoreCase = true).replace(" ", "").lowercase()
+                    if (normKey !in existingNormalized && alt48Key !in existingNormalized) {
+                        runCatching { productDao().insert(req) }
+                    }
                 }
                 existingProducts.forEach { prod ->
-                    val shouldRetire = prod.category == ProductCategory.MCG_CUTTING_GAS ||
-                        (prod.category == ProductCategory.COOKING_GAS && (
-                            prod.name.startsWith("Arab Gas", ignoreCase = true) ||
-                                prod.name.startsWith("Emirates Gas", ignoreCase = true)
-                            ))
-                    if (shouldRetire && prod.isActive) {
+                    val isLegacyBrandLpg = prod.category == ProductCategory.COOKING_GAS && (
+                        prod.name.startsWith("Arab Gas", ignoreCase = true) ||
+                            prod.name.startsWith("Emirates Gas", ignoreCase = true)
+                        )
+                    if (isLegacyBrandLpg && prod.isActive) {
                         runCatching { productDao().update(prod.copy(isActive = false)) }
+                    } else if (prod.categoryId <= 0L) {
+                        runCatching { productDao().update(prod.copy(categoryId = prod.category.defaultCategoryId)) }
                     }
                 }
             }
@@ -391,6 +487,84 @@ abstract class ConcordDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val now = System.currentTimeMillis()
+
+                // 1. Dynamic Product Master Category Folders table with permanent IDs
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS product_categories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        code TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        iconKey TEXT NOT NULL DEFAULT 'INDUSTRIAL',
+                        categoryType TEXT NOT NULL DEFAULT 'INDUSTRIAL',
+                        legacyEnum TEXT NOT NULL DEFAULT 'INDUSTRIAL_GAS',
+                        sortOrder INTEGER NOT NULL DEFAULT 100,
+                        isActive INTEGER NOT NULL DEFAULT 1,
+                        isSystemDefault INTEGER NOT NULL DEFAULT 0,
+                        createdAtMs INTEGER NOT NULL DEFAULT 0,
+                        updatedAtMs INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_product_categories_code ON product_categories(code)")
+
+                // Seed the 4 permanent system folders (never overwriting custom edits)
+                db.execSQL("INSERT OR IGNORE INTO product_categories (id, code, name, description, iconKey, categoryType, legacyEnum, sortOrder, isActive, isSystemDefault, createdAtMs, updatedAtMs) VALUES (1, 'INDUSTRIAL_GAS', 'INDUSTRIAL GAS – REGULAR', 'Regular Industrial Cylinders', 'INDUSTRIAL', 'INDUSTRIAL', 'INDUSTRIAL_GAS', 1, 1, 1, $now, $now)")
+                db.execSQL("INSERT OR IGNORE INTO product_categories (id, code, name, description, iconKey, categoryType, legacyEnum, sortOrder, isActive, isSystemDefault, createdAtMs, updatedAtMs) VALUES (2, 'CUTTING_GAS', 'CUTTING GAS', 'Cutting Gas Cylinders (MCG 22 KG & MCG 44 KG)', 'CUTTING', 'CUTTING', 'MCG_CUTTING_GAS', 2, 1, 1, $now, $now)")
+                db.execSQL("INSERT OR IGNORE INTO product_categories (id, code, name, description, iconKey, categoryType, legacyEnum, sortOrder, isActive, isSystemDefault, createdAtMs, updatedAtMs) VALUES (3, 'COOKING_GAS', 'LPG GAS', 'LPG 11 KG, 22 KG & 44 KG', 'LPG', 'LPG', 'COOKING_GAS', 3, 1, 1, $now, $now)")
+                db.execSQL("INSERT OR IGNORE INTO product_categories (id, code, name, description, iconKey, categoryType, legacyEnum, sortOrder, isActive, isSystemDefault, createdAtMs, updatedAtMs) VALUES (4, 'SMALL_48_CFT', 'INDUSTRIAL GAS – 48 CFT SMALL', 'Independent 48 CFT Small Industrial Cylinders & CO2 5 KG', 'SMALL_48', 'SMALL_48', 'SMALL_48_CFT', 4, 1, 1, $now, $now)")
+
+                // 2. Extend products table non-destructively (preserving every existing product ID & balance)
+                db.execSQL("ALTER TABLE products ADD COLUMN categoryId INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE products ADD COLUMN unit TEXT NOT NULL DEFAULT 'Cylinder'")
+                db.execSQL("ALTER TABLE products ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE products ADD COLUMN iconKey TEXT NOT NULL DEFAULT 'CYLINDER'")
+
+                // Link every existing product to its permanent Category ID
+                db.execSQL("UPDATE products SET categoryId = 1, iconKey = 'INDUSTRIAL' WHERE category = 'INDUSTRIAL_GAS'")
+                db.execSQL("UPDATE products SET categoryId = 2, unit = 'KG', iconKey = 'CUTTING' WHERE category = 'MCG_CUTTING_GAS'")
+                db.execSQL("UPDATE products SET categoryId = 3, unit = 'KG', iconKey = 'LPG' WHERE category = 'COOKING_GAS'")
+                db.execSQL("UPDATE products SET categoryId = 4, unit = 'CFT', iconKey = 'SMALL_48' WHERE category = 'SMALL_48_CFT'")
+
+                // Upgrade existing 48 CFT Small names in-place (preserving product IDs & historical stock!)
+                db.execSQL("UPDATE products SET name = 'Oxygen 48 CFT', cylinderSizeKg = '48 CFT', unit = 'CFT', isActive = 1 WHERE category = 'SMALL_48_CFT' AND LOWER(name) = 'oxygen'")
+                db.execSQL("UPDATE products SET name = 'Acetylene 48 CFT', cylinderSizeKg = '48 CFT', unit = 'CFT', isActive = 1 WHERE category = 'SMALL_48_CFT' AND LOWER(name) = 'acetylene'")
+                db.execSQL("UPDATE products SET name = 'Argon 48 CFT', cylinderSizeKg = '48 CFT', unit = 'CFT', isActive = 1 WHERE category = 'SMALL_48_CFT' AND LOWER(name) = 'argon'")
+                db.execSQL("UPDATE products SET name = 'Argon Mix 48 CFT', cylinderSizeKg = '48 CFT', unit = 'CFT', isActive = 1 WHERE category = 'SMALL_48_CFT' AND LOWER(name) = 'argon mix'")
+                db.execSQL("UPDATE products SET name = 'CO2 5 KG', cylinderSizeKg = '5 KG', unit = 'KG', isActive = 1 WHERE category = 'SMALL_48_CFT' AND LOWER(REPLACE(name, ' ', '')) = 'co25kg'")
+                db.execSQL("UPDATE products SET name = 'Nitrogen 48 CFT', cylinderSizeKg = '48 CFT', unit = 'CFT', isActive = 1 WHERE category = 'SMALL_48_CFT' AND LOWER(name) = 'nitrogen'")
+
+                // Ensure all 6 48 CFT Small products exist if any were missing
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('SMALL_48_CFT', 4, 'Oxygen 48 CFT', 401, 1, '48 CFT', 'CFT', 'Small 48 CFT Oxygen', 'SMALL_48')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('SMALL_48_CFT', 4, 'Acetylene 48 CFT', 402, 1, '48 CFT', 'CFT', 'Small 48 CFT Acetylene', 'SMALL_48')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('SMALL_48_CFT', 4, 'Argon 48 CFT', 403, 1, '48 CFT', 'CFT', 'Small 48 CFT Argon', 'SMALL_48')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('SMALL_48_CFT', 4, 'Argon Mix 48 CFT', 404, 1, '48 CFT', 'CFT', 'Small 48 CFT Argon Mix', 'SMALL_48')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('SMALL_48_CFT', 4, 'CO2 5 KG', 405, 1, '5 KG', 'KG', 'Small CO2 5 KG Cylinder', 'SMALL_48')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('SMALL_48_CFT', 4, 'Nitrogen 48 CFT', 406, 1, '48 CFT', 'CFT', 'Small 48 CFT Nitrogen', 'SMALL_48')")
+
+                // Reactivate CUTTING GAS MCG 22 KG & MCG 44 KG (preserving existing IDs if present)
+                db.execSQL("UPDATE products SET name = 'MCG 22 KG', cylinderSizeKg = '22 KG', unit = 'KG', isActive = 1, categoryId = 2 WHERE category = 'MCG_CUTTING_GAS' AND LOWER(REPLACE(name, ' ', '')) = 'mcg22kg'")
+                db.execSQL("UPDATE products SET name = 'MCG 44 KG', cylinderSizeKg = '44 KG', unit = 'KG', isActive = 1, categoryId = 2 WHERE category = 'MCG_CUTTING_GAS' AND LOWER(REPLACE(name, ' ', '')) = 'mcg44kg'")
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('MCG_CUTTING_GAS', 2, 'MCG 22 KG', 201, 1, '22 KG', 'KG', 'Cutting Gas MCG 22 KG', 'CUTTING')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, categoryId, name, sortOrder, isActive, cylinderSizeKg, unit, description, iconKey) VALUES ('MCG_CUTTING_GAS', 2, 'MCG 44 KG', 202, 1, '44 KG', 'KG', 'Cutting Gas MCG 44 KG', 'CUTTING')")
+
+                // 3. Extend user_accounts with salted PBKDF2 pinHash (plain PINs hashed on next ensureSeeded)
+                db.execSQL("ALTER TABLE user_accounts ADD COLUMN pinHash TEXT NOT NULL DEFAULT ''")
+
+                // 4. Extend authorized_mobiles with first-time registration, OTP verification & lockout tracking
+                db.execSQL("ALTER TABLE authorized_mobiles ADD COLUMN firstTimeRegEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE authorized_mobiles ADD COLUMN isRegistered INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE authorized_mobiles ADD COLUMN otpVerifiedAtMs INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE authorized_mobiles ADD COLUMN registeredDeviceId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE authorized_mobiles ADD COLUMN failedLoginAttempts INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE authorized_mobiles ADD COLUMN lockedUntilMs INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): ConcordDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -405,7 +579,8 @@ abstract class ConcordDatabase : RoomDatabase() {
                         MIGRATION_4_5,
                         MIGRATION_5_6,
                         MIGRATION_6_7,
-                        MIGRATION_7_8
+                        MIGRATION_7_8,
+                        MIGRATION_8_9
                     )
                     .fallbackToDestructiveMigration(false)
                     .build()

@@ -647,7 +647,7 @@ fun StaffDashboardScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 StaffBigActionButton(
-                                    label = "LPG & Gas\nExchange",
+                                    label = "LPG & Industrial Gas\nExchange Empty",
                                     icon = Icons.Default.SwapHoriz,
                                     containerColor = MetallicOrange,
                                     onClick = onOpenDifferentGasReturn,

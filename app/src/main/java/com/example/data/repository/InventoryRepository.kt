@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import androidx.room.withTransaction
+import com.example.auth.AdminCredentialCrypto
 import com.example.auth.UaePhoneValidator
 import com.example.data.local.AppNotificationEntity
 import com.example.data.local.AuthorizedMobileEntity
@@ -9,6 +10,7 @@ import com.example.data.local.ConcordDatabase
 import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.OpeningStockEntity
 import com.example.data.local.PendingStoreTransferEntity
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.RegisteredDeviceEntity
 import com.example.data.local.SecurityAuditLogEntity
@@ -57,6 +59,7 @@ class InventoryRepository(
 
     private val userDao = db.userDao()
     private val vehicleDao = db.vehicleDao()
+    private val productCategoryDao = db.productCategoryDao()
     private val productDao = db.productDao()
     private val openingDao = db.openingStockDao()
     private val txDao = db.transactionDao()
@@ -71,6 +74,8 @@ class InventoryRepository(
 
     val usersFlow: Flow<List<UserAccountEntity>> = userDao.observeAllUsers()
     val vehiclesFlow: Flow<List<VehicleEntity>> = vehicleDao.observeActiveVehicles()
+    val categoriesFlow: Flow<List<ProductCategoryEntity>> = productCategoryDao.observeAll()
+    val activeCategoriesFlow: Flow<List<ProductCategoryEntity>> = productCategoryDao.observeActive()
     val activeProductsFlow: Flow<List<ProductEntity>> = productDao.observeActiveProducts()
     val allProductsFlow: Flow<List<ProductEntity>> = productDao.observeAllProducts()
     val openingsFlow: Flow<List<OpeningStockEntity>> = openingDao.observeAllOpenings()
@@ -158,16 +163,25 @@ class InventoryRepository(
     suspend fun getUserById(userId: Long): UserAccountEntity? =
         userDao.getUserById(userId)
 
+    fun verifyUserPin(user: UserAccountEntity, inputPin: String): Boolean {
+        val clean = inputPin.trim()
+        if (clean.isEmpty()) return false
+        if (user.pinHash.isNotBlank()) {
+            return AdminCredentialCrypto.verifyPassword(clean, user.pinHash)
+        }
+        return user.pin.isNotBlank() && user.pin == clean
+    }
+
     suspend fun authenticate(
         userId: Long,
         pin: String,
         expectedRole: UserRole? = null
     ): AuthSession? {
         val user = userDao.getUserById(userId) ?: return null
-        if (!user.isActive || user.pin != pin) return null
+        if (!user.isActive || !verifyUserPin(user, pin)) return null
         if (expectedRole != null && user.role != expectedRole) return null
         // Enforce unique PIN invariant across active accounts
-        val activeWithSamePin = userDao.getAllUsersOnce().filter { it.isActive && it.pin == pin }
+        val activeWithSamePin = userDao.getAllUsersOnce().filter { it.isActive && verifyUserPin(it, pin) }
         if (activeWithSamePin.size > 1) return null
         val vehicle = if (user.role == UserRole.STAFF) {
             vehicleDao.getVehicleByStaffUserId(user.id)
@@ -188,30 +202,65 @@ class InventoryRepository(
         return AuthSession(user = user, assignedVehicle = vehicle)
     }
 
-    suspend fun updateUserPin(targetUserId: Long, newPin: String): OperationResult {
+    suspend fun updateUserPin(targetUserId: Long, newPin: String, actorName: String = "Admin"): OperationResult {
         if (newPin.length != 4 || !newPin.all { it.isDigit() }) {
             return OperationResult.ValidationError("PIN must be exactly 4 digits.")
         }
         val allUsers = userDao.getAllUsersOnce()
         val targetUser = allUsers.firstOrNull { it.id == targetUserId }
             ?: return OperationResult.ValidationError("Account not found.")
-        val localCollision = allUsers.firstOrNull { it.id != targetUserId && it.pin == newPin }
+        val localCollision = allUsers.firstOrNull { it.id != targetUserId && verifyUserPin(it, newPin) }
         if (localCollision != null) {
             return OperationResult.ValidationError(
-                "PIN '$newPin' is already used by ${localCollision.displayName} (${localCollision.role.name}). Each Admin and Staff must have a unique PIN."
+                "This PIN is already assigned to ${localCollision.displayName} (${localCollision.role.name}). Each Admin and Staff must have a unique PIN."
             )
         }
         val cloudCollision = cloudSync?.findCloudPinCollisionDisplayName(targetUser.username, newPin)
         if (cloudCollision != null) {
             return OperationResult.ValidationError(
-                "PIN '$newPin' is already registered in cloud for $cloudCollision. Choose a unique PIN."
+                "This PIN is already registered in cloud for $cloudCollision. Choose a unique PIN."
             )
         }
-        userDao.updatePin(targetUserId, newPin)
+        val saltedHash = AdminCredentialCrypto.hashPassword(newPin)
+        userDao.updatePinHash(targetUserId, saltedHash)
         userDao.getUserById(targetUserId)?.let { updatedUser ->
             cloudSync?.pushStaffAccount(updatedUser)
         }
-        return OperationResult.Success("Unique PIN updated for ${targetUser.displayName}.")
+        logSecurityEvent(
+            eventType = "PIN_UPDATED",
+            role = UserRole.ADMIN.name,
+            actorName = actorName,
+            details = "Individual PIN securely updated (salted PBKDF2 hash) for ${targetUser.displayName}.",
+            isAlert = false
+        )
+        return OperationResult.Success("Individual PIN updated securely for ${targetUser.displayName}.")
+    }
+
+    suspend fun setUserActiveStatus(
+        targetUserId: Long,
+        isActive: Boolean,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can change account status.")
+        }
+        val target = userDao.getUserById(targetUserId)
+            ?: return OperationResult.ValidationError("Account not found.")
+        if (target.role == UserRole.ADMIN || target.role == UserRole.OWNER_VIEW) {
+            return OperationResult.ValidationError("Protected Admin/Owner accounts cannot be deactivated here.")
+        }
+        userDao.updateIsActive(targetUserId, isActive)
+        userDao.getUserById(targetUserId)?.let { updated ->
+            cloudSync?.pushStaffAccount(updated)
+        }
+        logSecurityEvent(
+            eventType = if (isActive) "ACCOUNT_ACTIVATED" else "ACCOUNT_DEACTIVATED",
+            role = actor.role.name,
+            actorName = actor.displayName,
+            details = "${target.displayName} account set to active=$isActive",
+            isAlert = !isActive
+        )
+        return OperationResult.Success("${target.displayName} is now ${if (isActive) "Active" else "Inactive"}.")
     }
 
     suspend fun updateStaffName(
@@ -295,10 +344,10 @@ class InventoryRepository(
 
         val result = db.withTransaction {
             val existingUsers = userDao.getAllUsersOnce()
-            val pinCollision = existingUsers.firstOrNull { it.pin == cleanPin }
+            val pinCollision = existingUsers.firstOrNull { verifyUserPin(it, cleanPin) }
             if (pinCollision != null) {
                 return@withTransaction OperationResult.ValidationError(
-                    "PIN '$cleanPin' is already used by ${pinCollision.displayName} (${pinCollision.role.name}). Each login requires a unique PIN."
+                    "This PIN is already assigned to ${pinCollision.displayName} (${pinCollision.role.name}). Each login requires a unique PIN."
                 )
             }
             val existingVehicles = vehicleDao.getAllVehiclesOnce()
@@ -322,7 +371,8 @@ class InventoryRepository(
                 username = candidateUsername,
                 displayName = cleanStaff,
                 role = UserRole.STAFF,
-                pin = cleanPin,
+                pin = "",
+                pinHash = AdminCredentialCrypto.hashPassword(cleanPin),
                 isActive = true
             )
             val newUserId = userDao.insert(newUserDraft)
@@ -338,7 +388,7 @@ class InventoryRepository(
 
             createdUser = savedUser
             createdVehicle = savedVehicle
-            OperationResult.Success("Added staff '$cleanStaff' with vehicle '$cleanVehicle' (PIN: $cleanPin).")
+            OperationResult.Success("Added staff '$cleanStaff' with vehicle '$cleanVehicle' (secure hashed PIN set).")
         }
 
         if (result is OperationResult.Success && cloudSync != null) {
@@ -348,32 +398,201 @@ class InventoryRepository(
         return result
     }
 
+    // --- Dynamic Product Master: Category Folders (Permanent Category IDs) ---
+
+    suspend fun createCategory(
+        name: String,
+        description: String = "",
+        iconKey: String = "GAS_CYLINDER",
+        categoryType: String = "INDUSTRIAL_REGULAR",
+        isActive: Boolean = true,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can create product category folders.")
+        }
+        val cleanName = GasNamingSanitizer.sanitizeCompanyOrProductName(name).take(100)
+        val cleanDesc = description.trim().take(240)
+        val cleanIcon = iconKey.trim().uppercase(Locale.US).take(40).ifBlank { "GAS_CYLINDER" }
+        val cleanType = categoryType.trim().uppercase(Locale.US).take(40).ifBlank { "CUSTOM" }
+        if (cleanName.isEmpty()) {
+            return OperationResult.ValidationError("Category name cannot be empty.")
+        }
+        val mappedEnum = when (cleanType) {
+            "LPG", "COOKING_GAS" -> ProductCategory.COOKING_GAS
+            "CUTTING_GAS", "MCG_CUTTING_GAS" -> ProductCategory.MCG_CUTTING_GAS
+            "SMALL_48_CFT" -> ProductCategory.SMALL_48_CFT
+            else -> ProductCategory.INDUSTRIAL_GAS
+        }
+        var createdCategory: ProductCategoryEntity? = null
+        val result = db.withTransaction {
+            val allCats = productCategoryDao.getAllOnce()
+            if (allCats.any { it.name.equals(cleanName, ignoreCase = true) }) {
+                return@withTransaction OperationResult.ValidationError("Category '$cleanName' already exists.")
+            }
+            val nextSort = (allCats.maxOfOrNull { it.sortOrder } ?: 4) + 1
+            val baseCode = cleanName.uppercase(Locale.US)
+                .replace(Regex("[^A-Z0-9]+"), "_")
+                .trim('_')
+                .ifEmpty { "CUSTOM_CAT" }
+                .take(48)
+            var candidateCode = baseCode
+            var suffix = 2
+            while (allCats.any { it.code.equals(candidateCode, ignoreCase = true) }) {
+                candidateCode = "${baseCode}_$suffix"
+                suffix++
+            }
+            val nowMs = System.currentTimeMillis()
+            val draft = ProductCategoryEntity(
+                code = candidateCode,
+                name = cleanName,
+                description = cleanDesc,
+                iconKey = cleanIcon,
+                categoryType = cleanType,
+                legacyEnum = mappedEnum,
+                sortOrder = nextSort,
+                isActive = isActive,
+                isSystemDefault = false,
+                createdAtMs = nowMs,
+                updatedAtMs = nowMs
+            )
+            val newId = productCategoryDao.insert(draft)
+            createdCategory = draft.copy(id = newId)
+            OperationResult.Success("Created category folder '$cleanName'.")
+        }
+        if (result is OperationResult.Success && createdCategory != null) {
+            cloudSync?.pushProductCategory(createdCategory!!)
+            logSecurityEvent(
+                eventType = "CATEGORY_CREATED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                details = "Created category folder '${createdCategory!!.name}' (ID=${createdCategory!!.id})",
+                isAlert = false
+            )
+        }
+        return result
+    }
+
+    suspend fun updateCategory(
+        categoryId: Long,
+        name: String,
+        description: String,
+        iconKey: String,
+        categoryType: String,
+        isActive: Boolean,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can edit product category folders.")
+        }
+        val cleanName = GasNamingSanitizer.sanitizeCompanyOrProductName(name).take(100)
+        val cleanDesc = description.trim().take(240)
+        val cleanIcon = iconKey.trim().uppercase(Locale.US).take(40).ifBlank { "GAS_CYLINDER" }
+        val cleanType = categoryType.trim().uppercase(Locale.US).take(40).ifBlank { "CUSTOM" }
+        if (cleanName.isEmpty()) {
+            return OperationResult.ValidationError("Category name cannot be empty.")
+        }
+        var updatedCategory: ProductCategoryEntity? = null
+        val result = db.withTransaction {
+            val allCats = productCategoryDao.getAllOnce()
+            val target = allCats.firstOrNull { it.id == categoryId }
+                ?: return@withTransaction OperationResult.ValidationError("Category folder not found.")
+            if (allCats.any { it.id != categoryId && it.name.equals(cleanName, ignoreCase = true) }) {
+                return@withTransaction OperationResult.ValidationError("Another category named '$cleanName' already exists.")
+            }
+            // Permanent Category ID and code remain immutable so stock & historical records stay intact
+            val updated = target.copy(
+                name = cleanName,
+                description = cleanDesc,
+                iconKey = cleanIcon,
+                categoryType = if (target.isSystemDefault) target.categoryType else cleanType,
+                isActive = isActive,
+                updatedAtMs = System.currentTimeMillis()
+            )
+            productCategoryDao.update(updated)
+            updatedCategory = updated
+            OperationResult.Success("Updated category folder '$cleanName' (ID #${target.id} preserved).")
+        }
+        if (result is OperationResult.Success && updatedCategory != null) {
+            cloudSync?.pushProductCategory(updatedCategory!!)
+            logSecurityEvent(
+                eventType = "CATEGORY_UPDATED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                details = "Updated category folder ID=${updatedCategory!!.id} -> '${updatedCategory!!.name}' (active=${updatedCategory!!.isActive})",
+                isAlert = false
+            )
+        }
+        return result
+    }
+
+    suspend fun toggleCategoryActive(
+        category: ProductCategoryEntity,
+        actor: UserAccountEntity
+    ): OperationResult {
+        return updateCategory(
+            categoryId = category.id,
+            name = category.name,
+            description = category.description,
+            iconKey = category.iconKey,
+            categoryType = category.categoryType,
+            isActive = !category.isActive,
+            actor = actor
+        )
+    }
+
     suspend fun addProduct(
         category: ProductCategory,
         name: String,
-        cylinderSizeKg: String = ""
+        cylinderSizeKg: String = "",
+        categoryId: Long = category.defaultCategoryId,
+        unit: String = "Cylinder",
+        description: String = "",
+        iconKey: String = "CYLINDER",
+        isActive: Boolean = true
     ): OperationResult {
         val cleanName = GasNamingSanitizer.sanitizeCompanyOrProductName(name).take(100)
         val cleanSize = cylinderSizeKg.trim().take(40)
+        val cleanUnit = unit.trim().take(30).ifBlank { "Cylinder" }
+        val cleanDesc = description.trim().take(240)
+        val cleanIcon = iconKey.trim().uppercase(Locale.US).take(40).ifBlank { "CYLINDER" }
         if (cleanName.isEmpty()) {
             return OperationResult.ValidationError("Product name cannot be empty.")
         }
-        val existing = productDao.getAllProductsOnce()
-        if (existing.any { it.category == category && it.name.equals(cleanName, ignoreCase = true) }) {
-            return OperationResult.ValidationError("${category.displayName} - $cleanName already exists.")
+        // Strictly block Arab Gas / Emirates Gas from being added as separate LPG stock products
+        val lowerName = cleanName.lowercase(Locale.US)
+        if ((category == ProductCategory.COOKING_GAS || categoryId == 3L) &&
+            (lowerName.contains("arab gas") || lowerName.contains("emirates gas"))
+        ) {
+            return OperationResult.ValidationError(
+                "Arab Gas and Emirates Gas are empty-return company identifiers in LPG Exchange, not separate LPG stock products."
+            )
         }
-        val nextSort = (existing.filter { it.category == category }.maxOfOrNull { it.sortOrder }
-            ?: (category.sortOrder * 100)) + 1
+        val catEntity = productCategoryDao.getById(categoryId)
+        val resolvedEnum = catEntity?.legacyEnum ?: category
+        val resolvedCatId = catEntity?.id ?: categoryId
+        val catLabel = catEntity?.name ?: resolvedEnum.displayName
+
+        val existing = productDao.getAllProductsOnce()
+        if (existing.any { it.categoryId == resolvedCatId && it.name.equals(cleanName, ignoreCase = true) }) {
+            return OperationResult.ValidationError("$catLabel - $cleanName already exists.")
+        }
+        val nextSort = (existing.filter { it.categoryId == resolvedCatId }.maxOfOrNull { it.sortOrder }
+            ?: ((catEntity?.sortOrder ?: resolvedEnum.sortOrder) * 100)) + 1
         val newProduct = ProductEntity(
-            category = category,
+            category = resolvedEnum,
+            categoryId = resolvedCatId,
             name = cleanName,
             sortOrder = nextSort,
-            isActive = true,
-            cylinderSizeKg = cleanSize
+            isActive = isActive,
+            cylinderSizeKg = cleanSize,
+            unit = cleanUnit,
+            description = cleanDesc,
+            iconKey = cleanIcon
         )
         val newId = productDao.insert(newProduct)
         cloudSync?.pushProduct(newProduct.copy(id = newId))
-        return OperationResult.Success("Product '$cleanName' added to ${category.displayName}.")
+        return OperationResult.Success("Product '$cleanName' added to $catLabel.")
     }
 
     suspend fun updateProduct(
@@ -382,7 +601,11 @@ class InventoryRepository(
         name: String,
         cylinderSizeKg: String,
         isActive: Boolean,
-        actor: UserAccountEntity
+        actor: UserAccountEntity,
+        categoryId: Long? = null,
+        unit: String? = null,
+        description: String? = null,
+        iconKey: String? = null
     ): OperationResult {
         if (actor.role != UserRole.ADMIN) {
             return OperationResult.ValidationError("Only Admin can edit gas products.")
@@ -397,21 +620,29 @@ class InventoryRepository(
             val allProducts = productDao.getAllProductsOnce()
             val target = allProducts.firstOrNull { it.id == productId }
                 ?: return@withTransaction OperationResult.ValidationError("Product not found.")
+            val resolvedCatId = categoryId ?: if (category != target.category) category.defaultCategoryId else target.categoryId
+            val catEntity = productCategoryDao.getById(resolvedCatId)
+            val resolvedEnum = catEntity?.legacyEnum ?: category
+            val catLabel = catEntity?.name ?: resolvedEnum.displayName
             val duplicate = allProducts.firstOrNull {
-                it.id != productId && it.category == category && it.name.equals(cleanName, ignoreCase = true)
+                it.id != productId && it.categoryId == resolvedCatId && it.name.equals(cleanName, ignoreCase = true)
             }
             if (duplicate != null) {
-                return@withTransaction OperationResult.ValidationError("${category.displayName} - $cleanName already exists.")
+                return@withTransaction OperationResult.ValidationError("$catLabel - $cleanName already exists.")
             }
             val updated = target.copy(
-                category = category,
+                category = resolvedEnum,
+                categoryId = resolvedCatId,
                 name = cleanName,
                 cylinderSizeKg = cleanSize,
+                unit = unit?.trim()?.take(30)?.ifBlank { target.unit } ?: target.unit,
+                description = description?.trim()?.take(240) ?: target.description,
+                iconKey = iconKey?.trim()?.uppercase(Locale.US)?.take(40)?.ifBlank { target.iconKey } ?: target.iconKey,
                 isActive = isActive
             )
             productDao.update(updated)
             updatedProduct = updated
-            OperationResult.Success("Updated '$cleanName' (${category.displayName}).")
+            OperationResult.Success("Updated '$cleanName' ($catLabel).")
         }
         if (result is OperationResult.Success) {
             updatedProduct?.let { cloudSync?.pushProduct(it) }
@@ -599,11 +830,8 @@ class InventoryRepository(
             .groupBy { it.productId }
             .map { (pid, list) -> CustomerExchangeItem(pid, list.sumOf { it.quantity }) }
 
-        if (mergedDelivered.isEmpty()) {
-            return OperationResult.ValidationError("Select at least one delivered Full gas cylinder.")
-        }
-        if (mergedReturned.isEmpty()) {
-            return OperationResult.ValidationError("Select at least one returned Empty gas cylinder.")
+        if (mergedDelivered.isEmpty() && mergedReturned.isEmpty()) {
+            return OperationResult.ValidationError("Enter at least one Full Cylinder OUT or Empty Cylinder IN quantity.")
         }
         for (item in mergedDelivered + mergedReturned) {
             if (item.quantity <= 0 || item.quantity > 100000) {
@@ -683,10 +911,18 @@ class InventoryRepository(
                 )
             }
 
-            val deliveredSummary = deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
-            val returnedSummary = returnedLines.joinToString(", ") {
-                val coPrefix = if (cleanReturnCompany.isNotBlank()) "$cleanReturnCompany " else ""
-                "$coPrefix${it.productName} Empty ×${it.quantity}"
+            val deliveredSummary = if (deliveredLines.isEmpty()) {
+                "None"
+            } else {
+                deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
+            }
+            val returnedSummary = if (returnedLines.isEmpty()) {
+                "None"
+            } else {
+                returnedLines.joinToString(", ") {
+                    val coPrefix = if (cleanReturnCompany.isNotBlank()) "$cleanReturnCompany " else ""
+                    "$coPrefix${it.productName} Empty ×${it.quantity}"
+                }
             }
             val phoneTag = if (cleanPhone.isNotBlank()) " • Tel: $cleanPhone" else ""
             val coTag = if (cleanReturnCompany.isNotBlank()) " • Empty Co: $cleanReturnCompany" else ""
@@ -772,15 +1008,24 @@ class InventoryRepository(
             OperationResult.Success(successMessage)
         }
 
-        if (localResult is OperationResult.Success && cloudSync != null && insertedTransactions.isNotEmpty()) {
-            var anyFailed = false
-            for (tx in insertedTransactions) {
-                if (cloudSync.pushTransaction(tx).isFailure) {
-                    anyFailed = true
+        if (localResult is OperationResult.Success) {
+            logSecurityEvent(
+                eventType = "EXCHANGE_CREATED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                details = successMessage.take(300),
+                isAlert = false
+            )
+            if (cloudSync != null && insertedTransactions.isNotEmpty()) {
+                var anyFailed = false
+                for (tx in insertedTransactions) {
+                    if (cloudSync.pushTransaction(tx).isFailure) {
+                        anyFailed = true
+                    }
                 }
-            }
-            if (anyFailed) {
-                return OperationResult.Success("$successMessage Saved locally (will sync when online).")
+                if (anyFailed) {
+                    return OperationResult.Success("$successMessage Saved locally (will sync when online).")
+                }
             }
         }
         return localResult
@@ -824,11 +1069,8 @@ class InventoryRepository(
             .groupBy { it.productId }
             .map { (pid, list) -> CustomerExchangeItem(pid, list.sumOf { it.quantity }) }
 
-        if (mergedDelivered.isEmpty()) {
-            return OperationResult.ValidationError("Select at least one delivered Full gas cylinder.")
-        }
-        if (mergedReturned.isEmpty()) {
-            return OperationResult.ValidationError("Select at least one returned Empty gas cylinder.")
+        if (mergedDelivered.isEmpty() && mergedReturned.isEmpty()) {
+            return OperationResult.ValidationError("Enter at least one Full Cylinder OUT or Empty Cylinder IN quantity.")
         }
         for (item in mergedDelivered + mergedReturned) {
             if (item.quantity <= 0 || item.quantity > 100000) {
@@ -884,10 +1126,18 @@ class InventoryRepository(
                 val p = productMap[item.productId]!!
                 DifferentGasLineItem(p.id, p.name, p.category.displayName, item.quantity)
             }
-            val deliveredSummary = deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
-            val returnedSummary = returnedLines.joinToString(", ") {
-                val coPrefix = if (cleanReturnCompany.isNotBlank()) "$cleanReturnCompany " else ""
-                "$coPrefix${it.productName} Empty ×${it.quantity}"
+            val deliveredSummary = if (deliveredLines.isEmpty()) {
+                "None"
+            } else {
+                deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
+            }
+            val returnedSummary = if (returnedLines.isEmpty()) {
+                "None"
+            } else {
+                returnedLines.joinToString(", ") {
+                    val coPrefix = if (cleanReturnCompany.isNotBlank()) "$cleanReturnCompany " else ""
+                    "$coPrefix${it.productName} Empty ×${it.quantity}"
+                }
             }
             val phoneTag = if (cleanPhone.isNotBlank()) " • Tel: $cleanPhone" else ""
             val coTag = if (cleanReturnCompany.isNotBlank()) " • Empty Co: $cleanReturnCompany" else ""
@@ -992,9 +1242,18 @@ class InventoryRepository(
             OperationResult.Success(summaryMsg)
         }
 
-        if (localResult is OperationResult.Success && cloudSync != null) {
-            deletedRemoteIds.forEach { cloudSync.deleteCloudTransaction(it) }
-            insertedTransactions.forEach { cloudSync.pushTransaction(it) }
+        if (localResult is OperationResult.Success) {
+            logSecurityEvent(
+                eventType = "EXCHANGE_EDITED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                details = "Record #$recordId: ${summaryMsg.take(260)}",
+                isAlert = false
+            )
+            if (cloudSync != null) {
+                deletedRemoteIds.forEach { cloudSync.deleteCloudTransaction(it) }
+                insertedTransactions.forEach { cloudSync.pushTransaction(it) }
+            }
         }
         return localResult
     }
@@ -1054,8 +1313,17 @@ class InventoryRepository(
             OperationResult.Success("Deleted Gas Exchange and reversed ${oldLinkedTxs.size} stock movement(s).")
         }
 
-        if (localResult is OperationResult.Success && cloudSync != null) {
-            deletedRemoteIds.forEach { cloudSync.deleteCloudTransaction(it) }
+        if (localResult is OperationResult.Success) {
+            logSecurityEvent(
+                eventType = "EXCHANGE_DELETED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                details = "Deleted exchange record #$recordId and reversed ${deletedRemoteIds.size} movement(s).",
+                isAlert = true
+            )
+            if (cloudSync != null) {
+                deletedRemoteIds.forEach { cloudSync.deleteCloudTransaction(it) }
+            }
         }
         return localResult
     }
@@ -2586,7 +2854,9 @@ class InventoryRepository(
         allowedFeatures: Set<StaffFeaturePermission>,
         isActive: Boolean,
         isProtectedOwner: Boolean,
-        actor: UserAccountEntity
+        actor: UserAccountEntity,
+        mobileId: Long? = null,
+        firstTimeRegEnabled: Boolean = true
     ): OperationResult {
         if (actor.role != UserRole.ADMIN) {
             return OperationResult.ValidationError("Only Admin can manage authorized UAE mobile numbers.")
@@ -2600,12 +2870,24 @@ class InventoryRepository(
 
         val nowMs = System.currentTimeMillis()
         var savedEntity: AuthorizedMobileEntity? = null
+        var replacedOldPhone: String? = null
         val result = db.withTransaction {
-            val existing = authorizedMobileDao.getByPhone(normalizedPhone)
+            val existingById = mobileId?.let { authorizedMobileDao.getById(it) }
+            val existingByPhone = authorizedMobileDao.getByPhone(normalizedPhone)
+            val existing = existingById ?: existingByPhone
             if (existing != null && existing.isProtectedOwner) {
                 return@withTransaction OperationResult.ValidationError(
                     "Protected Owner account cannot be modified, demoted, or deactivated by Admin."
                 )
+            }
+            if (existingById != null && existingByPhone != null && existingByPhone.id != existingById.id) {
+                return@withTransaction OperationResult.ValidationError(
+                    "Mobile ${UaePhoneValidator.formatDisplay(normalizedPhone)} is already registered to ${existingByPhone.displayName}."
+                )
+            }
+            val phoneChanged = existingById != null && existingById.phoneE164 != normalizedPhone
+            if (phoneChanged) {
+                replacedOldPhone = existingById!!.phoneE164
             }
             val effectiveProtectedOwner = if (role == UserRole.OWNER_VIEW) isProtectedOwner else false
             val featuresCsv = if (role == UserRole.STAFF) {
@@ -2623,7 +2905,13 @@ class InventoryRepository(
                 isActive = isActive,
                 isProtectedOwner = effectiveProtectedOwner,
                 createdAtMs = existing?.createdAtMs ?: nowMs,
-                updatedAtMs = nowMs
+                updatedAtMs = nowMs,
+                firstTimeRegEnabled = firstTimeRegEnabled,
+                isRegistered = if (phoneChanged) false else (existing?.isRegistered ?: false),
+                otpVerifiedAtMs = if (phoneChanged) 0L else (existing?.otpVerifiedAtMs ?: 0L),
+                registeredDeviceId = if (phoneChanged) "" else (existing?.registeredDeviceId ?: ""),
+                failedLoginAttempts = existing?.failedLoginAttempts ?: 0,
+                lockedUntilMs = existing?.lockedUntilMs ?: 0L
             )
             val rowId = authorizedMobileDao.upsert(entity)
             savedEntity = entity.copy(id = if (entity.id > 0L) entity.id else rowId)
@@ -2631,6 +2919,7 @@ class InventoryRepository(
         }
 
         if (result is OperationResult.Success && savedEntity != null) {
+            replacedOldPhone?.let { cloudSync?.deleteAuthorizedMobile(it) }
             cloudSync?.pushAuthorizedMobile(savedEntity!!)
             logSecurityEvent(
                 eventType = "MOBILE_ACCESS_UPDATED",
@@ -2638,12 +2927,72 @@ class InventoryRepository(
                 actorName = actor.displayName,
                 phoneE164 = savedEntity!!.phoneE164,
                 deviceLabel = "",
-                details = "Authorized ${savedEntity!!.displayName} (${savedEntity!!.role.name}, active=${savedEntity!!.isActive})",
+                details = "Authorized ${savedEntity!!.displayName} (${savedEntity!!.role.name}, active=${savedEntity!!.isActive}, firstTimeReg=${savedEntity!!.firstTimeRegEnabled})",
                 isAlert = false
             )
         }
         return result
     }
+
+    suspend fun markMobileRegistered(
+        mobileId: Long,
+        deviceId: String,
+        otpVerifiedAtMs: Long = System.currentTimeMillis()
+    ) {
+        val nowMs = System.currentTimeMillis()
+        authorizedMobileDao.updateRegistrationStatus(
+            id = mobileId,
+            isRegistered = true,
+            otpVerifiedAtMs = otpVerifiedAtMs,
+            deviceId = deviceId.take(120),
+            updatedAtMs = nowMs
+        )
+        authorizedMobileDao.updateLoginAttempts(
+            id = mobileId,
+            attempts = 0,
+            lockedUntilMs = 0L,
+            updatedAtMs = nowMs
+        )
+        authorizedMobileDao.getById(mobileId)?.let { updated ->
+            cloudSync?.pushAuthorizedMobile(updated)
+        }
+    }
+
+    suspend fun recordMobilePinFailure(mobileId: Long): Pair<Int, Long> {
+        val existing = authorizedMobileDao.getById(mobileId) ?: return 0 to 0L
+        val nowMs = System.currentTimeMillis()
+        val nextAttempts = existing.failedLoginAttempts + 1
+        val lockedUntil = if (nextAttempts >= MAX_PIN_ATTEMPTS) nowMs + PIN_LOCKOUT_MS else 0L
+        authorizedMobileDao.updateLoginAttempts(
+            id = mobileId,
+            attempts = nextAttempts,
+            lockedUntilMs = lockedUntil,
+            updatedAtMs = nowMs
+        )
+        if (lockedUntil > nowMs) {
+            logSecurityEvent(
+                eventType = "PIN_LOCKOUT",
+                role = existing.role.name,
+                actorName = existing.displayName,
+                phoneE164 = existing.phoneE164,
+                details = "Account temporarily locked for 15 minutes after $nextAttempts failed PIN attempts.",
+                isAlert = true
+            )
+        }
+        return nextAttempts to lockedUntil
+    }
+
+    suspend fun resetMobilePinFailures(mobileId: Long) {
+        authorizedMobileDao.updateLoginAttempts(
+            id = mobileId,
+            attempts = 0,
+            lockedUntilMs = 0L,
+            updatedAtMs = System.currentTimeMillis()
+        )
+    }
+
+    suspend fun getRegisteredDeviceById(deviceId: String): RegisteredDeviceEntity? =
+        registeredDeviceDao.getByDeviceId(deviceId)
 
     suspend fun deleteAuthorizedMobile(mobileId: Long, actor: UserAccountEntity): OperationResult {
         if (actor.role != UserRole.ADMIN) {
@@ -2718,7 +3067,9 @@ class InventoryRepository(
         }
         val existing = registeredDeviceDao.getByDeviceId(deviceId)
             ?: return OperationResult.ValidationError("Device not found.")
+        val nowMs = System.currentTimeMillis()
         registeredDeviceDao.revokeDevice(deviceId)
+        authorizedMobileDao.clearRegistrationForDevice(deviceId, nowMs)
         val updated = existing.copy(isRevoked = true, sessionVersion = existing.sessionVersion + 1L)
         cloudSync?.pushRegisteredDevice(updated)
         logSecurityEvent(
@@ -2727,10 +3078,10 @@ class InventoryRepository(
             actorName = actor.displayName,
             phoneE164 = existing.phoneE164,
             deviceLabel = existing.deviceLabel,
-            details = "Revoked device ${existing.deviceLabel} (${existing.displayName})",
+            details = "Revoked device ${existing.deviceLabel} (${existing.displayName}); mobile OTP + PIN re-registration required.",
             isAlert = true
         )
-        return OperationResult.Success("Revoked device ${existing.deviceLabel}.")
+        return OperationResult.Success("Revoked device ${existing.deviceLabel}. Mobile + OTP + PIN required on next login.")
     }
 
     suspend fun logoutAllDevices(actor: UserAccountEntity): OperationResult {
@@ -2738,7 +3089,9 @@ class InventoryRepository(
             return OperationResult.ValidationError("Only Admin can sign out all registered devices.")
         }
         val activeDevices = registeredDeviceDao.getAllOnce().filter { !it.isRevoked }
+        val nowMs = System.currentTimeMillis()
         registeredDeviceDao.revokeAllDevices()
+        authorizedMobileDao.clearAllRegistrations(nowMs)
         activeDevices.forEach { dev ->
             cloudSync?.pushRegisteredDevice(dev.copy(isRevoked = true, sessionVersion = dev.sessionVersion + 1L))
         }
@@ -2748,7 +3101,7 @@ class InventoryRepository(
             actorName = actor.displayName,
             phoneE164 = "",
             deviceLabel = "All Devices (${activeDevices.size})",
-            details = "Admin terminated all active device sessions (${activeDevices.size}).",
+            details = "Admin terminated all active device sessions (${activeDevices.size}); mobile OTP + PIN re-registration required.",
             isAlert = true
         )
         return OperationResult.Success("Signed out all ${activeDevices.size} registered device(s).")
@@ -2780,6 +3133,9 @@ class InventoryRepository(
     }
 
     companion object {
+        const val MAX_PIN_ATTEMPTS = 5
+        const val PIN_LOCKOUT_MS = 15 * 60 * 1000L // 15 minutes
+
         fun todayIsoDate(): String {
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             return sdf.format(Date())

@@ -277,6 +277,7 @@ fun ConcordGasRootApp(
     val vehicles by viewModel.vehicles.collectAsStateWithLifecycle()
     val activeProducts by viewModel.activeProducts.collectAsStateWithLifecycle()
     val allProducts by viewModel.allProducts.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val selectedYearMonth by viewModel.selectedYearMonth.collectAsStateWithLifecycle()
     val selectedVehicleId by viewModel.selectedVehicleId.collectAsStateWithLifecycle()
@@ -321,6 +322,7 @@ fun ConcordGasRootApp(
     val staffReturnHistory by viewModel.staffReturnHistory.collectAsStateWithLifecycle()
     val successFeedbackMessage by viewModel.successFeedbackMessage.collectAsStateWithLifecycle()
     val phoneOtpState by viewModel.phoneOtpState.collectAsStateWithLifecycle()
+    val firstTimeRegState by viewModel.firstTimeRegState.collectAsStateWithLifecycle()
     val authorizedMobiles by viewModel.authorizedMobiles.collectAsStateWithLifecycle()
     val registeredDevices by viewModel.registeredDevices.collectAsStateWithLifecycle()
     val securityAuditLogs by viewModel.securityAuditLogs.collectAsStateWithLifecycle()
@@ -711,15 +713,25 @@ fun ConcordGasRootApp(
                         onDismissRecovery = viewModel::dismissAdminRecovery,
                         onClearError = viewModel::clearLoginError,
                         phoneOtpState = phoneOtpState,
+                        firstTimeRegState = firstTimeRegState,
                         onSendUaeOtp = { phone ->
                             val activity = context as? FragmentActivity
                             if (activity != null) {
-                                viewModel.startUaePhoneOtp(activity, phone)
+                                viewModel.startUaePhoneOtp(activity, phone, isResend = false)
+                            } else {
+                                viewModel.showMessage("SMS OTP requires an active screen context.")
+                            }
+                        },
+                        onResendUaeOtp = { phone ->
+                            val activity = context as? FragmentActivity
+                            if (activity != null) {
+                                viewModel.startUaePhoneOtp(activity, phone, isResend = true)
                             } else {
                                 viewModel.showMessage("SMS OTP requires an active screen context.")
                             }
                         },
                         onVerifyUaeOtp = viewModel::verifyUaePhoneOtp,
+                        onCompleteFirstTimeRegWithPin = viewModel::completeFirstTimeRegistrationWithExistingPin,
                         onResetPhoneOtp = viewModel::resetPhoneOtpState
                     )
                 }
@@ -1180,7 +1192,22 @@ fun ConcordGasRootApp(
                                         recentPurchaseCompanies = recentPurchaseCompanies,
                                         isReadOnly = isReadOnly,
                                         initialReportType = requestedReportType,
-                                        buildReportTable = viewModel::buildReportTable,
+                                        buildReportTable = { rType, vehId, dailyMode, company ->
+                                            viewModel.buildReportTable(
+                                                reportType = rType,
+                                                vehicleFilterId = vehId,
+                                                purchaseDailyMode = dailyMode,
+                                                purchaseCompanyFilter = company
+                                            )
+                                        },
+                                        buildExchangeReportTable = { vehId, period, section ->
+                                            viewModel.buildReportTable(
+                                                reportType = ReportType.LPG_EXCHANGE_REPORT,
+                                                vehicleFilterId = vehId,
+                                                exchangePeriod = period,
+                                                exchangeSection = section
+                                            )
+                                        },
                                         onDateSelected = viewModel::setSelectedDate,
                                         onYearMonthSelected = viewModel::setSelectedYearMonth,
                                         onSelectVehicle = { id -> if (id != null) viewModel.selectVehicle(id) },
@@ -1192,6 +1219,8 @@ fun ConcordGasRootApp(
                                         users = users,
                                         vehicles = vehicles,
                                         products = allProducts,
+                                        categories = categories,
+                                        companyStockRows = companyStockReport,
                                         googleEmail = googleEmail,
                                         workspaceState = workspaceState,
                                         driveBackupState = driveBackupState,
@@ -1243,8 +1272,45 @@ fun ConcordGasRootApp(
                                         onAddStaffAndVehicle = viewModel::addStaffAndVehicle,
                                         onUpdateStaffName = viewModel::updateStaffName,
                                         onUpdatePin = viewModel::updateUserPin,
-                                        onAddProduct = viewModel::addProduct,
-                                        onUpdateProduct = viewModel::updateProduct,
+                                        onCreateCategory = viewModel::createCategory,
+                                        onUpdateCategory = viewModel::updateCategory,
+                                        onAddProduct = { cat, name, sizeKg ->
+                                            viewModel.addProduct(category = cat, name = name, cylinderSizeKg = sizeKg)
+                                        },
+                                        onAddProductExtended = { cat, catId, name, sizeKg, unit, desc, iconKey, active ->
+                                            viewModel.addProduct(
+                                                category = cat,
+                                                name = name,
+                                                cylinderSizeKg = sizeKg,
+                                                categoryId = catId,
+                                                unit = unit,
+                                                description = desc,
+                                                iconKey = iconKey,
+                                                isActive = active
+                                            )
+                                        },
+                                        onUpdateProduct = { id, cat, name, sizeKg, active ->
+                                            viewModel.updateProduct(
+                                                productId = id,
+                                                category = cat,
+                                                name = name,
+                                                cylinderSizeKg = sizeKg,
+                                                isActive = active
+                                            )
+                                        },
+                                        onUpdateProductExtended = { id, cat, catId, name, sizeKg, unit, desc, iconKey, active ->
+                                            viewModel.updateProduct(
+                                                productId = id,
+                                                category = cat,
+                                                name = name,
+                                                cylinderSizeKg = sizeKg,
+                                                isActive = active,
+                                                categoryId = catId,
+                                                unit = unit,
+                                                description = desc,
+                                                iconKey = iconKey
+                                            )
+                                        },
                                         onDeleteOrDeactivateProduct = viewModel::deleteOrDeactivateProduct,
                                         onReorderProducts = viewModel::reorderProducts,
                                         onToggleProductActive = viewModel::toggleProductActive,
@@ -1310,6 +1376,7 @@ fun ConcordGasRootApp(
         val allowVehSwitch = activeEditing == null && !isStaffRole && !differentGasReturnLockStore && differentGasReturnVehicleId == null
         DifferentGasReturnDialog(
             products = activeProducts,
+            categories = categories,
             vehicles = vehicles,
             fixedVehicle = fixedVeh,
             lockToStore = (activeEditing != null && activeEditing.vehicleId == null) || (differentGasReturnLockStore && !isStaffRole),
@@ -1401,6 +1468,21 @@ fun ConcordGasRootApp(
                     isProtectedOwner = isProtected
                 )
             },
+            onUpsertAuthorizedMobileExtended = { mobileId, phone, name, role, staffId, perms, active, isProtected, firstTimeReg ->
+                viewModel.upsertAuthorizedMobile(
+                    phoneRaw = phone,
+                    displayName = name,
+                    role = role,
+                    staffUserId = staffId,
+                    allowedFeatures = perms,
+                    isActive = active,
+                    isProtectedOwner = isProtected,
+                    mobileId = mobileId,
+                    firstTimeRegEnabled = firstTimeReg
+                )
+            },
+            onSetStaffActiveStatus = viewModel::setStaffAccountActiveStatus,
+            onUpdateStaffPin = viewModel::updateUserPin,
             onDeleteAuthorizedMobile = { mobile -> viewModel.deleteAuthorizedMobile(mobile.id) },
             onRevokeDevice = { device -> viewModel.revokeRegisteredDevice(device.deviceId) },
             onLogoutAllDevices = viewModel::logoutAllRegisteredDevices,

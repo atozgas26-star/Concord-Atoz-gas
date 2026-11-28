@@ -24,19 +24,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Factory
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.PrecisionManufacturing
 import androidx.compose.material.icons.filled.PropaneTank
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -58,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.ProductCategory
 import com.example.ui.theme.ArcticWhite
@@ -139,10 +146,33 @@ data class CategoryVisualStyle(
     val icon: ImageVector
 )
 
+fun categoryIconForKey(iconKey: String): ImageVector = when (iconKey.trim().uppercase()) {
+    "FLAME", "LPG" -> Icons.Default.LocalFireDepartment
+    "CUTTING", "TORCH", "BUILD" -> Icons.Default.Build
+    "SMALL_CYLINDER", "TANK", "CYLINDER" -> Icons.Default.PropaneTank
+    "FACTORY", "INDUSTRIAL" -> Icons.Default.Factory
+    "SCIENCE", "MEDICAL", "SPECIALTY" -> Icons.Default.Science
+    "SHIPPING", "FLEET" -> Icons.Default.LocalShipping
+    "VERIFIED", "PREMIUM" -> Icons.Default.Verified
+    "INVENTORY" -> Icons.Default.Inventory2
+    else -> Icons.Default.PrecisionManufacturing
+}
+
+val CATEGORY_ICON_OPTIONS: List<Pair<String, String>> = listOf(
+    "INDUSTRIAL" to "Industrial",
+    "FLAME" to "LPG Flame",
+    "CUTTING" to "Cutting",
+    "SMALL_CYLINDER" to "48 CFT Small",
+    "SCIENCE" to "Specialty",
+    "FACTORY" to "Plant",
+    "INVENTORY" to "Storage",
+    "VERIFIED" to "Certified"
+)
+
 fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (category) {
     ProductCategory.INDUSTRIAL_GAS -> CategoryVisualStyle(
         category = category,
-        shortTitle = "Industrial Gas",
+        shortTitle = "INDUSTRIAL GAS – REGULAR",
         primaryColor = Color(0xFF1D4ED8), // Royal Electric Blue
         lightContainer = Color(0xFFEAF1FF),
         darkContainer = Color(0xFF112454),
@@ -152,7 +182,7 @@ fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (
     )
     ProductCategory.SMALL_48_CFT -> CategoryVisualStyle(
         category = category,
-        shortTitle = "Small 48 CFT",
+        shortTitle = "INDUSTRIAL GAS – 48 CFT SMALL",
         primaryColor = Color(0xFF0284C7), // Precision Arctic Azure
         lightContainer = Color(0xFFE0F2FE),
         darkContainer = Color(0xFF0C2D48),
@@ -162,7 +192,7 @@ fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (
     )
     ProductCategory.COOKING_GAS -> CategoryVisualStyle(
         category = category,
-        shortTitle = "LPG Gas",
+        shortTitle = "LPG GAS",
         primaryColor = Color(0xFFFF6B1A), // Signature Metallic Orange
         lightContainer = Color(0xFFFFF1E8),
         darkContainer = Color(0xFF3E1908),
@@ -172,12 +202,12 @@ fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (
     )
     ProductCategory.MCG_CUTTING_GAS -> CategoryVisualStyle(
         category = category,
-        shortTitle = "MCG Cutting Gas",
-        primaryColor = Color(0xFF475569), // Platinum Titanium Slate
-        lightContainer = Color(0xFFEFF3F8),
-        darkContainer = Color(0xFF1B273F),
-        lightOnContainer = Color(0xFF1E293B),
-        darkOnContainer = Color(0xFFE2E8F0),
+        shortTitle = "CUTTING GAS",
+        primaryColor = Color(0xFF6366F1), // Metallic Indigo Slate
+        lightContainer = Color(0xFFEEF2FF),
+        darkContainer = Color(0xFF1E1B4B),
+        lightOnContainer = Color(0xFF312E81),
+        darkOnContainer = Color(0xFFE0E7FF),
         icon = Icons.Default.Build
     )
 }
@@ -813,5 +843,205 @@ fun OpenedSectionFolderHeader(
         }
     }
 }
+
+data class DynamicCategoryFolderStat(
+    val category: ProductCategoryEntity,
+    val itemCount: Int,
+    val activeItemCount: Int,
+    val fullTotal: Int,
+    val emptyTotal: Int
+)
+
+/**
+ * Dynamic 3D Glassmorphism Category Folder Grid for Product Master & Inventory.
+ * Renders all permanent-ID categories (4 default folders + any Admin-created custom folders)
+ * with live product counts, Full/Empty stock summary, Active/Inactive badge, and Admin Edit action.
+ */
+@Composable
+fun DynamicCategoryFolderGrid(
+    stats: List<DynamicCategoryFolderStat>,
+    selectedCategoryId: Long?,
+    onSelectCategoryId: (Long?) -> Unit,
+    onEditCategory: ((ProductCategoryEntity) -> Unit)? = null,
+    sectionTitle: String = "Product Category Folders",
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FolderOpen,
+                    contentDescription = null,
+                    tint = MetallicOrangeBright,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = sectionTitle,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = ArcticWhite,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (selectedCategoryId != null) {
+                TextButton(
+                    onClick = { onSelectCategoryId(null) },
+                    modifier = Modifier.testTag("dynamic_category_close_all")
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close folder", tint = MetallicOrangeBright, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("All Folders", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MetallicOrangeBright)
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            stats.forEach { stat ->
+                val cat = stat.category
+                val isSelected = selectedCategoryId == cat.id
+                val visual = categoryVisualStyle(cat.legacyEnum)
+                val cardGradient = if (isSelected) {
+                    Brush.horizontalGradient(listOf(RoyalBlueDeep, RoyalElectricBlue, ObsidianElevated))
+                } else {
+                    Brush.horizontalGradient(listOf(ObsidianSurface, ObsidianElevated, RoyalBlueDeep.copy(alpha = 0.62f)))
+                }
+                val borderBrush = if (isSelected) {
+                    Brush.horizontalGradient(listOf(ElectricBlueGlow, MetallicOrangeBright))
+                } else if (!cat.isActive) {
+                    Brush.horizontalGradient(listOf(MetallicOrange.copy(alpha = 0.45f), ObsidianBorder))
+                } else {
+                    Brush.linearGradient(listOf(ElectricBlueBright.copy(alpha = 0.42f), ObsidianBorder, MetallicOrangeBright.copy(alpha = 0.25f)))
+                }
+                val badgeBg = ObsidianMidnight.copy(alpha = 0.86f)
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 58.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .luxuryTapScale()
+                        .clickable { onSelectCategoryId(if (isSelected) null else cat.id) }
+                        .testTag("dynamic_category_folder_${cat.id}"),
+                    shape = RoundedCornerShape(15.dp),
+                    color = Color.Transparent,
+                    border = BorderStroke(if (isSelected) 1.6.dp else 1.dp, borderBrush),
+                    shadowElevation = if (isSelected) 7.dp else 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(cardGradient)
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = badgeBg,
+                            border = BorderStroke(1.dp, if (isSelected) MetallicOrangeBright else visual.primaryColor.copy(alpha = 0.55f)),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isSelected) Icons.Default.FolderOpen else categoryIconForKey(cat.iconKey),
+                                    contentDescription = cat.name,
+                                    tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = cat.name,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ArcticWhite,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (!cat.isActive) {
+                                    Surface(shape = RoundedCornerShape(5.dp), color = MetallicOrange.copy(alpha = 0.25f)) {
+                                        Text(
+                                            text = "INACTIVE",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MetallicOrangeBright,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "${stat.activeItemCount}/${stat.itemCount} active • ${cat.description.ifBlank { cat.categoryType.replace('_', ' ') }}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                color = PlatinumSilver,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = badgeBg,
+                            border = BorderStroke(0.9.dp, if (isSelected) MetallicOrangeBright.copy(alpha = 0.72f) else ElectricBlueBright.copy(alpha = 0.36f))
+                        ) {
+                            Text(
+                                text = "F:${stat.fullTotal} E:${stat.emptyTotal}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMono,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        if (onEditCategory != null) {
+                            IconButton(
+                                onClick = { onEditCategory(cat) },
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .testTag("edit_category_button_${cat.id}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit ${cat.name}",
+                                    tint = ElectricBlueGlow,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+                        }
+
+                        Icon(
+                            imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isSelected) "Collapse folder" else "Open folder",
+                            tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 

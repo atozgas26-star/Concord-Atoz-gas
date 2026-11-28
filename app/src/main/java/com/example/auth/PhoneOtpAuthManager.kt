@@ -24,8 +24,25 @@ data class PhoneOtpUiState(
     val stage: PhoneOtpStage = PhoneOtpStage.IDLE,
     val normalizedPhone: String = "",
     val verificationId: String? = null,
-    val message: String = ""
-)
+    val message: String = "",
+    val otpSentAtMs: Long = 0L,
+    val otpExpiresAtMs: Long = 0L,
+    val cooldownEndsAtMs: Long = 0L,
+    val resendCount: Int = 0,
+    val maxResends: Int = PhoneOtpAuthManager.MAX_RESEND_COUNT
+) {
+    fun isExpired(nowMs: Long = System.currentTimeMillis()): Boolean =
+        otpExpiresAtMs > 0L && nowMs > otpExpiresAtMs
+
+    fun remainingCooldownSeconds(nowMs: Long = System.currentTimeMillis()): Int =
+        if (cooldownEndsAtMs > nowMs) ((cooldownEndsAtMs - nowMs) / 1000L).toInt().coerceAtLeast(1) else 0
+
+    fun remainingExpirySeconds(nowMs: Long = System.currentTimeMillis()): Int =
+        if (otpExpiresAtMs > nowMs) ((otpExpiresAtMs - nowMs) / 1000L).toInt().coerceAtLeast(0) else 0
+
+    fun canResend(nowMs: Long = System.currentTimeMillis()): Boolean =
+        resendCount < maxResends && remainingCooldownSeconds(nowMs) == 0
+}
 
 object UaePhoneValidator {
     /**
@@ -60,7 +77,8 @@ object UaePhoneValidator {
 class PhoneOtpAuthManager(
     private val authProvider: () -> FirebaseAuth? = {
         runCatching { FirebaseAuth.getInstance() }.getOrNull()
-    }
+    },
+    private val clockMs: () -> Long = { System.currentTimeMillis() }
 ) {
     private val _state = MutableStateFlow(PhoneOtpUiState())
     val state: StateFlow<PhoneOtpUiState> = _state.asStateFlow()
@@ -73,7 +91,7 @@ class PhoneOtpAuthManager(
     }
 
     fun setError(phone: String, errorMessage: String) {
-        _state.value = PhoneOtpUiState(
+        _state.value = _state.value.copy(
             stage = PhoneOtpStage.ERROR,
             normalizedPhone = phone,
             message = errorMessage
@@ -83,16 +101,39 @@ class PhoneOtpAuthManager(
     fun sendOtp(
         activity: Activity,
         normalizedPhoneE164: String,
+        isResend: Boolean = false,
         onAutoVerified: (String) -> Unit,
         onFailure: (String) -> Unit
     ) {
+        val nowMs = clockMs()
+        val current = _state.value
+        val samePhone = current.normalizedPhone == normalizedPhoneE164
+        val nextResendCount = if (isResend && samePhone) current.resendCount + 1 else 0
+
+        if (isResend && samePhone) {
+            if (current.resendCount >= MAX_RESEND_COUNT) {
+                val msg = "OTP resend limit reached ($MAX_RESEND_COUNT max). Please wait and try again later."
+                _state.value = current.copy(stage = PhoneOtpStage.ERROR, message = msg)
+                onFailure(msg)
+                return
+            }
+            val cooldownSec = current.remainingCooldownSeconds(nowMs)
+            if (cooldownSec > 0) {
+                val msg = "Please wait ${cooldownSec}s before requesting another SMS OTP."
+                _state.value = current.copy(message = msg)
+                onFailure(msg)
+                return
+            }
+        }
+
         val auth = authProvider()
         if (auth == null) {
             val msg = "Firebase Authentication is unavailable on this device."
             _state.value = PhoneOtpUiState(
                 stage = PhoneOtpStage.ERROR,
                 normalizedPhone = normalizedPhoneE164,
-                message = msg
+                message = msg,
+                resendCount = nextResendCount
             )
             onFailure(msg)
             return
@@ -101,7 +142,8 @@ class PhoneOtpAuthManager(
         _state.value = PhoneOtpUiState(
             stage = PhoneOtpStage.SENDING,
             normalizedPhone = normalizedPhoneE164,
-            message = "Sending SMS verification code to ${UaePhoneValidator.formatDisplay(normalizedPhoneE164)}..."
+            message = "Sending SMS verification code to ${UaePhoneValidator.formatDisplay(normalizedPhoneE164)}...",
+            resendCount = nextResendCount
         )
 
         val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
@@ -118,7 +160,7 @@ class PhoneOtpAuthManager(
             override fun onVerificationFailed(e: FirebaseException) {
                 val msg = e.localizedMessage?.takeIf { it.isNotBlank() }
                     ?: "SMS OTP verification failed. Ensure Phone Sign-In is enabled in Firebase Console."
-                _state.value = PhoneOtpUiState(
+                _state.value = _state.value.copy(
                     stage = PhoneOtpStage.ERROR,
                     normalizedPhone = normalizedPhoneE164,
                     message = msg
@@ -130,12 +172,18 @@ class PhoneOtpAuthManager(
                 verificationId: String,
                 token: PhoneAuthProvider.ForceResendingToken
             ) {
+                val sentAt = clockMs()
                 resendToken = token
                 _state.value = PhoneOtpUiState(
                     stage = PhoneOtpStage.CODE_SENT,
                     normalizedPhone = normalizedPhoneE164,
                     verificationId = verificationId,
-                    message = "6-digit SMS OTP sent to ${UaePhoneValidator.formatDisplay(normalizedPhoneE164)}."
+                    message = "6-digit SMS OTP sent to ${UaePhoneValidator.formatDisplay(normalizedPhoneE164)} (valid for 5 minutes).",
+                    otpSentAtMs = sentAt,
+                    otpExpiresAtMs = sentAt + OTP_EXPIRY_MS,
+                    cooldownEndsAtMs = sentAt + RESEND_COOLDOWN_MS,
+                    resendCount = nextResendCount,
+                    maxResends = MAX_RESEND_COUNT
                 )
             }
         }
@@ -146,12 +194,14 @@ class PhoneOtpAuthManager(
                 .setTimeout(60L, TimeUnit.SECONDS)
                 .setActivity(activity)
                 .setCallbacks(callbacks)
-            resendToken?.let { builder.setForceResendingToken(it) }
+            if (isResend && samePhone) {
+                resendToken?.let { builder.setForceResendingToken(it) }
+            }
             PhoneAuthProvider.verifyPhoneNumber(builder.build())
         } catch (e: Exception) {
             val msg = e.localizedMessage?.takeIf { it.isNotBlank() }
                 ?: "Unable to start SMS OTP verification."
-            _state.value = PhoneOtpUiState(
+            _state.value = _state.value.copy(
                 stage = PhoneOtpStage.ERROR,
                 normalizedPhone = normalizedPhoneE164,
                 message = msg
@@ -165,11 +215,18 @@ class PhoneOtpAuthManager(
         onVerified: (String) -> Unit,
         onFailure: (String) -> Unit
     ) {
+        val nowMs = clockMs()
         val current = _state.value
         val verificationId = current.verificationId
         val cleanCode = code.trim()
         if (verificationId.isNullOrBlank()) {
             val msg = "Request an SMS OTP code first."
+            _state.value = current.copy(stage = PhoneOtpStage.ERROR, message = msg)
+            onFailure(msg)
+            return
+        }
+        if (current.isExpired(nowMs)) {
+            val msg = "SMS OTP has expired (5-minute limit). Request a new verification code."
             _state.value = current.copy(stage = PhoneOtpStage.ERROR, message = msg)
             onFailure(msg)
             return
@@ -201,6 +258,12 @@ class PhoneOtpAuthManager(
             onVerified = onVerified,
             onFailure = onFailure
         )
+    }
+
+    companion object {
+        const val OTP_EXPIRY_MS = 5 * 60 * 1000L // 5 minutes
+        const val RESEND_COOLDOWN_MS = 60 * 1000L // 60 seconds
+        const val MAX_RESEND_COUNT = 3
     }
 
     private fun completeCredentialVerification(

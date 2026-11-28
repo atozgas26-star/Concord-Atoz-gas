@@ -107,7 +107,9 @@ class ExampleRobolectricTest {
         val admin = users.firstOrNull { it.role == UserRole.ADMIN }
         assertNotNull(admin)
         assertEquals("Ragavan", admin!!.displayName)
-        assertEquals("1725", admin.pin)
+        assertEquals("", admin.pin)
+        assertTrue(admin.pinHash.startsWith("pbkdf2\$"))
+        assertTrue(repository.verifyUserPin(admin, "1725"))
 
         val staff = users.filter { it.role == UserRole.STAFF }
         assertEquals(7, staff.size)
@@ -117,11 +119,11 @@ class ExampleRobolectricTest {
             vehicles.map { it.name }
         )
 
-        assertEquals(16, products.size)
+        assertEquals(18, products.size)
         assertEquals(7, products.count { it.category == ProductCategory.INDUSTRIAL_GAS })
         assertEquals(6, products.count { it.category == ProductCategory.SMALL_48_CFT })
         assertEquals(3, products.count { it.category == ProductCategory.COOKING_GAS })
-        assertEquals(0, products.count { it.category == ProductCategory.MCG_CUTTING_GAS })
+        assertEquals(2, products.count { it.category == ProductCategory.MCG_CUTTING_GAS })
     }
 
     @Test
@@ -1241,7 +1243,7 @@ class ExampleRobolectricTest {
         assertEquals(UserRole.STAFF, nadeem.role)
 
         // Staff logs into the app with PIN
-        vm.login(nadeem.id, nadeem.pin, expectedRole = UserRole.STAFF)
+        vm.login(nadeem.id, "1001", expectedRole = UserRole.STAFF)
         waitUntil {
             vm.authSession.value?.user?.id == nadeem.id &&
                 vm.latestStaffLoginBanner.value != null &&
@@ -1420,7 +1422,7 @@ class ExampleRobolectricTest {
         }
 
         waitUntil { vm.isInitialized.value }
-        vm.login(nadeem.id, nadeem.pin, expectedRole = UserRole.STAFF)
+        vm.login(nadeem.id, "1001", expectedRole = UserRole.STAFF)
         waitUntil { vm.authSession.value?.user?.id == nadeem.id }
         vm.clearSnackbar()
 
@@ -1732,8 +1734,8 @@ class ExampleRobolectricTest {
 
     @Test
     fun `app system update manager compares semver, enforces trusted github release urls, and updates viewmodel state`() = runTest {
-        assertEquals("4.0.0", BuildConfig.VERSION_NAME)
-        assertEquals(16, BuildConfig.VERSION_CODE)
+        assertEquals("5.0.0", BuildConfig.VERSION_NAME)
+        assertEquals(17, BuildConfig.VERSION_CODE)
 
         // 1. Semantic version comparisons
         assertTrue(AppUpdateManager.compareSemVer("v2.0.0", "1.9.0") > 0)
@@ -1786,20 +1788,20 @@ class ExampleRobolectricTest {
         var mockedCode = 200
         var mockedBody = """
             {
-              "tag_name": "v4.1.0",
-              "name": "C&A Gas v4.1.0",
+              "tag_name": "v5.1.0",
+              "name": "C&A Gas v5.1.0",
               "body": "Added offline sync enhancements and invoice fixes.",
               "published_at": "2026-12-01T10:00:00Z",
-              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v4.1.0",
+              "html_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/tag/v5.1.0",
               "assets": [
                 {
                   "name": "tampered.apk",
-                  "browser_download_url": "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v4.1.0/tampered.apk",
+                  "browser_download_url": "https://evil.example.com/atozgas26-star/Concord-Atoz-gas/releases/download/v5.1.0/tampered.apk",
                   "size": 1048576
                 },
                 {
-                  "name": "CA-Gas-v4.1.0.apk",
-                  "browser_download_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v4.1.0/CA-Gas-v4.1.0.apk",
+                  "name": "CA-Gas-v5.1.0.apk",
+                  "browser_download_url": "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v5.1.0/CA-Gas-v5.1.0.apk",
                   "size": 31457280
                 }
               ]
@@ -1839,15 +1841,15 @@ class ExampleRobolectricTest {
             }
         }
 
-        // Case A: Newer release v4.1.0 available -> skips tampered asset URL, picks trusted official APK URL
+        // Case A: Newer release v5.1.0 available -> skips tampered asset URL, picks trusted official APK URL
         vm.checkForAppUpdate(silent = false)
         waitUntil { !vm.appUpdateState.value.isChecking && vm.appUpdateState.value.status != AppUpdateStatus.IDLE }
         val available = vm.appUpdateState.value
         assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, available.status)
-        assertEquals("4.1.0", available.latestVersion)
+        assertEquals("5.1.0", available.latestVersion)
         assertTrue(available.shouldShowBanner)
         assertEquals(
-            "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v4.1.0/CA-Gas-v4.1.0.apk",
+            "https://github.com/atozgas26-star/Concord-Atoz-gas/releases/download/v5.1.0/CA-Gas-v5.1.0.apk",
             available.downloadUrl
         )
         assertEquals(30.0, available.apkSizeMb ?: 0.0, 0.1)

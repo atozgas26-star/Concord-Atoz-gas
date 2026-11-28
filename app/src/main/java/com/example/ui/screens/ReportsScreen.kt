@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.data.local.VehicleEntity
+import com.example.data.model.ExchangePeriodFilter
+import com.example.data.model.ExchangeSectionFilter
 import com.example.data.model.ProductCategory
 import com.example.data.model.ReportType
 import com.example.export.ReportExporter
@@ -109,6 +111,7 @@ fun ReportsScreen(
     isReadOnly: Boolean = false,
     initialReportType: ReportType = ReportType.DAILY_STORE,
     buildReportTable: (ReportType, Long?, Boolean, String?) -> ReportTable,
+    buildExchangeReportTable: ((Long?, ExchangePeriodFilter, ExchangeSectionFilter) -> ReportTable)? = null,
     onDateSelected: (String) -> Unit,
     onYearMonthSelected: (String) -> Unit,
     onSelectVehicle: (Long?) -> Unit,
@@ -119,11 +122,17 @@ fun ReportsScreen(
     var selectedReport by remember(initialReportType) { mutableStateOf(initialReportType) }
     var vehicleFilterId by remember { mutableStateOf<Long?>(null) }
     var purchaseDailyMode by remember { mutableStateOf(false) }
+    var exchangePeriod by remember { mutableStateOf(ExchangePeriodFilter.MONTHLY) }
+    var exchangeSection by remember { mutableStateOf(ExchangeSectionFilter.ALL) }
     var purchaseCompanyFilter by remember { mutableStateOf<String?>(null) }
     var selectedCategory by remember(selectedReport, vehicleFilterId) { mutableStateOf<ProductCategory?>(null) }
     var showAllReportRows by remember(selectedReport, vehicleFilterId) { mutableStateOf(false) }
 
-    val baseTable = buildReportTable(selectedReport, vehicleFilterId, purchaseDailyMode, purchaseCompanyFilter)
+    val baseTable = if (selectedReport == ReportType.LPG_EXCHANGE_REPORT && buildExchangeReportTable != null) {
+        buildExchangeReportTable(vehicleFilterId, exchangePeriod, exchangeSection)
+    } else {
+        buildReportTable(selectedReport, vehicleFilterId, purchaseDailyMode, purchaseCompanyFilter)
+    }
 
     val supportsCategoryFolders = remember(baseTable) {
         baseTable.rows.any { detectRowCategory(it) != null }
@@ -256,14 +265,59 @@ fun ReportsScreen(
                 }
             }
 
-            // Period Toggle (Daily / Monthly) for LPG Exchange, Staff Product Sales, Purchase Co. Product, Purchase Register & Staff-Wise Sales
-            val supportsDailyMonthlyToggle = selectedReport == ReportType.LPG_EXCHANGE_REPORT ||
-                selectedReport == ReportType.STAFF_PRODUCT_SALES ||
+            // Period Toggle (Daily / Weekly / Monthly for LPG Exchange; Daily / Monthly for Sales/Purchase)
+            val supportsDailyMonthlyToggle = selectedReport == ReportType.STAFF_PRODUCT_SALES ||
                 selectedReport == ReportType.PURCHASE_COMPANY_PRODUCT ||
                 selectedReport == ReportType.PURCHASE_REGISTER ||
                 selectedReport == ReportType.STAFF_WISE_SALES
 
-            if (supportsDailyMonthlyToggle) {
+            if (selectedReport == ReportType.LPG_EXCHANGE_REPORT) {
+                item(key = "exchange_report_period_chips") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ExchangePeriodFilter.entries.forEach { period ->
+                            FilterChip(
+                                selected = exchangePeriod == period,
+                                onClick = {
+                                    exchangePeriod = period
+                                    purchaseDailyMode = (period == ExchangePeriodFilter.DAILY)
+                                },
+                                label = { Text("${period.label} Report") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = if (period == ExchangePeriodFilter.WEEKLY) RoyalElectricBlue else BrandGreenPrimary,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("exchange_period_${period.name.lowercase()}")
+                            )
+                        }
+                    }
+                }
+                item(key = "exchange_report_section_chips") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ExchangeSectionFilter.entries.forEach { sec ->
+                            FilterChip(
+                                selected = exchangeSection == sec,
+                                onClick = { exchangeSection = sec },
+                                label = { Text(sec.label, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MetallicOrange,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("exchange_section_${sec.name.lowercase()}")
+                            )
+                        }
+                    }
+                }
+            } else if (supportsDailyMonthlyToggle) {
                 item(key = "report_period_toggle") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -323,6 +377,16 @@ fun ReportsScreen(
 
             item(key = "report_date_or_month") {
                 when {
+                    selectedReport == ReportType.LPG_EXCHANGE_REPORT -> {
+                        if (exchangePeriod == ExchangePeriodFilter.MONTHLY) {
+                            MonthSelectorBar(
+                                yearMonth = selectedYearMonth,
+                                onYearMonthChanged = onYearMonthSelected
+                            )
+                        } else {
+                            DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)
+                        }
+                    }
                     supportsDailyMonthlyToggle -> {
                         if (purchaseDailyMode) {
                             DateSelectorBar(selectedDate = selectedDate, onDateSelected = onDateSelected)

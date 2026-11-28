@@ -168,25 +168,26 @@ class CorporateEditionUpgradeTest {
     }
 
     @Test
-    fun seededProducts_containExactV4LpgIndustrialCatalog_andExcludeMcgCutting() = runTest {
+    fun seededProducts_containExactV5FourFolderCatalog_andStrictLpgReturnCompanies() = runTest {
         repository.initializeDatabase()
         val products = repository.activeProductsFlow.first()
         val names = products.map { it.name }
 
-        assertEquals(16, products.size)
+        assertEquals(18, products.size)
         val lpgProducts = products.filter { it.category == ProductCategory.COOKING_GAS }
-        assertEquals(listOf("11kg", "22kg", "44kg"), lpgProducts.map { it.name })
+        assertEquals(listOf("11 KG", "22 KG", "44 KG"), lpgProducts.map { it.name })
         assertFalse("Must never contain Arabic Gas", names.any { it.contains("Arabic Gas", ignoreCase = true) })
         assertFalse("Must never contain Emergency Gas", names.any { it.contains("Emergency Gas", ignoreCase = true) })
         assertFalse("Arab Gas must be a returned empty company option, not a standalone LPG product", names.any { it.contains("Arab Gas", ignoreCase = true) })
         assertFalse("Emirates Gas must be a returned empty company option, not a standalone LPG product", names.any { it.contains("Emirates Gas", ignoreCase = true) })
 
-        val requiredIndustrial = listOf("Oxygen", "Acetylene", "Argon", "Argon Mix", "CO2 20kg", "CO2 30kg", "Nitrogen")
+        val requiredIndustrial = listOf("Oxygen", "Acetylene", "Argon", "Argon Mix", "CO2 20 KG", "CO2 30 KG", "Nitrogen")
         requiredIndustrial.forEach { req ->
             assertTrue("Missing industrial gas $req", names.any { it.equals(req, ignoreCase = true) })
         }
-        assertTrue("MCG and Cutting Gas must be completely removed from active catalog", products.none { it.category == ProductCategory.MCG_CUTTING_GAS })
-        assertFalse(ProductCategory.activeEntries.contains(ProductCategory.MCG_CUTTING_GAS))
+        val cuttingProducts = products.filter { it.category == ProductCategory.MCG_CUTTING_GAS }
+        assertEquals(listOf("MCG 22 KG", "MCG 44 KG"), cuttingProducts.map { it.name })
+        assertTrue(ProductCategory.activeEntries.contains(ProductCategory.MCG_CUTTING_GAS))
         assertEquals(listOf("Arab Gas", "Emirates Gas"), LpgReturnCompany.entries.map { it.displayName })
     }
 
@@ -195,7 +196,7 @@ class CorporateEditionUpgradeTest {
         repository.initializeDatabase()
         val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
         val vehicle = repository.vehiclesFlow.first().first()
-        val lpg22 = repository.activeProductsFlow.first().first { it.category == ProductCategory.COOKING_GAS && it.name == "22kg" }
+        val lpg22 = repository.activeProductsFlow.first().first { it.category == ProductCategory.COOKING_GAS && it.name == "22 KG" }
         val today = "2026-11-27"
 
         repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, lpg22.id, today, 20, 10, admin)
@@ -235,8 +236,8 @@ class CorporateEditionUpgradeTest {
         repository.initializeDatabase()
         val admin = repository.usersFlow.first().first { it.role == UserRole.ADMIN }
         val products = repository.activeProductsFlow.first()
-        val lpg22 = products.first { it.category == ProductCategory.COOKING_GAS && it.name == "22kg" }
-        val lpg11 = products.first { it.category == ProductCategory.COOKING_GAS && it.name == "11kg" }
+        val lpg22 = products.first { it.category == ProductCategory.COOKING_GAS && it.name == "22 KG" }
+        val lpg11 = products.first { it.category == ProductCategory.COOKING_GAS && it.name == "11 KG" }
         val today = "2026-11-27"
 
         repository.setOpeningStockForDate(StockCalculator.SCOPE_STORE, 0L, lpg22.id, today, 10, 5, admin)

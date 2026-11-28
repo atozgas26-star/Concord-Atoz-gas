@@ -7,8 +7,10 @@ import com.example.data.local.AppNotificationEntity
 import com.example.data.local.AuthorizedMobileEntity
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ConcordDatabase
+import com.example.auth.AdminCredentialCrypto
 import com.example.data.local.OpeningStockEntity
 import com.example.data.local.PendingStoreTransferEntity
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.RegisteredDeviceEntity
 import com.example.data.local.SecurityAuditLogEntity
@@ -357,6 +359,7 @@ class CloudSyncRepository(
         val wsRef = db.collection("workspaces").document(workspaceId)
         val users = localDb.userDao().getAllUsersOnce()
         val vehicles = localDb.vehicleDao().getAllVehiclesOnce()
+        val categories = localDb.productCategoryDao().getAllOnce()
         val products = localDb.productDao().getAllProductsOnce()
         val openings = localDb.openingStockDao().getAllOpeningsOnce()
         val txs = localDb.transactionDao().getAllTransactionsOnce()
@@ -369,6 +372,10 @@ class CloudSyncRepository(
         vehicles.forEach { v ->
             val docRef = wsRef.collection("vehicles").document("veh_${v.id}")
             batch.set(docRef, CloudVehicle.toCreateMap(v, memberUids, uid))
+        }
+        categories.forEach { c ->
+            val docRef = wsRef.collection("product_categories").document("cat_${c.id}")
+            batch.set(docRef, CloudProductCategory.toCreateMap(c, memberUids, uid))
         }
         products.forEach { p ->
             val docRef = wsRef.collection("products").document("prod_${p.id}")
@@ -512,7 +519,13 @@ class CloudSyncRepository(
                                             isActive = doc.getBoolean("isActive") ?: true,
                                             isProtectedOwner = doc.getBoolean("isProtectedOwner") ?: false,
                                             createdAtMs = doc.getLong("createdAtMs") ?: System.currentTimeMillis(),
-                                            updatedAtMs = doc.getLong("updatedAtMs") ?: System.currentTimeMillis()
+                                            updatedAtMs = doc.getLong("updatedAtMs") ?: System.currentTimeMillis(),
+                                            firstTimeRegEnabled = doc.getBoolean("firstTimeRegEnabled") ?: existing?.firstTimeRegEnabled ?: true,
+                                            isRegistered = doc.getBoolean("isRegistered") ?: existing?.isRegistered ?: false,
+                                            otpVerifiedAtMs = doc.getLong("otpVerifiedAtMs") ?: existing?.otpVerifiedAtMs ?: 0L,
+                                            registeredDeviceId = doc.getString("registeredDeviceId") ?: existing?.registeredDeviceId.orEmpty(),
+                                            failedLoginAttempts = existing?.failedLoginAttempts ?: 0,
+                                            lockedUntilMs = existing?.lockedUntilMs ?: 0L
                                         )
                                         if (existing == null || entity.updatedAtMs >= existing.updatedAtMs) {
                                             localDb.authorizedMobileDao().upsert(entity)
@@ -575,11 +588,13 @@ class CloudSyncRepository(
                                 cloudUsers.forEach { cu ->
                                     val existing = existingByUsername[cu.username]
                                     if (existing != null) {
-                                        if (existing.pin != cu.pin || existing.displayName != cu.displayName || existing.isActive != cu.active) {
+                                        val incomingHash = cu.resolvedPinHash()
+                                        if (existing.pinHash != incomingHash || existing.pin.isNotEmpty() || existing.displayName != cu.displayName || existing.isActive != cu.active) {
                                             localDb.userDao().insert(
                                                 existing.copy(
                                                     displayName = cu.displayName,
-                                                    pin = cu.pin,
+                                                    pin = "",
+                                                    pinHash = incomingHash.ifBlank { existing.pinHash },
                                                     isActive = cu.active
                                                 )
                                             )
@@ -651,15 +666,57 @@ class CloudSyncRepository(
                                             .firstOrNull { it.name == cp.category } ?: match.category
                                         val updated = match.copy(
                                             category = parsedCat,
+                                            categoryId = if (cp.categoryId > 0L) cp.categoryId else match.categoryId,
                                             name = cp.name,
                                             sortOrder = cp.sortOrder,
-                                            isActive = cp.active
+                                            isActive = cp.active,
+                                            cylinderSizeKg = cp.cylinderSizeKg.ifBlank { match.cylinderSizeKg },
+                                            unit = cp.unit.ifBlank { match.unit },
+                                            description = cp.description.ifBlank { match.description },
+                                            iconKey = cp.iconKey.ifBlank { match.iconKey }
                                         )
                                         if (updated != match) {
                                             localDb.productDao().update(updated)
                                         }
                                     } else {
                                         localDb.productDao().insertAll(listOf(cp.toEntity()))
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+
+            // Listener 4B: Dynamic Product Category Folders
+            launch {
+                val path = "${wsRef.path}/product_categories"
+                wsRef.collection("product_categories")
+                    .whereArrayContains("memberUids", uid)
+                    .snapshots()
+                    .map { snap -> snap.toObjects(CloudProductCategory::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+                    .catch { error -> logListenerErrorIfAuthenticated(error, uid, path) }
+                    .collectLatest { cloudCats ->
+                        if (cloudCats.isNotEmpty()) {
+                            localDb.withTransaction {
+                                val existingById = localDb.productCategoryDao().getAllOnce().associateBy { it.id }
+                                cloudCats.forEach { cc ->
+                                    val entity = cc.toEntity()
+                                    val match = existingById[entity.id]
+                                    if (match != null) {
+                                        val updated = match.copy(
+                                            name = entity.name,
+                                            description = entity.description,
+                                            iconKey = entity.iconKey,
+                                            categoryType = entity.categoryType,
+                                            legacyEnum = entity.legacyEnum,
+                                            sortOrder = entity.sortOrder,
+                                            isActive = entity.isActive
+                                        )
+                                        if (updated != match) {
+                                            localDb.productCategoryDao().update(updated)
+                                        }
+                                    } else {
+                                        localDb.productCategoryDao().insert(entity)
                                     }
                                 }
                             }
@@ -1056,9 +1113,14 @@ class CloudSyncRepository(
                 docRef.update(
                     mapOf(
                         "category" to product.category.name,
+                        "categoryId" to product.categoryId,
                         "name" to product.name.take(100),
                         "sortOrder" to product.sortOrder,
                         "active" to product.isActive,
+                        "cylinderSizeKg" to product.cylinderSizeKg.take(40),
+                        "unit" to product.unit.take(30),
+                        "description" to product.description.take(240),
+                        "iconKey" to product.iconKey.take(40),
                         "memberUids" to members,
                         "updatedByUid" to uid,
                         "updatedAt" to FieldValue.serverTimestamp()
@@ -1066,6 +1128,42 @@ class CloudSyncRepository(
                 ).await()
             } else {
                 docRef.set(CloudProduct.toCreateMap(product, members, uid)).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun pushProductCategory(category: ProductCategoryEntity): Result<Unit> {
+        val wsId = activeWorkspaceId ?: return Result.success(Unit)
+        val docId = "cat_${category.id}"
+        val docPath = "workspaces/$wsId/product_categories/$docId"
+        return try {
+            val uid = requireUserId()
+            val members = currentMembersIncluding(uid)
+            val docRef = db.collection("workspaces").document(wsId).collection("product_categories").document(docId)
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "name" to category.name.take(100),
+                        "description" to category.description.take(240),
+                        "iconKey" to category.iconKey.take(40),
+                        "categoryType" to category.categoryType.take(40),
+                        "legacyEnum" to category.legacyEnum.name,
+                        "sortOrder" to category.sortOrder,
+                        "active" to category.isActive,
+                        "memberUids" to members,
+                        "updatedByUid" to uid,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(CloudProductCategory.toCreateMap(category, members, uid)).await()
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1106,10 +1204,14 @@ class CloudSyncRepository(
             val members = currentMembersIncluding(uid)
             val docRef = db.collection("workspaces").document(wsId).collection("staff_accounts").document(docId)
             val snap = docRef.get().await()
+            val safeHash = user.pinHash.ifBlank {
+                if (user.pin.isNotBlank()) AdminCredentialCrypto.hashPassword(user.pin) else ""
+            }
             if (snap.exists()) {
                 docRef.update(
                     mapOf(
-                        "pin" to user.pin,
+                        "pin" to "",
+                        "pinHash" to safeHash,
                         "displayName" to user.displayName.take(100),
                         "active" to user.isActive,
                         "memberUids" to members,
@@ -1118,7 +1220,7 @@ class CloudSyncRepository(
                     )
                 ).await()
             } else {
-                docRef.set(CloudStaffAccount.toCreateMap(user, members, uid)).await()
+                docRef.set(CloudStaffAccount.toCreateMap(user.copy(pin = "", pinHash = safeHash), members, uid)).await()
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1286,27 +1388,29 @@ class CloudSyncRepository(
                             IllegalArgumentException("Role mismatch: Firestore lists '${cloudMatch.displayName}' as ${cloudMatch.role}.")
                         )
                     }
-                    // Keep Room synchronized with Firestore's authoritative PIN/displayName
-                    if (cloudMatch.pin != localUser.pin || cloudMatch.displayName != localUser.displayName) {
+                    // Keep Room synchronized with Firestore's authoritative hashed PIN & displayName
+                    val cloudHash = cloudMatch.resolvedPinHash()
+                    if (cloudHash.isNotBlank() && (cloudHash != localUser.pinHash || localUser.pin.isNotEmpty() || cloudMatch.displayName != localUser.displayName)) {
                         verifiedUser = localUser.copy(
                             displayName = cloudMatch.displayName,
-                            pin = cloudMatch.pin,
+                            pin = "",
+                            pinHash = cloudHash,
                             isActive = cloudMatch.active
                         )
                         localDb.userDao().insert(verifiedUser)
                     }
-                    if (cloudMatch.pin != pin) {
+                    if (!cloudMatch.matchesPin(pin)) {
                         return Result.failure(
                             IllegalArgumentException("Invalid PIN for ${expectedRole.name} '${cloudMatch.displayName}'.")
                         )
                     }
                     val duplicateOther = cloudAccounts.firstOrNull {
-                        it.active && it.username != cloudMatch.username && it.pin == pin
+                        it.active && it.username != cloudMatch.username && it.matchesPin(pin)
                     }
                     if (duplicateOther != null) {
                         return Result.failure(
                             IllegalStateException(
-                                "PIN '$pin' conflicts with ${duplicateOther.displayName}. Ask Admin to assign unique PINs."
+                                "This PIN conflicts with ${duplicateOther.displayName}. Ask Admin to assign unique PINs."
                             )
                         )
                     }
@@ -1619,7 +1723,7 @@ class CloudSyncRepository(
                 .await()
             val accounts = snap.toObjects(CloudStaffAccount::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             accounts.firstOrNull {
-                it.pin == pin && (targetUsername == null || it.username != targetUsername)
+                it.matchesPin(pin) && (targetUsername == null || it.username != targetUsername)
             }?.let { "${it.displayName} (${it.role})" }
         } catch (e: CancellationException) {
             throw e
@@ -1896,6 +2000,10 @@ class CloudSyncRepository(
                 "allowedFeaturesCsv" to entity.allowedFeaturesCsv.take(300),
                 "isActive" to entity.isActive,
                 "isProtectedOwner" to entity.isProtectedOwner,
+                "firstTimeRegEnabled" to entity.firstTimeRegEnabled,
+                "isRegistered" to entity.isRegistered,
+                "otpVerifiedAtMs" to entity.otpVerifiedAtMs,
+                "registeredDeviceId" to entity.registeredDeviceId.take(120),
                 "createdAtMs" to entity.createdAtMs.coerceAtLeast(1L),
                 "updatedAtMs" to entity.updatedAtMs.coerceAtLeast(1L),
                 "updatedByUid" to uid,

@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.local.DifferentGasReturnEntity
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.CustomerExchangeItem
@@ -98,9 +99,11 @@ import org.json.JSONArray
 import java.util.UUID
 
 private enum class ExchangeQuickFilter(val label: String) {
-    ALL("All"),
-    LPG("LPG 11/22/44 KG"),
-    INDUSTRIAL("Industrial")
+    ALL("All Sections"),
+    LPG("LPG EMPTY EXCHANGE"),
+    INDUSTRIAL_REGULAR("INDUSTRIAL GAS – REGULAR"),
+    SMALL_48_CFT("INDUSTRIAL GAS – 48 CFT SMALL"),
+    CUTTING_GAS("CUTTING GAS")
 }
 
 private fun parseExchangeItemsJson(json: String): Map<Long, Int> {
@@ -128,6 +131,7 @@ private fun parseExchangeItemsJson(json: String): Map<Long, Int> {
 @Composable
 fun DifferentGasReturnDialog(
     products: List<ProductEntity>,
+    categories: List<ProductCategoryEntity> = emptyList(),
     vehicles: List<VehicleEntity> = emptyList(),
     fixedVehicle: VehicleEntity? = null,
     lockToStore: Boolean = false,
@@ -182,8 +186,12 @@ fun DifferentGasReturnDialog(
 
     var activeSection by remember { mutableStateOf(0) } // 0 = Delivered Full, 1 = Returned Empty
     var quickFilter by remember { mutableStateOf(ExchangeQuickFilter.ALL) }
-    var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var selectedCustomCategoryId by remember { mutableStateOf<Long?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+
+    val customCategories = remember(categories) {
+        categories.filter { !it.isSystemDefault && it.isActive }
+    }
 
     val deliveredQtyMap = remember(editingRecord?.id) {
         mutableStateMapOf<Long, Int>().apply { putAll(initialDeliveredMap) }
@@ -193,23 +201,27 @@ fun DifferentGasReturnDialog(
     }
     var localError by remember { mutableStateOf<String?>(null) }
 
-    // Respect exact admin-saved sortOrder (only active categories)
+    // Respect exact admin-saved sortOrder (all active categories including Cutting Gas & 48 CFT Small)
     val orderedProducts = remember(products) {
         products
-            .filter { it.category.isActiveCategory }
+            .filter { it.isActive && it.category.isActiveCategory }
             .sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.id }))
     }
 
-    val visibleProducts = remember(orderedProducts, quickFilter, selectedCategory, searchQuery) {
+    val visibleProducts = remember(orderedProducts, quickFilter, selectedCustomCategoryId, searchQuery) {
         orderedProducts.filter { p ->
-            val matchesQuick = when (quickFilter) {
-                ExchangeQuickFilter.ALL -> true
-                ExchangeQuickFilter.LPG -> p.category == ProductCategory.COOKING_GAS
-                ExchangeQuickFilter.INDUSTRIAL -> p.category == ProductCategory.INDUSTRIAL_GAS ||
-                    p.category == ProductCategory.SMALL_48_CFT
+            val matchesQuick = if (selectedCustomCategoryId != null) {
+                p.categoryId == selectedCustomCategoryId
+            } else {
+                when (quickFilter) {
+                    ExchangeQuickFilter.ALL -> true
+                    ExchangeQuickFilter.LPG -> p.category == ProductCategory.COOKING_GAS
+                    ExchangeQuickFilter.INDUSTRIAL_REGULAR -> p.category == ProductCategory.INDUSTRIAL_GAS
+                    ExchangeQuickFilter.SMALL_48_CFT -> p.category == ProductCategory.SMALL_48_CFT
+                    ExchangeQuickFilter.CUTTING_GAS -> p.category == ProductCategory.MCG_CUTTING_GAS
+                }
             }
             matchesQuick &&
-                (selectedCategory == null || p.category == selectedCategory) &&
                 (searchQuery.isBlank() ||
                     p.name.contains(searchQuery, ignoreCase = true) ||
                     p.cylinderSizeKg.contains(searchQuery, ignoreCase = true) ||
@@ -314,7 +326,7 @@ fun DifferentGasReturnDialog(
                             Spacer(Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = if (isEditMode) "Edit LPG / Gas Exchange" else "LPG & Gas Cylinder Exchange",
+                                    text = if (isEditMode) "Edit LPG & Industrial Gas Exchange" else "LPG & Industrial Gas Exchange Empty",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = ArcticWhite
@@ -323,7 +335,7 @@ fun DifferentGasReturnDialog(
                                     text = if (isEditMode) {
                                         "Safe Atomic Reversal • Applies Corrected Stock Once"
                                     } else {
-                                        "Arab Gas, Emirates Gas & Industrial • Independent Full/Empty"
+                                        "LPG • Industrial Regular • 48 CFT Small • Cutting Gas (Independent Full/Empty)"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color(0xFF34D399)
@@ -676,7 +688,14 @@ fun DifferentGasReturnDialog(
                         }
                     }
 
-                    // Quick Gas Family Filter Pills (All / LPG 11-22-44 KG / Industrial)
+                    // Separate Exchange Sections: LPG, Industrial Regular, 48 CFT Small, Cutting Gas + Custom Folders
+                    Text(
+                        text = "EXCHANGE SECTION",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = ElectricBlueGlow,
+                        letterSpacing = 0.7.sp
+                    )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -684,62 +703,45 @@ fun DifferentGasReturnDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         ExchangeQuickFilter.entries.forEach { qf ->
-                            val isSel = quickFilter == qf
+                            val isSel = selectedCustomCategoryId == null && quickFilter == qf
+                            val selColor = when (qf) {
+                                ExchangeQuickFilter.LPG -> MetallicOrange
+                                ExchangeQuickFilter.SMALL_48_CFT -> Color(0xFF7C3AED)
+                                ExchangeQuickFilter.CUTTING_GAS -> Color(0xFF0D9488)
+                                else -> ElectricBlueBright
+                            }
                             FilterChip(
                                 selected = isSel,
                                 onClick = {
                                     quickFilter = qf
-                                    selectedCategory = null
+                                    selectedCustomCategoryId = null
                                 },
                                 label = { Text(qf.label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = ObsidianElevated,
                                     labelColor = PlatinumSilver,
-                                    selectedContainerColor = if (qf == ExchangeQuickFilter.LPG) MetallicOrange else ElectricBlueBright,
+                                    selectedContainerColor = selColor,
                                     selectedLabelColor = ArcticWhite
                                 ),
                                 modifier = Modifier.testTag("dgr_quick_filter_${qf.name.lowercase()}")
                             )
                         }
-                    }
-
-                    // Active Category filter chips
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        FilterChip(
-                            selected = selectedCategory == null && quickFilter == ExchangeQuickFilter.ALL,
-                            onClick = {
-                                selectedCategory = null
-                                quickFilter = ExchangeQuickFilter.ALL
-                            },
-                            label = { Text("All Gases", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = ObsidianElevated,
-                                labelColor = PlatinumSilver,
-                                selectedContainerColor = ElectricBlueBright,
-                                selectedLabelColor = ArcticWhite
-                            )
-                        )
-                        ProductCategory.activeEntries.forEach { cat ->
-                            val isSel = selectedCategory == cat
-                            val catStyle = categoryVisualStyle(cat)
+                        customCategories.forEach { customCat ->
+                            val isSel = selectedCustomCategoryId == customCat.id
                             FilterChip(
                                 selected = isSel,
                                 onClick = {
-                                    selectedCategory = if (isSel) null else cat
+                                    selectedCustomCategoryId = if (isSel) null else customCat.id
                                     quickFilter = ExchangeQuickFilter.ALL
                                 },
-                                label = { Text(cat.shortCode, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                label = { Text(customCat.name, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = ObsidianElevated,
                                     labelColor = PlatinumSilver,
-                                    selectedContainerColor = catStyle.primaryColor,
+                                    selectedContainerColor = MetallicOrange,
                                     selectedLabelColor = ArcticWhite
-                                )
+                                ),
+                                modifier = Modifier.testTag("dgr_custom_cat_${customCat.id}")
                             )
                         }
                     }
@@ -1062,13 +1064,8 @@ fun DifferentGasReturnDialog(
                                 customerName.trim().isEmpty() -> {
                                     localError = "Customer name is required."
                                 }
-                                deliveredItems.isEmpty() -> {
-                                    localError = "Select at least 1 Delivered Full gas cylinder."
-                                    activeSection = 0
-                                }
-                                returnedItems.isEmpty() -> {
-                                    localError = "Select at least 1 Returned Empty gas cylinder."
-                                    activeSection = 1
+                                deliveredItems.isEmpty() && returnedItems.isEmpty() -> {
+                                    localError = "Select at least 1 Delivered Full or Returned Empty cylinder."
                                 }
                                 stockShortages.isNotEmpty() -> {
                                     localError = "Insufficient Full stock for selected delivered gas."

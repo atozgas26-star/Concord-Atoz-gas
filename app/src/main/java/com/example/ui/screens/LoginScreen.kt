@@ -100,6 +100,8 @@ import com.example.data.local.UserAccountEntity
 import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
+import com.example.ui.viewmodel.FirstTimeRegStep
+import com.example.ui.viewmodel.FirstTimeRegUiState
 import com.example.ui.components.AdminRecoveryDialog
 import com.example.ui.components.FuturisticSpaceBackdrop
 import com.example.ui.components.LuxuryGlassCard
@@ -177,8 +179,11 @@ fun LoginScreen(
     onClearRecoveryError: () -> Unit = {},
     onDismissRecovery: () -> Unit = {},
     phoneOtpState: PhoneOtpUiState = PhoneOtpUiState(),
+    firstTimeRegState: FirstTimeRegUiState = FirstTimeRegUiState(),
     onSendUaeOtp: (phoneInput: String) -> Unit = {},
+    onResendUaeOtp: (phoneInput: String) -> Unit = {},
     onVerifyUaeOtp: (code: String) -> Unit = {},
+    onCompleteFirstTimeRegWithPin: (pinInput: String) -> Unit = {},
     onResetPhoneOtp: () -> Unit = {},
     onClearError: () -> Unit
 ) {
@@ -1453,11 +1458,16 @@ fun LoginScreen(
                     }
                 }
 
-                // UAE +971 Authorized Mobile + SMS OTP Sign In (Allowlisted Owner / Admin / Staff)
+                // UAE +971 First-Time Device Registration (Owner & Staff): UAE Mobile -> SMS OTP -> Existing Individual PIN
                 var showUaeOtpSection by remember { mutableStateOf(false) }
                 var uaePhoneInput by remember { mutableStateOf("+971") }
                 var uaeOtpCodeInput by remember { mutableStateOf("") }
-                val otpActive = showUaeOtpSection || phoneOtpState.stage != PhoneOtpStage.IDLE
+                var firstTimePinInput by remember { mutableStateOf("") }
+                var showFirstTimePin by remember { mutableStateOf(false) }
+                val awaitingExistingPin = firstTimeRegState.step == FirstTimeRegStep.EXISTING_PIN_VERIFY
+                val otpActive = showUaeOtpSection ||
+                    awaitingExistingPin ||
+                    phoneOtpState.stage != PhoneOtpStage.IDLE
 
                 LuxuryGlassCard(
                     shape = RoundedCornerShape(18.dp),
@@ -1489,7 +1499,7 @@ fun LoginScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.VerifiedUser,
-                                        contentDescription = "UAE Mobile OTP Login",
+                                        contentDescription = "First-Time Mobile Registration",
                                         tint = MetallicOrange,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -1497,12 +1507,12 @@ fun LoginScreen(
                                 Spacer(Modifier.width(10.dp))
                                 Column {
                                     Text(
-                                        text = "UAE +971 Mobile OTP Sign In",
+                                        text = "First-Time Device Registration (+971 OTP)",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "Authorized numbers only • Firebase SMS verification",
+                                        text = "Owner & Staff • UAE Mobile → SMS OTP → Existing Individual PIN",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1517,100 +1527,265 @@ fun LoginScreen(
                         }
 
                         if (otpActive) {
-                            OutlinedTextField(
-                                value = uaePhoneInput,
-                                onValueChange = { uaePhoneInput = it.take(18) },
-                                label = { Text("Authorized UAE Mobile (+971 5X XXX XXXX)") },
-                                placeholder = { Text("+971501234567") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                singleLine = true,
-                                enabled = phoneOtpState.stage == PhoneOtpStage.IDLE || phoneOtpState.stage == PhoneOtpStage.ERROR,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("uae_phone_input")
-                            )
-
-                            if (phoneOtpState.stage == PhoneOtpStage.CODE_SENT || phoneOtpState.stage == PhoneOtpStage.VERIFYING) {
-                                OutlinedTextField(
-                                    value = uaeOtpCodeInput,
-                                    onValueChange = { raw -> uaeOtpCodeInput = raw.filter { it.isDigit() }.take(6) },
-                                    label = { Text("6-Digit SMS OTP Code") },
-                                    placeholder = { Text("Enter 6-digit SMS code") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                                    singleLine = true,
-                                    enabled = phoneOtpState.stage == PhoneOtpStage.CODE_SENT,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("uae_otp_code_input")
-                                )
+                            // 3-step indicator
+                            val stepNum = when {
+                                awaitingExistingPin -> 3
+                                phoneOtpState.stage == PhoneOtpStage.CODE_SENT || phoneOtpState.stage == PhoneOtpStage.VERIFYING -> 2
+                                else -> 1
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(1 to "1. +971 Mobile", 2 to "2. SMS OTP", 3 to "3. Existing PIN").forEach { (idx, lbl) ->
+                                    val isCurrent = stepNum == idx
+                                    val isDone = stepNum > idx
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = when {
+                                            isCurrent -> MetallicOrange
+                                            isDone -> BrandGreenPrimary.copy(alpha = 0.25f)
+                                            else -> MaterialTheme.colorScheme.surfaceVariant
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = lbl,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = when {
+                                                isCurrent -> Color.White
+                                                isDone -> BrandGreenPrimary
+                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 5.dp, horizontal = 4.dp)
+                                        )
+                                    }
+                                }
                             }
 
-                            if (phoneOtpState.message.isNotBlank()) {
-                                if (phoneOtpState.stage == PhoneOtpStage.ERROR) {
+                            if (awaitingExistingPin) {
+                                // STEP 3: Matched Existing Account + Verify Already-Assigned Individual PIN
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = BrandGreenContainer.copy(alpha = 0.7f),
+                                    border = BorderStroke(1.dp, BrandGreenPrimary),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        val roleLabel = when (firstTimeRegState.matchedRole) {
+                                            UserRole.OWNER_VIEW -> "Owner View (Read-Only)"
+                                            UserRole.ADMIN -> "Admin"
+                                            UserRole.STAFF -> "Staff"
+                                            null -> "Authorized User"
+                                        }
+                                        Text(
+                                            text = "OTP Verified • Matched Account: ${firstTimeRegState.matchedDisplayName} ($roleLabel)",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BrandGreenOnContainer
+                                        )
+                                        Text(
+                                            text = "${UaePhoneValidator.formatDisplay(firstTimeRegState.normalizedPhone)} • Existing PIN preserved (no duplicate account created). Enter your already assigned 4-digit PIN to bind this device.",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = BrandGreenOnContainer.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = firstTimePinInput,
+                                    onValueChange = { raw ->
+                                        firstTimePinInput = raw.filter { it.isDigit() }.take(4)
+                                        onClearError()
+                                    },
+                                    label = { Text("Enter Your Existing 4-Digit Individual PIN") },
+                                    placeholder = { Text("Existing 4-digit PIN") },
+                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                    trailingIcon = {
+                                        IconButton(onClick = { showFirstTimePin = !showFirstTimePin }) {
+                                            Icon(
+                                                imageVector = if (showFirstTimePin) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (showFirstTimePin) "Hide PIN" else "Show PIN"
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (showFirstTimePin) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.NumberPassword,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = {
+                                            if (firstTimePinInput.length == 4 && !firstTimeRegState.isBusy) {
+                                                onCompleteFirstTimeRegWithPin(firstTimePinInput)
+                                            }
+                                        }
+                                    ),
+                                    singleLine = true,
+                                    enabled = !firstTimeRegState.isBusy,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("first_time_existing_pin_input")
+                                )
+
+                                firstTimeRegState.error?.let { err ->
                                     Surface(
                                         color = BrandRedContainer,
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = phoneOtpState.message,
+                                            text = err,
                                             color = BrandRedBright,
                                             style = MaterialTheme.typography.bodySmall,
                                             modifier = Modifier.padding(8.dp)
                                         )
                                     }
-                                } else {
-                                    Text(
-                                        text = phoneOtpState.message,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = BrandGreenPrimary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
                                 }
-                            }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                if (phoneOtpState.stage == PhoneOtpStage.CODE_SENT || phoneOtpState.stage == PhoneOtpStage.VERIFYING) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
                                     OutlinedButton(
                                         onClick = {
+                                            firstTimePinInput = ""
                                             uaeOtpCodeInput = ""
                                             onResetPhoneOtp()
                                         },
-                                        modifier = Modifier.weight(0.8f)
+                                        modifier = Modifier.weight(0.75f)
                                     ) {
-                                        Text("Change #")
+                                        Text("Cancel")
                                     }
                                     Button(
-                                        enabled = phoneOtpState.stage == PhoneOtpStage.CODE_SENT && uaeOtpCodeInput.length == 6,
-                                        onClick = { onVerifyUaeOtp(uaeOtpCodeInput) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
+                                        enabled = !firstTimeRegState.isBusy && firstTimePinInput.length == 4,
+                                        onClick = { onCompleteFirstTimeRegWithPin(firstTimePinInput) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
                                         modifier = Modifier
-                                            .weight(1.4f)
-                                            .testTag("uae_otp_verify_button")
+                                            .weight(1.5f)
+                                            .testTag("first_time_complete_reg_button")
                                     ) {
                                         Text(
-                                            if (phoneOtpState.stage == PhoneOtpStage.VERIFYING) "Verifying..." else "Verify OTP & Sign In",
+                                            if (firstTimeRegState.isBusy) "Verifying PIN..." else "Verify PIN & Register Device",
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
-                                } else {
-                                    val isValidUae = UaePhoneValidator.normalizeUaePhone(uaePhoneInput) != null
-                                    Button(
-                                        enabled = isValidUae && phoneOtpState.stage != PhoneOtpStage.SENDING,
-                                        onClick = { onSendUaeOtp(uaePhoneInput) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue),
+                                }
+                            } else {
+                                OutlinedTextField(
+                                    value = uaePhoneInput,
+                                    onValueChange = { uaePhoneInput = it.take(18) },
+                                    label = { Text("Authorized UAE Mobile (+971 5X XXX XXXX)") },
+                                    placeholder = { Text("+971501234567") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    singleLine = true,
+                                    enabled = phoneOtpState.stage == PhoneOtpStage.IDLE || phoneOtpState.stage == PhoneOtpStage.ERROR,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("uae_phone_input")
+                                )
+
+                                if (phoneOtpState.stage == PhoneOtpStage.CODE_SENT || phoneOtpState.stage == PhoneOtpStage.VERIFYING) {
+                                    OutlinedTextField(
+                                        value = uaeOtpCodeInput,
+                                        onValueChange = { raw -> uaeOtpCodeInput = raw.filter { it.isDigit() }.take(6) },
+                                        label = { Text("6-Digit SMS OTP Code") },
+                                        placeholder = { Text("Enter 6-digit SMS code") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                        singleLine = true,
+                                        enabled = phoneOtpState.stage == PhoneOtpStage.CODE_SENT,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(48.dp)
-                                            .testTag("uae_otp_send_button")
-                                    ) {
+                                            .testTag("uae_otp_code_input")
+                                    )
+                                }
+
+                                if (phoneOtpState.message.isNotBlank()) {
+                                    if (phoneOtpState.stage == PhoneOtpStage.ERROR) {
+                                        Surface(
+                                            color = BrandRedContainer,
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = phoneOtpState.message,
+                                                color = BrandRedBright,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.padding(8.dp)
+                                            )
+                                        }
+                                    } else {
                                         Text(
-                                            if (phoneOtpState.stage == PhoneOtpStage.SENDING) "Sending SMS OTP..." else "Send UAE +971 SMS OTP",
-                                            fontWeight = FontWeight.Bold
+                                            text = phoneOtpState.message,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = BrandGreenPrimary,
+                                            fontWeight = FontWeight.SemiBold
                                         )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (phoneOtpState.stage == PhoneOtpStage.CODE_SENT || phoneOtpState.stage == PhoneOtpStage.VERIFYING) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                uaeOtpCodeInput = ""
+                                                onResetPhoneOtp()
+                                            },
+                                            modifier = Modifier.weight(0.7f)
+                                        ) {
+                                            Text("Change #", fontSize = 11.sp)
+                                        }
+                                        OutlinedButton(
+                                            enabled = phoneOtpState.stage == PhoneOtpStage.CODE_SENT && phoneOtpState.canResend(),
+                                            onClick = { onResendUaeOtp(uaePhoneInput) },
+                                            modifier = Modifier
+                                                .weight(0.8f)
+                                                .testTag("uae_otp_resend_button")
+                                        ) {
+                                            val cooldown = phoneOtpState.remainingCooldownSeconds()
+                                            Text(
+                                                if (cooldown > 0) "Resend (${cooldown}s)" else "Resend",
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        Button(
+                                            enabled = phoneOtpState.stage == PhoneOtpStage.CODE_SENT && uaeOtpCodeInput.length == 6,
+                                            onClick = { onVerifyUaeOtp(uaeOtpCodeInput) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
+                                            modifier = Modifier
+                                                .weight(1.3f)
+                                                .testTag("uae_otp_verify_button")
+                                        ) {
+                                            Text(
+                                                if (phoneOtpState.stage == PhoneOtpStage.VERIFYING) "Verifying..." else "Verify OTP",
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    } else {
+                                        val isValidUae = UaePhoneValidator.normalizeUaePhone(uaePhoneInput) != null
+                                        Button(
+                                            enabled = isValidUae && phoneOtpState.stage != PhoneOtpStage.SENDING,
+                                            onClick = { onSendUaeOtp(uaePhoneInput) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp)
+                                                .testTag("uae_otp_send_button")
+                                        ) {
+                                            Text(
+                                                if (phoneOtpState.stage == PhoneOtpStage.SENDING) "Sending SMS OTP..." else "Send UAE +971 SMS OTP",
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }

@@ -12,19 +12,45 @@ enum class ProductCategory(
     val sortOrder: Int,
     val isActiveCategory: Boolean = true
 ) {
-    INDUSTRIAL_GAS("INDUSTRIAL GAS", "IND", 1, true),
-    SMALL_48_CFT("48 CFT SMALL", "48CFT", 2, true),
+    INDUSTRIAL_GAS("INDUSTRIAL GAS – REGULAR", "IND", 1, true),
+    MCG_CUTTING_GAS("CUTTING GAS", "CUT", 2, true),
     COOKING_GAS("LPG GAS", "LPG", 3, true),
-    MCG_CUTTING_GAS("MCG & CUTTING GAS", "MCG", 4, false);
+    SMALL_48_CFT("INDUSTRIAL GAS – 48 CFT SMALL", "48CFT", 4, true);
+
+    val defaultCategoryId: Long
+        get() = when (this) {
+            INDUSTRIAL_GAS -> 1L
+            MCG_CUTTING_GAS -> 2L
+            COOKING_GAS -> 3L
+            SMALL_48_CFT -> 4L
+        }
 
     companion object {
         /**
-         * Active customer-facing gas categories:
-         * Industrial Gas, 48 CFT Small, and LPG Gas (11 KG, 22 KG, 44 KG).
-         * MCG & Cutting Gas is retired and kept only for legacy Room enum deserialization.
+         * All four active core gas categories:
+         * 1. INDUSTRIAL GAS – REGULAR
+         * 2. CUTTING GAS (MCG 22 KG, MCG 44 KG)
+         * 3. LPG GAS (11 KG, 22 KG, 44 KG)
+         * 4. INDUSTRIAL GAS – 48 CFT SMALL
          */
         val activeEntries: List<ProductCategory> = entries.filter { it.isActiveCategory }
     }
+}
+
+enum class ExchangePeriodFilter(val label: String) {
+    DAILY("Daily"),
+    WEEKLY("Weekly (7D)"),
+    MONTHLY("Monthly")
+}
+
+enum class ExchangeSectionFilter(val label: String) {
+    ALL("All Exchanges"),
+    LPG("LPG Exchange"),
+    INDUSTRIAL_REGULAR("Industrial Regular"),
+    SMALL_48_CFT("48 CFT Small"),
+    CUTTING_GAS("Cutting Gas"),
+    ARAB_GAS_RETURNS("Arab Gas Empty"),
+    EMIRATES_GAS_RETURNS("Emirates Gas Empty")
 }
 
 /**

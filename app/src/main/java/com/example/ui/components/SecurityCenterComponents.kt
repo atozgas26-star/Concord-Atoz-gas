@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Phone
@@ -48,6 +50,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,6 +123,19 @@ fun SecurityCenterDialog(
         permissions: Set<StaffFeaturePermission>,
         isProtectedOwner: Boolean
     ) -> Unit,
+    onUpsertAuthorizedMobileExtended: ((
+        mobileId: Long?,
+        phoneInput: String,
+        displayName: String,
+        role: UserRole,
+        linkedStaffUserId: Long?,
+        permissions: Set<StaffFeaturePermission>,
+        isActive: Boolean,
+        isProtectedOwner: Boolean,
+        firstTimeRegEnabled: Boolean
+    ) -> Unit)? = null,
+    onSetStaffActiveStatus: ((userId: Long, isActive: Boolean) -> Unit)? = null,
+    onUpdateStaffPin: ((userId: Long, newPin: String) -> Unit)? = null,
     onDeleteAuthorizedMobile: (AuthorizedMobileEntity) -> Unit,
     onRevokeDevice: (RegisteredDeviceEntity) -> Unit,
     onLogoutAllDevices: () -> Unit,
@@ -127,14 +144,18 @@ fun SecurityCenterDialog(
     var activeTab by remember { mutableIntStateOf(0) }
     var showAddForm by remember { mutableStateOf(false) }
     var showLogoutAllConfirm by remember { mutableStateOf(false) }
+    var resetPinTargetUser by remember { mutableStateOf<UserAccountEntity?>(null) }
 
-    // Form state for adding/updating UAE +971 authorized mobile
+    // Form state for adding/editing UAE +971 authorized mobile
+    var editingMobileId by remember { mutableStateOf<Long?>(null) }
     var phoneInput by remember { mutableStateOf("+971") }
     var displayNameInput by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf(UserRole.STAFF) }
     var selectedLinkedStaff by remember { mutableStateOf<UserAccountEntity?>(null) }
     var staffMenuExpanded by remember { mutableStateOf(false) }
     var selectedPermissions by remember { mutableStateOf(StaffFeaturePermission.entries.toSet()) }
+    var mobileIsActive by remember { mutableStateOf(true) }
+    var firstTimeRegEnabled by remember { mutableStateOf(true) }
     var formError by remember { mutableStateOf<String?>(null) }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -282,7 +303,20 @@ fun SecurityCenterDialog(
                                         )
                                         Button(
                                             onClick = {
-                                                showAddForm = !showAddForm
+                                                if (showAddForm) {
+                                                    showAddForm = false
+                                                    editingMobileId = null
+                                                } else {
+                                                    editingMobileId = null
+                                                    phoneInput = "+971"
+                                                    displayNameInput = ""
+                                                    selectedRole = UserRole.STAFF
+                                                    selectedLinkedStaff = null
+                                                    selectedPermissions = StaffFeaturePermission.entries.toSet()
+                                                    mobileIsActive = true
+                                                    firstTimeRegEnabled = true
+                                                    showAddForm = true
+                                                }
                                                 formError = null
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
@@ -310,7 +344,11 @@ fun SecurityCenterDialog(
                                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
                                                 Text(
-                                                    text = "Register Authorized UAE Mobile (+971 5X XXX XXXX)",
+                                                    text = if (editingMobileId != null) {
+                                                        "Edit Authorized UAE Mobile (+971 5X XXX XXXX)"
+                                                    } else {
+                                                        "Register Authorized UAE Mobile (+971 5X XXX XXXX)"
+                                                    },
                                                     style = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
                                                     color = ElectricBlueGlow
@@ -444,6 +482,49 @@ fun SecurityCenterDialog(
                                                     }
                                                 }
 
+                                                // First-Time Mobile Registration & Active Status toggles
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = "First-Time OTP Registration",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = ArcticWhite
+                                                        )
+                                                        Text(
+                                                            text = "Allow UAE +971 SMS OTP + Existing PIN device registration",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = PlatinumMuted
+                                                        )
+                                                    }
+                                                    Switch(
+                                                        checked = firstTimeRegEnabled,
+                                                        onCheckedChange = { firstTimeRegEnabled = it },
+                                                        modifier = Modifier.testTag("security_first_time_reg_switch")
+                                                    )
+                                                }
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = if (mobileIsActive) "Mobile Access: Active" else "Mobile Access: Inactive",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (mobileIsActive) BrandGreenLight else MetallicOrangeBright
+                                                    )
+                                                    Switch(
+                                                        checked = mobileIsActive,
+                                                        onCheckedChange = { mobileIsActive = it },
+                                                        modifier = Modifier.testTag("security_mobile_active_switch")
+                                                    )
+                                                }
+
                                                 if (formError != null) {
                                                     Text(
                                                         text = formError!!,
@@ -460,17 +541,34 @@ fun SecurityCenterDialog(
                                                         } else if (displayNameInput.trim().isEmpty()) {
                                                             formError = "Enter holder display name."
                                                         } else {
-                                                            onUpsertAuthorizedMobile(
-                                                                normalized,
-                                                                displayNameInput.trim(),
-                                                                selectedRole,
-                                                                if (selectedRole == UserRole.STAFF) selectedLinkedStaff?.id else null,
-                                                                selectedPermissions,
-                                                                false
-                                                            )
+                                                            if (onUpsertAuthorizedMobileExtended != null) {
+                                                                onUpsertAuthorizedMobileExtended(
+                                                                    editingMobileId,
+                                                                    normalized,
+                                                                    displayNameInput.trim(),
+                                                                    selectedRole,
+                                                                    if (selectedRole == UserRole.STAFF) selectedLinkedStaff?.id else null,
+                                                                    selectedPermissions,
+                                                                    mobileIsActive,
+                                                                    false,
+                                                                    firstTimeRegEnabled
+                                                                )
+                                                            } else {
+                                                                onUpsertAuthorizedMobile(
+                                                                    normalized,
+                                                                    displayNameInput.trim(),
+                                                                    selectedRole,
+                                                                    if (selectedRole == UserRole.STAFF) selectedLinkedStaff?.id else null,
+                                                                    selectedPermissions,
+                                                                    false
+                                                                )
+                                                            }
+                                                            editingMobileId = null
                                                             phoneInput = "+971"
                                                             displayNameInput = ""
                                                             selectedLinkedStaff = null
+                                                            mobileIsActive = true
+                                                            firstTimeRegEnabled = true
                                                             showAddForm = false
                                                         }
                                                     },
@@ -480,7 +578,11 @@ fun SecurityCenterDialog(
                                                         .fillMaxWidth()
                                                         .testTag("security_save_mobile_btn")
                                                 ) {
-                                                    Text("Save Authorized +971 Mobile", color = Color.White, fontWeight = FontWeight.Bold)
+                                                    Text(
+                                                        if (editingMobileId != null) "Update Authorized +971 Mobile" else "Save Authorized +971 Mobile",
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
                                                 }
                                             }
                                         }
@@ -557,6 +659,28 @@ fun SecurityCenterDialog(
                                                     }
                                                     if (!isReadOnly && !item.isProtectedOwner) {
                                                         IconButton(
+                                                            onClick = {
+                                                                editingMobileId = item.id
+                                                                phoneInput = item.phoneE164
+                                                                displayNameInput = item.displayName
+                                                                selectedRole = item.role
+                                                                selectedLinkedStaff = staffUsers.firstOrNull { it.id == item.staffUserId }
+                                                                selectedPermissions = StaffFeaturePermission.parseCsv(item.allowedFeaturesCsv)
+                                                                mobileIsActive = item.isActive
+                                                                firstTimeRegEnabled = item.firstTimeRegEnabled
+                                                                showAddForm = true
+                                                                formError = null
+                                                            },
+                                                            modifier = Modifier.testTag("security_edit_mobile_${item.id}")
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Edit,
+                                                                contentDescription = "Edit authorized number",
+                                                                tint = ElectricBlueGlow,
+                                                                modifier = Modifier.size(18.dp)
+                                                            )
+                                                        }
+                                                        IconButton(
                                                             onClick = { onDeleteAuthorizedMobile(item) },
                                                             modifier = Modifier.testTag("security_delete_mobile_${item.id}")
                                                         ) {
@@ -570,6 +694,72 @@ fun SecurityCenterDialog(
                                                     }
                                                 }
                                             }
+                                            // Registration Status, OTP Status, Device & Lockout badges
+                                            val regStatusText = when {
+                                                !item.isActive -> "DEACTIVATED"
+                                                item.isRegistered -> "DEVICE REGISTERED"
+                                                !item.firstTimeRegEnabled -> "FIRST-TIME REG OFF"
+                                                else -> "PENDING FIRST-TIME REG"
+                                            }
+                                            val regColor = when {
+                                                !item.isActive -> BrandRedBright
+                                                item.isRegistered -> BrandGreenLight
+                                                else -> MetallicOrangeBright
+                                            }
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = regColor.copy(alpha = 0.16f)
+                                                ) {
+                                                    Text(
+                                                        text = regStatusText,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = regColor,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                if (item.otpVerifiedAtMs > 0L) {
+                                                    val otpTime = SimpleDateFormat("dd MMM hh:mm a", Locale.US).format(Date(item.otpVerifiedAtMs))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = ElectricBlueBright.copy(alpha = 0.18f)
+                                                    ) {
+                                                        Text(
+                                                            text = "OTP Verified: $otpTime",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = ElectricBlueGlow,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                                if (item.failedLoginAttempts > 0) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = Color(0xFF45141E)
+                                                    ) {
+                                                        Text(
+                                                            text = "Failed Attempts: ${item.failedLoginAttempts}",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFFFCA5A5),
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            if (item.registeredDeviceId.isNotBlank()) {
+                                                Text(
+                                                    text = "Registered Device ID: ${item.registeredDeviceId}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontFamily = JetBrainsMono,
+                                                    color = PlatinumMuted
+                                                )
+                                            }
                                             if (item.role == UserRole.STAFF) {
                                                 val perms = StaffFeaturePermission.parseCsv(item.allowedFeaturesCsv)
                                                 Text(
@@ -577,6 +767,43 @@ fun SecurityCenterDialog(
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = PlatinumMuted
                                                 )
+                                                val linkedStaff = staffUsers.firstOrNull { it.id == item.staffUserId }
+                                                if (!isReadOnly && linkedStaff != null && (onUpdateStaffPin != null || onSetStaffActiveStatus != null)) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        if (onUpdateStaffPin != null) {
+                                                            OutlinedButton(
+                                                                onClick = { resetPinTargetUser = linkedStaff },
+                                                                border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.7f)),
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                                modifier = Modifier.testTag("security_reset_pin_${linkedStaff.id}")
+                                                            ) {
+                                                                Icon(Icons.Default.Key, contentDescription = null, tint = ElectricBlueGlow, modifier = Modifier.size(14.dp))
+                                                                Spacer(Modifier.width(4.dp))
+                                                                Text("Reset PIN", color = ElectricBlueGlow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        }
+                                                        if (onSetStaffActiveStatus != null) {
+                                                            OutlinedButton(
+                                                                onClick = { onSetStaffActiveStatus(linkedStaff.id, !linkedStaff.isActive) },
+                                                                border = BorderStroke(1.dp, if (linkedStaff.isActive) MetallicOrangeBright else BrandGreenLight),
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                                modifier = Modifier.testTag("security_toggle_staff_active_${linkedStaff.id}")
+                                                            ) {
+                                                                Text(
+                                                                    if (linkedStaff.isActive) "Deactivate Account" else "Activate Account",
+                                                                    color = if (linkedStaff.isActive) MetallicOrangeBright else BrandGreenLight,
+                                                                    fontSize = 11.sp,
+                                                                    fontWeight = FontWeight.Bold
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -771,6 +998,83 @@ fun SecurityCenterDialog(
                 }
             }
         }
+    }
+
+    resetPinTargetUser?.let { staffTarget ->
+        var newPin by remember(staffTarget.id) { mutableStateOf("") }
+        var confirmPin by remember(staffTarget.id) { mutableStateOf("") }
+        var pinErr by remember(staffTarget.id) { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { resetPinTargetUser = null },
+            containerColor = SignatureRoyalSurface,
+            title = {
+                Text(
+                    text = "Reset Individual PIN • ${staffTarget.displayName}",
+                    color = ArcticWhite,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter a new 4-digit individual PIN. Stored securely with salted PBKDF2 hashing (never plain text).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PlatinumSilver
+                    )
+                    OutlinedTextField(
+                        value = newPin,
+                        onValueChange = { raw ->
+                            newPin = raw.filter { it.isDigit() }.take(4)
+                            pinErr = null
+                        },
+                        label = { Text("New 4-Digit PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = confirmPin,
+                        onValueChange = { raw ->
+                            confirmPin = raw.filter { it.isDigit() }.take(4)
+                            pinErr = null
+                        },
+                        label = { Text("Confirm 4-Digit PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (pinErr != null) {
+                        Text(pinErr!!, style = MaterialTheme.typography.labelSmall, color = Color(0xFFFCA5A5))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        when {
+                            newPin.length != 4 -> pinErr = "PIN must be exactly 4 digits."
+                            newPin != confirmPin -> pinErr = "PIN confirmation does not match."
+                            else -> {
+                                onUpdateStaffPin?.invoke(staffTarget.id, newPin)
+                                resetPinTargetUser = null
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange)
+                ) {
+                    Text("Save New PIN", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { resetPinTargetUser = null }) {
+                    Text("Cancel", color = PlatinumSilver)
+                }
+            }
+        )
     }
 
     if (showLogoutAllConfirm) {

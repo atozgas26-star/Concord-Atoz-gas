@@ -32,6 +32,9 @@ interface UserDao {
     @Query("UPDATE user_accounts SET pin = :newPin WHERE id = :userId")
     suspend fun updatePin(userId: Long, newPin: String)
 
+    @Query("UPDATE user_accounts SET pin = '', pinHash = :newPinHash WHERE id = :userId")
+    suspend fun updatePinHash(userId: Long, newPinHash: String)
+
     @Query("UPDATE user_accounts SET displayName = :newDisplayName WHERE id = :userId")
     suspend fun updateDisplayName(userId: Long, newDisplayName: String)
 
@@ -73,6 +76,39 @@ interface VehicleDao {
 }
 
 @Dao
+interface ProductCategoryDao {
+    @Query("SELECT * FROM product_categories ORDER BY sortOrder ASC, id ASC")
+    fun observeAll(): Flow<List<ProductCategoryEntity>>
+
+    @Query("SELECT * FROM product_categories WHERE isActive = 1 ORDER BY sortOrder ASC, id ASC")
+    fun observeActive(): Flow<List<ProductCategoryEntity>>
+
+    @Query("SELECT * FROM product_categories ORDER BY sortOrder ASC, id ASC")
+    suspend fun getAllOnce(): List<ProductCategoryEntity>
+
+    @Query("SELECT * FROM product_categories WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): ProductCategoryEntity?
+
+    @Query("SELECT * FROM product_categories WHERE code = :code LIMIT 1")
+    suspend fun getByCode(code: String): ProductCategoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(category: ProductCategoryEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(categories: List<ProductCategoryEntity>): List<Long>
+
+    @Update
+    suspend fun update(category: ProductCategoryEntity)
+
+    @Query("DELETE FROM product_categories WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM product_categories")
+    suspend fun deleteAll()
+}
+
+@Dao
 interface ProductDao {
     @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY sortOrder ASC, id ASC")
     fun observeActiveProducts(): Flow<List<ProductEntity>>
@@ -106,6 +142,9 @@ interface ProductDao {
 
     @Query("DELETE FROM products WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("SELECT COUNT(*) FROM products WHERE categoryId = :categoryId")
+    suspend fun countProductsByCategoryId(categoryId: Long): Int
 
     @Query("DELETE FROM products")
     suspend fun deleteAll()
@@ -328,6 +367,29 @@ interface AuthorizedMobileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<AuthorizedMobileEntity>)
+
+    @Query(
+        "UPDATE authorized_mobiles SET isRegistered = :isRegistered, otpVerifiedAtMs = :otpVerifiedAtMs, " +
+            "registeredDeviceId = :deviceId, failedLoginAttempts = 0, lockedUntilMs = 0, updatedAtMs = :updatedAtMs WHERE id = :id"
+    )
+    suspend fun updateRegistrationStatus(
+        id: Long,
+        isRegistered: Boolean,
+        otpVerifiedAtMs: Long,
+        deviceId: String,
+        updatedAtMs: Long
+    )
+
+    @Query(
+        "UPDATE authorized_mobiles SET failedLoginAttempts = :attempts, lockedUntilMs = :lockedUntilMs, updatedAtMs = :updatedAtMs WHERE id = :id"
+    )
+    suspend fun updateLoginAttempts(id: Long, attempts: Int, lockedUntilMs: Long, updatedAtMs: Long)
+
+    @Query("UPDATE authorized_mobiles SET isRegistered = 0, registeredDeviceId = '', updatedAtMs = :updatedAtMs WHERE registeredDeviceId = :deviceId")
+    suspend fun clearRegistrationForDevice(deviceId: String, updatedAtMs: Long)
+
+    @Query("UPDATE authorized_mobiles SET isRegistered = 0, registeredDeviceId = '', updatedAtMs = :updatedAtMs")
+    suspend fun clearAllRegistrations(updatedAtMs: Long)
 
     @Query("DELETE FROM authorized_mobiles WHERE id = :id")
     suspend fun deleteById(id: Long)

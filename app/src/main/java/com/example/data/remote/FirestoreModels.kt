@@ -1,7 +1,9 @@
 package com.example.data.remote
 
 import androidx.annotation.Keep
+import com.example.auth.AdminCredentialCrypto
 import com.example.data.local.OpeningStockEntity
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.UserAccountEntity
@@ -63,19 +65,34 @@ data class CloudStaffAccount(
     val username: String = "",
     val displayName: String = "",
     val role: String = UserRole.STAFF.name,
-    val pin: String = "1001",
+    val pin: String = "",
+    val pinHash: String = "",
     val active: Boolean = true,
     val memberUids: List<String> = emptyList(),
     val updatedByUid: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
+    fun matchesPin(inputPin: String): Boolean {
+        if (pinHash.isNotBlank()) {
+            return AdminCredentialCrypto.verifyPassword(inputPin, pinHash)
+        }
+        return pin.isNotBlank() && pin == inputPin
+    }
+
+    fun resolvedPinHash(): String = when {
+        pinHash.isNotBlank() -> pinHash
+        pin.isNotBlank() -> AdminCredentialCrypto.hashPassword(pin)
+        else -> ""
+    }
+
     fun toEntity(): UserAccountEntity = UserAccountEntity(
         id = localId,
         username = username,
         displayName = displayName,
         role = UserRole.entries.firstOrNull { it.name == role } ?: UserRole.STAFF,
-        pin = pin,
+        pin = "",
+        pinHash = resolvedPinHash(),
         isActive = active
     )
 
@@ -84,18 +101,24 @@ data class CloudStaffAccount(
             entity: UserAccountEntity,
             memberUids: List<String>,
             uid: String
-        ): Map<String, Any> = mapOf(
-            "localId" to entity.id,
-            "username" to entity.username,
-            "displayName" to entity.displayName,
-            "role" to entity.role.name,
-            "pin" to entity.pin,
-            "active" to entity.isActive,
-            "memberUids" to memberUids,
-            "updatedByUid" to uid,
-            "createdAt" to FieldValue.serverTimestamp(),
-            "updatedAt" to FieldValue.serverTimestamp()
-        )
+        ): Map<String, Any> {
+            val safeHash = entity.pinHash.ifBlank {
+                if (entity.pin.isNotBlank()) AdminCredentialCrypto.hashPassword(entity.pin) else ""
+            }
+            return mapOf(
+                "localId" to entity.id,
+                "username" to entity.username,
+                "displayName" to entity.displayName,
+                "role" to entity.role.name,
+                "pin" to "",
+                "pinHash" to safeHash,
+                "active" to entity.isActive,
+                "memberUids" to memberUids,
+                "updatedByUid" to uid,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        }
     }
 }
 
@@ -139,25 +162,94 @@ data class CloudVehicle(
 
 @Keep
 @IgnoreExtraProperties
-data class CloudProduct(
+data class CloudProductCategory(
     @DocumentId val id: String = "",
     val localId: Long = 0L,
-    val category: String = ProductCategory.INDUSTRIAL_GAS.name,
+    val code: String = "",
     val name: String = "",
-    val sortOrder: Int = 0,
+    val description: String = "",
+    val iconKey: String = "GAS_CYLINDER",
+    val categoryType: String = "INDUSTRIAL_REGULAR",
+    val legacyEnum: String = ProductCategory.INDUSTRIAL_GAS.name,
+    val sortOrder: Int = 10,
     val active: Boolean = true,
+    val systemDefault: Boolean = false,
     val memberUids: List<String> = emptyList(),
     val updatedByUid: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toEntity(): ProductEntity = ProductEntity(
+    fun toEntity(): ProductCategoryEntity = ProductCategoryEntity(
         id = localId,
-        category = ProductCategory.entries.firstOrNull { it.name == category } ?: ProductCategory.INDUSTRIAL_GAS,
+        code = code,
         name = name,
+        description = description,
+        iconKey = iconKey,
+        categoryType = categoryType,
+        legacyEnum = ProductCategory.entries.firstOrNull { it.name == legacyEnum } ?: ProductCategory.INDUSTRIAL_GAS,
         sortOrder = sortOrder,
-        isActive = active
+        isActive = active,
+        isSystemDefault = systemDefault
     )
+
+    companion object {
+        fun toCreateMap(
+            entity: ProductCategoryEntity,
+            memberUids: List<String>,
+            uid: String
+        ): Map<String, Any> = mapOf(
+            "localId" to entity.id,
+            "code" to entity.code.take(64),
+            "name" to entity.name.take(100),
+            "description" to entity.description.take(240),
+            "iconKey" to entity.iconKey.take(40),
+            "categoryType" to entity.categoryType.take(40),
+            "legacyEnum" to entity.legacyEnum.name,
+            "sortOrder" to entity.sortOrder,
+            "active" to entity.isActive,
+            "systemDefault" to entity.isSystemDefault,
+            "memberUids" to memberUids,
+            "updatedByUid" to uid,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class CloudProduct(
+    @DocumentId val id: String = "",
+    val localId: Long = 0L,
+    val category: String = ProductCategory.INDUSTRIAL_GAS.name,
+    val categoryId: Long = 0L,
+    val name: String = "",
+    val sortOrder: Int = 0,
+    val active: Boolean = true,
+    val cylinderSizeKg: String = "",
+    val unit: String = "Cylinder",
+    val description: String = "",
+    val iconKey: String = "CYLINDER",
+    val memberUids: List<String> = emptyList(),
+    val updatedByUid: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun toEntity(): ProductEntity {
+        val parsedCat = ProductCategory.entries.firstOrNull { it.name == category } ?: ProductCategory.INDUSTRIAL_GAS
+        return ProductEntity(
+            id = localId,
+            category = parsedCat,
+            categoryId = if (categoryId > 0L) categoryId else parsedCat.defaultCategoryId,
+            name = name,
+            sortOrder = sortOrder,
+            isActive = active,
+            cylinderSizeKg = cylinderSizeKg,
+            unit = unit.ifBlank { "Cylinder" },
+            description = description,
+            iconKey = iconKey.ifBlank { "CYLINDER" }
+        )
+    }
 
     companion object {
         fun toCreateMap(
@@ -167,9 +259,14 @@ data class CloudProduct(
         ): Map<String, Any> = mapOf(
             "localId" to entity.id,
             "category" to entity.category.name,
+            "categoryId" to entity.categoryId,
             "name" to entity.name,
             "sortOrder" to entity.sortOrder,
             "active" to entity.isActive,
+            "cylinderSizeKg" to entity.cylinderSizeKg.take(40),
+            "unit" to entity.unit.take(30),
+            "description" to entity.description.take(240),
+            "iconKey" to entity.iconKey.take(40),
             "memberUids" to memberUids,
             "updatedByUid" to uid,
             "createdAt" to FieldValue.serverTimestamp(),

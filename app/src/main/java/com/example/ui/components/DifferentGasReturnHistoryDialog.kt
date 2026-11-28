@@ -83,20 +83,32 @@ import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.SignatureRoyalBorder
 import com.example.ui.theme.SignatureRoyalSurface
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 private enum class ExchangeDateFilter(val label: String) {
     ALL("All Dates"),
     TODAY("Today"),
+    THIS_WEEK("This Week"),
     THIS_MONTH("This Month")
 }
 
 private enum class ExchangeGasFilter(val label: String) {
-    ALL("All Gases"),
-    ARAB_GAS("Arab Gas"),
-    EMIRATES_GAS("Emirates Gas"),
-    INDUSTRIAL("Industrial")
+    ALL("All Sections"),
+    LPG("LPG Exchange"),
+    INDUSTRIAL_REGULAR("Industrial Regular"),
+    SMALL_48_CFT("48 CFT Small"),
+    CUTTING_GAS("Cutting Gas"),
+    ARAB_GAS("Arab Gas Empty"),
+    EMIRATES_GAS("Emirates Gas Empty")
+}
+
+private enum class ExchangeTxTypeFilter(val label: String) {
+    ALL("All Types"),
+    BOTH("Full + Empty"),
+    FULL_OUT_ONLY("Full OUT Only"),
+    EMPTY_IN_ONLY("Empty IN Only")
 }
 
 /**
@@ -120,10 +132,16 @@ fun DifferentGasReturnHistoryDialog(
     var query by remember { mutableStateOf("") }
     var dateFilter by remember { mutableStateOf(ExchangeDateFilter.ALL) }
     var gasFilter by remember { mutableStateOf(ExchangeGasFilter.ALL) }
+    var txTypeFilter by remember { mutableStateOf(ExchangeTxTypeFilter.ALL) }
     var selectedVehicleFilter by remember { mutableStateOf<String?>(null) }
     var pendingDeleteRecord by remember { mutableStateOf<DifferentGasReturnEntity?>(null) }
 
     val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
+    val weekStartStr = remember(todayStr) {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_YEAR, -6)
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+    }
     val monthPrefix = remember(todayStr) { todayStr.take(7) }
 
     val allRecords = remember(customerGroups) {
@@ -138,16 +156,33 @@ fun DifferentGasReturnHistoryDialog(
         val matchesDate = when (dateFilter) {
             ExchangeDateFilter.ALL -> true
             ExchangeDateFilter.TODAY -> e.businessDate == todayStr
+            ExchangeDateFilter.THIS_WEEK -> e.businessDate >= weekStartStr && e.businessDate <= todayStr
             ExchangeDateFilter.THIS_MONTH -> e.businessDate.startsWith(monthPrefix)
         }
         val combinedText = "${e.deliveredSummary} ${e.returnedSummary} ${e.returnedEmptyCompany}"
+        val isSmall48 = combinedText.contains("48 CFT", ignoreCase = true) || combinedText.contains("CO2 5 KG", ignoreCase = true)
+        val isCutting = combinedText.contains("MCG", ignoreCase = true)
+        val isLpg = combinedText.contains("11 KG", ignoreCase = true) ||
+            combinedText.contains("22 KG", ignoreCase = true) ||
+            combinedText.contains("44 KG", ignoreCase = true) ||
+            e.returnedEmptyCompany.isNotBlank()
+        val isRegularInd = !isSmall48 && !isCutting && listOf("Oxygen", "Acetylene", "Argon", "CO2", "Nitrogen").any {
+            combinedText.contains(it, ignoreCase = true)
+        }
         val matchesGas = when (gasFilter) {
             ExchangeGasFilter.ALL -> true
-            ExchangeGasFilter.ARAB_GAS -> combinedText.contains("Arab Gas", ignoreCase = true)
-            ExchangeGasFilter.EMIRATES_GAS -> combinedText.contains("Emirates Gas", ignoreCase = true)
-            ExchangeGasFilter.INDUSTRIAL -> listOf("Oxygen", "Acetylene", "Argon", "CO2", "Nitrogen").any {
-                combinedText.contains(it, ignoreCase = true)
-            }
+            ExchangeGasFilter.LPG -> isLpg && !isCutting
+            ExchangeGasFilter.INDUSTRIAL_REGULAR -> isRegularInd
+            ExchangeGasFilter.SMALL_48_CFT -> isSmall48
+            ExchangeGasFilter.CUTTING_GAS -> isCutting
+            ExchangeGasFilter.ARAB_GAS -> e.returnedEmptyCompany.contains("Arab Gas", ignoreCase = true)
+            ExchangeGasFilter.EMIRATES_GAS -> e.returnedEmptyCompany.contains("Emirates Gas", ignoreCase = true)
+        }
+        val matchesTxType = when (txTypeFilter) {
+            ExchangeTxTypeFilter.ALL -> true
+            ExchangeTxTypeFilter.BOTH -> e.totalDeliveredQty > 0 && e.totalReturnedQty > 0
+            ExchangeTxTypeFilter.FULL_OUT_ONLY -> e.totalDeliveredQty > 0 && e.totalReturnedQty == 0
+            ExchangeTxTypeFilter.EMPTY_IN_ONLY -> e.totalDeliveredQty == 0 && e.totalReturnedQty > 0
         }
         val scopeLabel = e.vehicleName ?: "Main Store Yard"
         val matchesVehicle = selectedVehicleFilter == null || scopeLabel == selectedVehicleFilter
@@ -159,14 +194,14 @@ fun DifferentGasReturnHistoryDialog(
             e.returnedSummary.contains(query, ignoreCase = true) ||
             e.returnedEmptyCompany.contains(query, ignoreCase = true) ||
             scopeLabel.contains(query, ignoreCase = true)
-        return matchesDate && matchesGas && matchesVehicle && matchesQuery
+        return matchesDate && matchesGas && matchesTxType && matchesVehicle && matchesQuery
     }
 
-    val filteredRecords = remember(allRecords, dateFilter, gasFilter, selectedVehicleFilter, query) {
+    val filteredRecords = remember(allRecords, dateFilter, gasFilter, txTypeFilter, selectedVehicleFilter, query) {
         allRecords.filter(::matchesFilters)
     }
 
-    val filteredCustomerGroups = remember(customerGroups, dateFilter, gasFilter, selectedVehicleFilter, query) {
+    val filteredCustomerGroups = remember(customerGroups, dateFilter, gasFilter, txTypeFilter, selectedVehicleFilter, query) {
         customerGroups.mapNotNull { grp ->
             val matched = grp.records.filter(::matchesFilters)
             if (matched.isEmpty()) null else grp.copy(
@@ -178,7 +213,7 @@ fun DifferentGasReturnHistoryDialog(
         }
     }
 
-    val filteredStaffGroups = remember(staffGroups, dateFilter, gasFilter, selectedVehicleFilter, query) {
+    val filteredStaffGroups = remember(staffGroups, dateFilter, gasFilter, txTypeFilter, selectedVehicleFilter, query) {
         staffGroups.mapNotNull { grp ->
             val matched = grp.records.filter(::matchesFilters)
             if (matched.isEmpty()) null else grp.copy(
@@ -329,7 +364,30 @@ fun DifferentGasReturnHistoryDialog(
                         }
                     }
 
-                    // Date + Gas Type Filter Chips
+                    // Section + Empty Company Filter Chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ExchangeGasFilter.entries.forEach { gf ->
+                            FilterChip(
+                                selected = gasFilter == gf,
+                                onClick = { gasFilter = gf },
+                                label = { Text(gf.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = ObsidianElevated,
+                                    labelColor = PlatinumSilver,
+                                    selectedContainerColor = MetallicOrange,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("history_section_filter_${gf.name.lowercase()}")
+                            )
+                        }
+                    }
+
+                    // Date + Transaction Type + Vehicle Filter Chips
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -349,15 +407,15 @@ fun DifferentGasReturnHistoryDialog(
                                 )
                             )
                         }
-                        ExchangeGasFilter.entries.forEach { gf ->
+                        ExchangeTxTypeFilter.entries.forEach { tf ->
                             FilterChip(
-                                selected = gasFilter == gf,
-                                onClick = { gasFilter = gf },
-                                label = { Text(gf.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                selected = txTypeFilter == tf,
+                                onClick = { txTypeFilter = tf },
+                                label = { Text(tf.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = ObsidianElevated,
                                     labelColor = PlatinumSilver,
-                                    selectedContainerColor = MetallicOrange,
+                                    selectedContainerColor = Color(0xFF0D9488),
                                     selectedLabelColor = Color.White
                                 )
                             )

@@ -28,6 +28,7 @@ import com.example.data.local.BiometricUnlockState
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.PendingStoreTransferEntity
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.RegisteredDeviceEntity
 import com.example.data.local.SecurityAuditLogEntity
@@ -46,6 +47,8 @@ import com.example.data.model.CustomerExchangeItem
 import com.example.data.model.CustomerPendingRow
 import com.example.data.model.CustomerReturnHistoryGroup
 import com.example.data.model.DashboardSummary
+import com.example.data.model.ExchangePeriodFilter
+import com.example.data.model.ExchangeSectionFilter
 import com.example.data.model.LowStockAlertState
 import com.example.data.model.LowStockProductItem
 import com.example.data.model.MonthlyDailySaleRow
@@ -112,6 +115,25 @@ data class WarningAlert(
     val message: String
 )
 
+enum class FirstTimeRegStep {
+    MOBILE_INPUT,
+    OTP_VERIFY,
+    EXISTING_PIN_VERIFY,
+    COMPLETED
+}
+
+data class FirstTimeRegUiState(
+    val step: FirstTimeRegStep = FirstTimeRegStep.MOBILE_INPUT,
+    val normalizedPhone: String = "",
+    val matchedMobileId: Long = 0L,
+    val matchedDisplayName: String = "",
+    val matchedRole: UserRole? = null,
+    val matchedStaffUserId: Long? = null,
+    val otpVerifiedAtMs: Long = 0L,
+    val error: String? = null,
+    val isBusy: Boolean = false
+)
+
 private enum class PendingDriveConsentAction {
     NONE,
     ENABLE_AUTO_AND_BACKUP,
@@ -176,6 +198,9 @@ class AppViewModel(
 
     private val phoneOtpAuthManager = PhoneOtpAuthManager()
     val phoneOtpState: StateFlow<PhoneOtpUiState> = phoneOtpAuthManager.state
+
+    private val _firstTimeRegState = MutableStateFlow(FirstTimeRegUiState())
+    val firstTimeRegState: StateFlow<FirstTimeRegUiState> = _firstTimeRegState.asStateFlow()
 
     private val _appUpdateState = MutableStateFlow(AppUpdateUiState())
     val appUpdateState: StateFlow<AppUpdateUiState> = _appUpdateState.asStateFlow()
@@ -300,6 +325,12 @@ class AppViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val vehicles: StateFlow<List<VehicleEntity>> = repository.vehiclesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val categories: StateFlow<List<ProductCategoryEntity>> = repository.categoriesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activeCategories: StateFlow<List<ProductCategoryEntity>> = repository.activeCategoriesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeProducts: StateFlow<List<ProductEntity>> = repository.activeProductsFlow
@@ -1405,6 +1436,24 @@ class AppViewModel(
                     return@launch
                 }
 
+                // If this device was explicitly revoked by Admin for Staff, require Mobile + OTP + Existing PIN re-registration
+                val existingDevice = repository.getRegisteredDeviceById(currentDeviceId())
+                if (targetRole == UserRole.STAFF && existingDevice != null && existingDevice.isRevoked) {
+                    _loginError.value = "This device was revoked by Admin. Complete UAE Mobile + SMS OTP + Existing PIN verification first."
+                    return@launch
+                }
+
+                // Check temporary lockout on any linked authorized mobile
+                val linkedMobile = authorizedMobiles.value.firstOrNull {
+                    it.role == UserRole.STAFF && (it.staffUserId == localUser.id || it.displayName.equals(localUser.displayName, ignoreCase = true))
+                }
+                val nowMs = System.currentTimeMillis()
+                if (linkedMobile != null && linkedMobile.lockedUntilMs > nowMs) {
+                    val waitMins = ((linkedMobile.lockedUntilMs - nowMs) / 60_000L).coerceAtLeast(1L)
+                    _loginError.value = "Too many failed PIN attempts. Account locked for ${waitMins}m. Contact Admin."
+                    return@launch
+                }
+
                 if (cloudSync != null) {
                     val cloudCheck = cloudSync.verifyRolePinAndSyncProfile(
                         localUser = localUser,
@@ -1412,14 +1461,25 @@ class AppViewModel(
                         pin = pin
                     )
                     if (cloudCheck.isFailure) {
+                        linkedMobile?.let { repository.recordMobilePinFailure(it.id) }
+                        repository.logSecurityEvent(
+                            eventType = "FAILED_PIN_LOGIN",
+                            role = targetRole.name,
+                            actorName = localUser.displayName,
+                            phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                            deviceLabel = currentDeviceLabel(),
+                            details = "Failed PIN attempt for ${localUser.displayName}.",
+                            isAlert = true
+                        )
                         _loginError.value = cloudCheck.exceptionOrNull()?.localizedMessage
-                            ?: "Firebase PIN verification failed."
+                            ?: "PIN verification failed."
                         return@launch
                     }
                 }
 
                 val session = repository.authenticate(userId, pin, targetRole)
                 if (session != null) {
+                    linkedMobile?.let { repository.resetMobilePinFailures(it.id) }
                     if (autoLoginEnabled.value) {
                         sessionPreferences?.saveLoggedInUserId(session.user.id, session.user.role)
                     } else {
@@ -1429,6 +1489,23 @@ class AppViewModel(
                         userId = session.user.id,
                         role = session.user.role,
                         displayName = session.user.displayName
+                    )
+                    repository.registerOrTouchDevice(
+                        deviceId = currentDeviceId(),
+                        deviceLabel = currentDeviceLabel(),
+                        phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                        userId = session.user.id,
+                        displayName = session.user.displayName,
+                        role = session.user.role
+                    )
+                    repository.logSecurityEvent(
+                        eventType = "PIN_LOGIN_SUCCESS",
+                        role = session.user.role.name,
+                        actorName = session.user.displayName,
+                        phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                        deviceLabel = currentDeviceLabel(),
+                        details = "Signed in via registered device individual PIN.",
+                        isAlert = false
                     )
                     _shouldAutoPromptBiometric.value = false
                     _authSession.value = session
@@ -1441,7 +1518,25 @@ class AppViewModel(
                         emitStaffLoginNotification(session)
                     }
                 } else {
-                    _loginError.value = "Invalid or duplicate PIN for ${targetRole.name} '${localUser.displayName}'."
+                    val failInfo = linkedMobile?.let { repository.recordMobilePinFailure(it.id) }
+                    repository.logSecurityEvent(
+                        eventType = "FAILED_PIN_LOGIN",
+                        role = targetRole.name,
+                        actorName = localUser.displayName,
+                        phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                        deviceLabel = currentDeviceLabel(),
+                        details = "Invalid PIN entered for ${localUser.displayName}.",
+                        isAlert = true
+                    )
+                    val remainingMsg = failInfo?.let { (attempts, lockedUntil) ->
+                        if (lockedUntil > System.currentTimeMillis()) {
+                            " Account temporarily locked for 15 minutes."
+                        } else {
+                            val left = (InventoryRepository.MAX_PIN_ATTEMPTS - attempts).coerceAtLeast(1)
+                            " ($left attempt(s) remaining)."
+                        }
+                    }.orEmpty()
+                    _loginError.value = "Invalid PIN for ${targetRole.name} '${localUser.displayName}'.${remainingMsg}"
                 }
             } finally {
                 _isAuthenticating.value = false
@@ -1530,6 +1625,11 @@ class AppViewModel(
         viewModelScope.launch {
             _isAuthenticating.value = true
             try {
+                val existingDevice = repository.getRegisteredDeviceById(currentDeviceId())
+                if (existingDevice != null && existingDevice.isRevoked && existingDevice.role == UserRole.OWNER_VIEW) {
+                    _loginError.value = "This device session was revoked. Complete UAE Mobile + SMS OTP + Existing Owner PIN registration first."
+                    return@launch
+                }
                 val savedHash = sessionPreferences?.ownerViewPasswordHashFlow?.first().orEmpty()
                 if (savedHash.isBlank()) {
                     _loginError.value = "Owner View PIN has not been created yet."
@@ -1617,14 +1717,16 @@ class AppViewModel(
 
     fun resetPhoneOtpState() {
         phoneOtpAuthManager.reset()
+        _firstTimeRegState.value = FirstTimeRegUiState()
         _loginError.value = null
     }
 
-    fun startUaePhoneOtp(activity: Activity, rawPhone: String) {
+    fun startUaePhoneOtp(activity: Activity, rawPhone: String, isResend: Boolean = false) {
         val normalized = UaePhoneValidator.normalizeUaePhone(rawPhone)
         if (normalized == null) {
             val msg = "Enter a valid UAE mobile number (+971 5X XXX XXXX)."
             _loginError.value = msg
+            _firstTimeRegState.value = _firstTimeRegState.value.copy(error = msg)
             phoneOtpAuthManager.setError(rawPhone, msg)
             return
         }
@@ -1633,6 +1735,7 @@ class AppViewModel(
             if (authorized == null || !authorized.isActive) {
                 val msg = "This UAE mobile number is not authorized. Contact Admin to register access."
                 _loginError.value = msg
+                _firstTimeRegState.value = FirstTimeRegUiState(error = msg)
                 phoneOtpAuthManager.setError(normalized, msg)
                 repository.logSecurityEvent(
                     eventType = "UNAUTHORIZED_MOBILE_ATTEMPT",
@@ -1640,20 +1743,56 @@ class AppViewModel(
                     actorName = "Unregistered Device",
                     phoneE164 = normalized,
                     deviceLabel = currentDeviceLabel(),
-                    details = "Blocked login attempt from unregistered or deactivated UAE mobile $normalized.",
+                    details = "Blocked first-time registration attempt from unregistered or deactivated UAE mobile $normalized.",
                     isAlert = true
                 )
                 return@launch
             }
+            if (!authorized.firstTimeRegEnabled) {
+                val msg = "First-time device registration is disabled for this mobile number. Ask Admin to enable registration."
+                _loginError.value = msg
+                _firstTimeRegState.value = FirstTimeRegUiState(error = msg)
+                phoneOtpAuthManager.setError(normalized, msg)
+                repository.logSecurityEvent(
+                    eventType = "REGISTRATION_DISABLED_BLOCKED",
+                    role = authorized.role.name,
+                    actorName = authorized.displayName,
+                    phoneE164 = normalized,
+                    deviceLabel = currentDeviceLabel(),
+                    details = "Blocked OTP request because first-time registration is disabled by Admin.",
+                    isAlert = true
+                )
+                return@launch
+            }
+            val nowMs = System.currentTimeMillis()
+            if (authorized.lockedUntilMs > nowMs) {
+                val waitMins = ((authorized.lockedUntilMs - nowMs) / 60_000L).coerceAtLeast(1L)
+                val msg = "Account temporarily locked due to failed attempts. Try again in ${waitMins}m."
+                _loginError.value = msg
+                _firstTimeRegState.value = FirstTimeRegUiState(error = msg)
+                phoneOtpAuthManager.setError(normalized, msg)
+                return@launch
+            }
+
             _loginError.value = null
+            _firstTimeRegState.value = FirstTimeRegUiState(
+                step = FirstTimeRegStep.OTP_VERIFY,
+                normalizedPhone = normalized,
+                matchedMobileId = authorized.id,
+                matchedDisplayName = authorized.displayName,
+                matchedRole = authorized.role,
+                matchedStaffUserId = authorized.staffUserId
+            )
             phoneOtpAuthManager.sendOtp(
                 activity = activity,
                 normalizedPhoneE164 = normalized,
+                isResend = isResend,
                 onAutoVerified = { verifiedPhone ->
-                    completeAuthorizedPhoneLogin(verifiedPhone)
+                    onOtpVerifiedForFirstTimeRegistration(verifiedPhone)
                 },
                 onFailure = { errMsg ->
                     _loginError.value = errMsg
+                    _firstTimeRegState.value = _firstTimeRegState.value.copy(error = errMsg)
                     viewModelScope.launch {
                         repository.logSecurityEvent(
                             eventType = "OTP_SEND_FAILED",
@@ -1674,15 +1813,16 @@ class AppViewModel(
         phoneOtpAuthManager.verifyOtpCode(
             code = code,
             onVerified = { verifiedPhone ->
-                completeAuthorizedPhoneLogin(verifiedPhone)
+                onOtpVerifiedForFirstTimeRegistration(verifiedPhone)
             },
             onFailure = { errMsg ->
                 _loginError.value = errMsg
+                _firstTimeRegState.value = _firstTimeRegState.value.copy(error = errMsg)
                 viewModelScope.launch {
                     repository.logSecurityEvent(
                         eventType = "FAILED_OTP_VERIFY",
-                        role = "UNKNOWN",
-                        actorName = "OTP Verification",
+                        role = _firstTimeRegState.value.matchedRole?.name ?: "UNKNOWN",
+                        actorName = _firstTimeRegState.value.matchedDisplayName.ifBlank { "OTP Verification" },
                         phoneE164 = phoneOtpState.value.normalizedPhone,
                         deviceLabel = currentDeviceLabel(),
                         details = errMsg.take(250),
@@ -1693,52 +1833,186 @@ class AppViewModel(
         )
     }
 
-    private fun completeAuthorizedPhoneLogin(normalizedPhone: String) {
+    /**
+     * Step 2 -> Step 3 of First-Time Device Registration (Owner & Staff):
+     * After SMS OTP verification succeeds, match the EXISTING authorized account without creating
+     * duplicate accounts or generating/replacing PINs, then require the user's ALREADY ASSIGNED
+     * individual PIN to complete registration and unlock their role dashboard.
+     */
+    fun onOtpVerifiedForFirstTimeRegistration(normalizedPhone: String) {
         viewModelScope.launch {
             val authorized = repository.findAuthorizedMobileByPhone(normalizedPhone)
             if (authorized == null || !authorized.isActive) {
-                _loginError.value = "Mobile authorization was revoked. Contact Admin."
+                val msg = "Mobile authorization is missing or revoked. Contact Admin."
+                _loginError.value = msg
+                _firstTimeRegState.value = FirstTimeRegUiState(error = msg)
                 return@launch
             }
-            val session: AuthSession = when (authorized.role) {
-                UserRole.OWNER_VIEW -> buildOwnerViewSession()
-                UserRole.ADMIN -> {
-                    val adminUser = users.value.firstOrNull { it.role == UserRole.ADMIN }
-                        ?: return@launch
-                    AuthSession(user = adminUser, assignedVehicle = null)
-                }
-                UserRole.STAFF -> {
-                    val staffUser = authorized.staffUserId?.let { id -> users.value.firstOrNull { it.id == id && it.isActive } }
-                        ?: users.value.firstOrNull { it.role == UserRole.STAFF && it.displayName.equals(authorized.displayName, ignoreCase = true) && it.isActive }
-                        ?: run {
-                            _loginError.value = "No active Staff account is linked to ${UaePhoneValidator.formatDisplay(normalizedPhone)}."
-                            return@launch
-                        }
-                    val vehicle = vehicles.value.firstOrNull { it.staffUserId == staffUser.id }
-                    AuthSession(user = staffUser, assignedVehicle = vehicle)
-                }
+            if (!authorized.firstTimeRegEnabled) {
+                val msg = "First-time registration is currently disabled for this mobile number."
+                _loginError.value = msg
+                _firstTimeRegState.value = FirstTimeRegUiState(error = msg)
+                return@launch
             }
-            repository.registerOrTouchDevice(
-                deviceId = currentDeviceId(),
-                deviceLabel = currentDeviceLabel(),
-                phoneE164 = normalizedPhone,
-                userId = session.user.id,
-                displayName = session.user.displayName,
-                role = session.user.role
-            )
+            val nowMs = System.currentTimeMillis()
             repository.logSecurityEvent(
-                eventType = "UAE_OTP_LOGIN_SUCCESS",
-                role = session.user.role.name,
-                actorName = session.user.displayName,
+                eventType = "OTP_VERIFIED_AWAITING_PIN",
+                role = authorized.role.name,
+                actorName = authorized.displayName,
                 phoneE164 = normalizedPhone,
                 deviceLabel = currentDeviceLabel(),
-                details = "Authenticated via UAE +971 Firebase SMS OTP.",
+                details = "SMS OTP verified; awaiting existing individual PIN verification to register device.",
                 isAlert = false
             )
-            _authSession.value = session
+            _firstTimeRegState.value = FirstTimeRegUiState(
+                step = FirstTimeRegStep.EXISTING_PIN_VERIFY,
+                normalizedPhone = normalizedPhone,
+                matchedMobileId = authorized.id,
+                matchedDisplayName = authorized.displayName,
+                matchedRole = authorized.role,
+                matchedStaffUserId = authorized.staffUserId,
+                otpVerifiedAtMs = nowMs,
+                error = null,
+                isBusy = false
+            )
             _loginError.value = null
-            _selectedDate.value = InventoryRepository.todayIsoDate()
-            phoneOtpAuthManager.reset()
+        }
+    }
+
+    /**
+     * Step 3 of First-Time Device Registration:
+     * Verifies the user's ALREADY ASSIGNED individual PIN against the existing account (NEVER creates
+     * a new account or replaces/overwrites the PIN), marks the mobile & device as registered, and
+     * opens the role dashboard. Subsequent logins on this device require PIN only until revoked.
+     */
+    fun completeFirstTimeRegistrationWithExistingPin(pinInput: String) {
+        val current = _firstTimeRegState.value
+        if (current.step != FirstTimeRegStep.EXISTING_PIN_VERIFY || current.isBusy) return
+        val cleanPin = pinInput.trim()
+        if (cleanPin.length != 4 || !cleanPin.all { it.isDigit() }) {
+            val msg = "Enter your existing 4-digit individual PIN."
+            _firstTimeRegState.value = current.copy(error = msg)
+            _loginError.value = msg
+            return
+        }
+        viewModelScope.launch {
+            _firstTimeRegState.value = current.copy(isBusy = true, error = null)
+            try {
+                val authorized = repository.findAuthorizedMobileByPhone(current.normalizedPhone)
+                if (authorized == null || !authorized.isActive) {
+                    val msg = "Mobile authorization was revoked. Contact Admin."
+                    _firstTimeRegState.value = current.copy(isBusy = false, error = msg)
+                    _loginError.value = msg
+                    return@launch
+                }
+                val nowMs = System.currentTimeMillis()
+                if (authorized.lockedUntilMs > nowMs) {
+                    val waitMins = ((authorized.lockedUntilMs - nowMs) / 60_000L).coerceAtLeast(1L)
+                    val msg = "Too many failed PIN attempts. Account locked for ${waitMins}m."
+                    _firstTimeRegState.value = current.copy(isBusy = false, error = msg)
+                    _loginError.value = msg
+                    return@launch
+                }
+
+                val verifiedSession: AuthSession? = when (authorized.role) {
+                    UserRole.OWNER_VIEW -> {
+                        val savedHash = sessionPreferences?.ownerViewPasswordHashFlow?.first().orEmpty()
+                        val pinMatches = savedHash.isNotBlank() && withContext(Dispatchers.Default) {
+                            AdminCredentialCrypto.verifyPassword(cleanPin, savedHash)
+                        }
+                        if (pinMatches) buildOwnerViewSession() else null
+                    }
+                    UserRole.ADMIN -> {
+                        val adminUser = repository.usersFlow.first().firstOrNull { it.role == UserRole.ADMIN && it.isActive }
+                        if (adminUser != null && repository.verifyUserPin(adminUser, cleanPin)) {
+                            AuthSession(user = adminUser, assignedVehicle = null)
+                        } else {
+                            null
+                        }
+                    }
+                    UserRole.STAFF -> {
+                        val allUsers = repository.usersFlow.first()
+                        val staffUser = authorized.staffUserId?.let { id -> allUsers.firstOrNull { it.id == id && it.isActive } }
+                            ?: allUsers.firstOrNull { it.role == UserRole.STAFF && it.displayName.equals(authorized.displayName, ignoreCase = true) && it.isActive }
+                        if (staffUser != null) {
+                            repository.authenticate(staffUser.id, cleanPin, UserRole.STAFF)
+                        } else {
+                            null
+                        }
+                    }
+                }
+
+                if (verifiedSession == null) {
+                    val (attempts, lockedUntil) = repository.recordMobilePinFailure(authorized.id)
+                    repository.logSecurityEvent(
+                        eventType = "FAILED_FIRST_TIME_PIN",
+                        role = authorized.role.name,
+                        actorName = authorized.displayName,
+                        phoneE164 = authorized.phoneE164,
+                        deviceLabel = currentDeviceLabel(),
+                        details = "Incorrect existing individual PIN during first-time registration (attempt $attempts/${InventoryRepository.MAX_PIN_ATTEMPTS}).",
+                        isAlert = true
+                    )
+                    val msg = if (lockedUntil > System.currentTimeMillis()) {
+                        "Too many failed PIN attempts. Account locked for 15 minutes."
+                    } else {
+                        val left = (InventoryRepository.MAX_PIN_ATTEMPTS - attempts).coerceAtLeast(1)
+                        "Incorrect existing individual PIN ($left attempt(s) remaining)."
+                    }
+                    _firstTimeRegState.value = current.copy(isBusy = false, error = msg)
+                    _loginError.value = msg
+                    return@launch
+                }
+
+                val devId = currentDeviceId()
+                val devLabel = currentDeviceLabel()
+                repository.markMobileRegistered(
+                    mobileId = authorized.id,
+                    deviceId = devId,
+                    otpVerifiedAtMs = current.otpVerifiedAtMs.takeIf { it > 0L } ?: nowMs
+                )
+                repository.registerOrTouchDevice(
+                    deviceId = devId,
+                    deviceLabel = devLabel,
+                    phoneE164 = authorized.phoneE164,
+                    userId = verifiedSession.user.id,
+                    displayName = verifiedSession.user.displayName,
+                    role = verifiedSession.user.role
+                )
+                repository.logSecurityEvent(
+                    eventType = "FIRST_TIME_DEVICE_REGISTERED",
+                    role = verifiedSession.user.role.name,
+                    actorName = verifiedSession.user.displayName,
+                    phoneE164 = authorized.phoneE164,
+                    deviceLabel = devLabel,
+                    details = "First-time device registration completed (UAE Mobile + SMS OTP + Existing Individual PIN). Next logins require PIN only.",
+                    isAlert = false
+                )
+                if (autoLoginEnabled.value) {
+                    sessionPreferences?.saveLoggedInUserId(verifiedSession.user.id, verifiedSession.user.role)
+                }
+                sessionPreferences?.armBiometricUnlock(
+                    userId = verifiedSession.user.id,
+                    role = verifiedSession.user.role,
+                    displayName = verifiedSession.user.displayName
+                )
+                _authSession.value = verifiedSession
+                _loginError.value = null
+                _selectedDate.value = InventoryRepository.todayIsoDate()
+                if (verifiedSession.assignedVehicle != null) {
+                    _selectedVehicleId.value = verifiedSession.assignedVehicle.id
+                }
+                if (verifiedSession.user.role == UserRole.STAFF) {
+                    emitStaffLoginNotification(verifiedSession)
+                }
+                _firstTimeRegState.value = FirstTimeRegUiState(step = FirstTimeRegStep.COMPLETED)
+                phoneOtpAuthManager.reset()
+                _snackbarMessage.value = "Device registered for ${verifiedSession.user.displayName}. Future logins on this device require PIN only."
+            } finally {
+                if (_firstTimeRegState.value.step != FirstTimeRegStep.COMPLETED) {
+                    _firstTimeRegState.value = _firstTimeRegState.value.copy(isBusy = false)
+                }
+            }
         }
     }
 
@@ -3326,14 +3600,96 @@ class AppViewModel(
         }
     }
 
-    fun addProduct(category: ProductCategory, name: String, cylinderSizeKg: String = "") {
+    fun createCategory(
+        name: String,
+        description: String = "",
+        iconKey: String = "GAS_CYLINDER",
+        categoryType: String = "INDUSTRIAL_REGULAR",
+        isActive: Boolean = true
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can create category folders.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.createCategory(
+                name = name,
+                description = description,
+                iconKey = iconKey,
+                categoryType = categoryType,
+                isActive = isActive,
+                actor = session.user
+            )
+            handleOperationResult(result)
+        }
+    }
+
+    fun updateCategory(
+        categoryId: Long,
+        name: String,
+        description: String,
+        iconKey: String,
+        categoryType: String,
+        isActive: Boolean
+    ) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can edit category folders.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.updateCategory(
+                categoryId = categoryId,
+                name = name,
+                description = description,
+                iconKey = iconKey,
+                categoryType = categoryType,
+                isActive = isActive,
+                actor = session.user
+            )
+            handleOperationResult(result)
+        }
+    }
+
+    fun toggleCategoryActive(category: ProductCategoryEntity) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can activate or deactivate categories.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.toggleCategoryActive(category, session.user)
+            handleOperationResult(result)
+        }
+    }
+
+    fun addProduct(
+        category: ProductCategory,
+        name: String,
+        cylinderSizeKg: String = "",
+        categoryId: Long = category.defaultCategoryId,
+        unit: String = "Cylinder",
+        description: String = "",
+        iconKey: String = "CYLINDER",
+        isActive: Boolean = true
+    ) {
         val session = _authSession.value ?: return
         if (session.user.role != UserRole.ADMIN) {
             _warningAlert.value = WarningAlert("Admin Only", "Only Admin can add gas products.")
             return
         }
         viewModelScope.launch {
-            val result = repository.addProduct(category, name, cylinderSizeKg)
+            val result = repository.addProduct(
+                category = category,
+                name = name,
+                cylinderSizeKg = cylinderSizeKg,
+                categoryId = categoryId,
+                unit = unit,
+                description = description,
+                iconKey = iconKey,
+                isActive = isActive
+            )
             handleOperationResult(result)
         }
     }
@@ -3343,7 +3699,11 @@ class AppViewModel(
         category: ProductCategory,
         name: String,
         cylinderSizeKg: String,
-        isActive: Boolean
+        isActive: Boolean,
+        categoryId: Long? = null,
+        unit: String? = null,
+        description: String? = null,
+        iconKey: String? = null
     ) {
         val session = _authSession.value ?: return
         if (session.user.role != UserRole.ADMIN) {
@@ -3357,7 +3717,11 @@ class AppViewModel(
                 name = name,
                 cylinderSizeKg = cylinderSizeKg,
                 isActive = isActive,
-                actor = session.user
+                actor = session.user,
+                categoryId = categoryId,
+                unit = unit,
+                description = description,
+                iconKey = iconKey
             )
             handleOperationResult(result)
         }
@@ -3482,7 +3846,9 @@ class AppViewModel(
         staffUserId: Long?,
         allowedFeatures: Set<StaffFeaturePermission>,
         isActive: Boolean = true,
-        isProtectedOwner: Boolean = false
+        isProtectedOwner: Boolean = false,
+        mobileId: Long? = null,
+        firstTimeRegEnabled: Boolean = true
     ) {
         val session = _authSession.value ?: return
         if (session.user.role != UserRole.ADMIN) {
@@ -3498,8 +3864,22 @@ class AppViewModel(
                 allowedFeatures = allowedFeatures,
                 isActive = isActive,
                 isProtectedOwner = isProtectedOwner,
-                actor = session.user
+                actor = session.user,
+                mobileId = mobileId,
+                firstTimeRegEnabled = firstTimeRegEnabled
             )
+            handleOperationResult(result)
+        }
+    }
+
+    fun setStaffAccountActiveStatus(targetUserId: Long, isActive: Boolean) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can activate or deactivate accounts.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.setUserActiveStatus(targetUserId, isActive, session.user)
             handleOperationResult(result)
         }
     }
@@ -3587,7 +3967,9 @@ class AppViewModel(
         reportType: ReportType,
         vehicleFilterId: Long? = null,
         purchaseDailyMode: Boolean = false,
-        purchaseCompanyFilter: String? = null
+        purchaseCompanyFilter: String? = null,
+        exchangePeriod: ExchangePeriodFilter? = null,
+        exchangeSection: ExchangeSectionFilter = ExchangeSectionFilter.ALL
     ): ReportTable {
         val date = _selectedDate.value
         val ym = _selectedYearMonth.value
@@ -4297,16 +4679,74 @@ class AppViewModel(
 
             ReportType.LPG_EXCHANGE_REPORT -> {
                 val selectedVeh = vehicles.value.firstOrNull { it.id == vehicleFilterId }
-                val periodLabel = if (purchaseDailyMode) "Daily ($date)" else "Monthly ($ym)"
-                val filtered = differentGasReturns.value.filter { rec ->
-                    val periodMatch = if (purchaseDailyMode) rec.businessDate == date else rec.businessDate.startsWith(ym)
-                    val vehMatch = selectedVeh == null || rec.vehicleId == selectedVeh.id
-                    periodMatch && vehMatch
+                val effectivePeriod = exchangePeriod ?: if (purchaseDailyMode) ExchangePeriodFilter.DAILY else ExchangePeriodFilter.MONTHLY
+                val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                val anchorDateObj = runCatching { isoFmt.parse(date) }.getOrNull() ?: Date()
+                val weekStartIso = isoFmt.format(Date(anchorDateObj.time - 6L * 24L * 60L * 60L * 1000L))
+                val periodLabel = when (effectivePeriod) {
+                    ExchangePeriodFilter.DAILY -> "Daily ($date)"
+                    ExchangePeriodFilter.WEEKLY -> "Weekly ($weekStartIso to $date)"
+                    ExchangePeriodFilter.MONTHLY -> "Monthly ($ym)"
                 }
+                val productById = allProducts.value.associateBy { it.id }
+
+                fun recordCategories(rec: DifferentGasReturnEntity): Set<ProductCategory> {
+                    val cats = mutableSetOf<ProductCategory>()
+                    fun parseJson(json: String) {
+                        runCatching {
+                            val arr = org.json.JSONArray(json)
+                            for (i in 0 until arr.length()) {
+                                val obj = arr.getJSONObject(i)
+                                val pid = obj.optLong("productId", 0L)
+                                val p = productById[pid]
+                                if (p != null) {
+                                    cats.add(p.category)
+                                } else {
+                                    val cName = obj.optString("categoryName", "")
+                                    when {
+                                        cName.contains("48 CFT", ignoreCase = true) || cName.contains("Small", ignoreCase = true) -> cats.add(ProductCategory.SMALL_48_CFT)
+                                        cName.contains("Cutting", ignoreCase = true) || cName.contains("MCG", ignoreCase = true) -> cats.add(ProductCategory.MCG_CUTTING_GAS)
+                                        cName.contains("LPG", ignoreCase = true) || cName.contains("Cooking", ignoreCase = true) -> cats.add(ProductCategory.COOKING_GAS)
+                                        cName.isNotBlank() -> cats.add(ProductCategory.INDUSTRIAL_GAS)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    parseJson(rec.deliveredItemsJson)
+                    parseJson(rec.returnedItemsJson)
+                    return cats
+                }
+
+                val filtered = differentGasReturns.value.filter { rec ->
+                    val periodMatch = when (effectivePeriod) {
+                        ExchangePeriodFilter.DAILY -> rec.businessDate == date
+                        ExchangePeriodFilter.WEEKLY -> rec.businessDate in weekStartIso..date
+                        ExchangePeriodFilter.MONTHLY -> rec.businessDate.startsWith(ym)
+                    }
+                    val vehMatch = selectedVeh == null || rec.vehicleId == selectedVeh.id
+                    val cats = recordCategories(rec)
+                    val sectionMatch = when (exchangeSection) {
+                        ExchangeSectionFilter.ALL -> true
+                        ExchangeSectionFilter.LPG -> ProductCategory.COOKING_GAS in cats
+                        ExchangeSectionFilter.INDUSTRIAL_REGULAR -> ProductCategory.INDUSTRIAL_GAS in cats
+                        ExchangeSectionFilter.SMALL_48_CFT -> ProductCategory.SMALL_48_CFT in cats
+                        ExchangeSectionFilter.CUTTING_GAS -> ProductCategory.MCG_CUTTING_GAS in cats
+                        ExchangeSectionFilter.ARAB_GAS_RETURNS -> rec.returnedEmptyCompany.equals("Arab Gas", ignoreCase = true)
+                        ExchangeSectionFilter.EMIRATES_GAS_RETURNS -> rec.returnedEmptyCompany.equals("Emirates Gas", ignoreCase = true)
+                    }
+                    periodMatch && vehMatch && sectionMatch
+                }
+                val arabReturnsQty = filtered
+                    .filter { it.returnedEmptyCompany.equals("Arab Gas", ignoreCase = true) }
+                    .sumOf { it.totalReturnedQty }
+                val emiratesReturnsQty = filtered
+                    .filter { it.returnedEmptyCompany.equals("Emirates Gas", ignoreCase = true) }
+                    .sumOf { it.totalReturnedQty }
                 val timeFmt = SimpleDateFormat("dd MMM HH:mm", Locale.US)
                 ReportTable(
-                    reportTitle = "LPG & Gas Full / Empty Exchange Report",
-                    subtitle = "$periodLabel • ${selectedVeh?.name ?: "All Vehicles & Main Store"} • Returned Empty Companies: Arab Gas & Emirates Gas",
+                    reportTitle = "LPG & Industrial Gas Exchange Empty — ${exchangeSection.label}",
+                    subtitle = "$periodLabel • ${selectedVeh?.name ?: "All Vehicles & Store"} • Arab Gas Empty: $arabReturnsQty | Emirates Gas Empty: $emiratesReturnsQty",
                     generatedBy = actorName,
                     headers = listOf(
                         "Date/Time", "Customer", "Staff", "Vehicle", "Delivered Full", "Empty Co.", "Returned Empty", "Del Qty", "Ret Qty", "Notes"
@@ -4333,7 +4773,7 @@ class AppViewModel(
                         "",
                         "",
                         "",
-                        "",
+                        "A:$arabReturnsQty E:$emiratesReturnsQty",
                         "",
                         filtered.sumOf { it.totalDeliveredQty }.toString(),
                         filtered.sumOf { it.totalReturnedQty }.toString(),

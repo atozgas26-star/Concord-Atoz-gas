@@ -17,8 +17,9 @@ data class UserAccountEntity(
     val username: String,
     val displayName: String,
     val role: UserRole,
-    val pin: String,
-    val isActive: Boolean = true
+    val pin: String = "",
+    val isActive: Boolean = true,
+    val pinHash: String = ""
 )
 
 @Entity(
@@ -33,6 +34,25 @@ data class VehicleEntity(
 )
 
 @Entity(
+    tableName = "product_categories",
+    indices = [Index(value = ["code"], unique = true)]
+)
+data class ProductCategoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val code: String,
+    val name: String,
+    val description: String = "",
+    val iconKey: String = "INDUSTRIAL",
+    val categoryType: String = "INDUSTRIAL", // INDUSTRIAL, CUTTING, LPG, SMALL_48, CUSTOM
+    val legacyEnum: ProductCategory = ProductCategory.INDUSTRIAL_GAS,
+    val sortOrder: Int = 100,
+    val isActive: Boolean = true,
+    val isSystemDefault: Boolean = false,
+    val createdAtMs: Long = System.currentTimeMillis(),
+    val updatedAtMs: Long = System.currentTimeMillis()
+)
+
+@Entity(
     tableName = "products",
     indices = [Index(value = ["category", "name"], unique = true)]
 )
@@ -42,7 +62,11 @@ data class ProductEntity(
     val name: String,
     val sortOrder: Int = 0,
     val isActive: Boolean = true,
-    val cylinderSizeKg: String = ""
+    val cylinderSizeKg: String = "",
+    val categoryId: Long = category.defaultCategoryId,
+    val unit: String = "Cylinder",
+    val description: String = "",
+    val iconKey: String = "CYLINDER"
 )
 
 @Entity(
@@ -247,7 +271,13 @@ data class AuthorizedMobileEntity(
     val isActive: Boolean = true,
     val isProtectedOwner: Boolean = false,
     val createdAtMs: Long = System.currentTimeMillis(),
-    val updatedAtMs: Long = System.currentTimeMillis()
+    val updatedAtMs: Long = System.currentTimeMillis(),
+    val firstTimeRegEnabled: Boolean = true,
+    val isRegistered: Boolean = false,
+    val otpVerifiedAtMs: Long = 0L,
+    val registeredDeviceId: String = "",
+    val failedLoginAttempts: Int = 0,
+    val lockedUntilMs: Long = 0L
 )
 
 @Entity(

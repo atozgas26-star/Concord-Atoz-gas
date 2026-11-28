@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
+import androidx.compose.material.icons.filled.CreateNewFolder
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.model.ProductCategory
 import com.example.ui.theme.ArcticWhite
@@ -84,6 +86,276 @@ private val CYLINDER_SIZE_PRESETS = listOf(
     "47L", "48 CFT", "5 KG", "11 KG", "20 KG", "22 KG", "30 KG", "44 KG", "50L"
 )
 
+private val PRODUCT_UNIT_PRESETS = listOf(
+    "Cylinder", "KG", "CFT", "Litre", "Set"
+)
+
+private val CATEGORY_TYPE_PRESETS = listOf(
+    "INDUSTRIAL_REGULAR" to "Industrial Regular",
+    "CUTTING_GAS" to "Cutting Gas",
+    "LPG" to "LPG Gas",
+    "SMALL_48_CFT" to "48 CFT Small",
+    "CUSTOM" to "Custom Gas"
+)
+
+/**
+ * Admin-Only Dynamic Category Folder Editor Dialog (Part 1A & 1B).
+ * Supports CREATE NEW CATEGORY and Edit Category Folder with permanent Category ID preservation.
+ */
+@Composable
+fun CategoryEditorDialog(
+    existingCategory: ProductCategoryEntity? = null,
+    onDismiss: () -> Unit,
+    onSave: (name: String, description: String, iconKey: String, categoryType: String, isActive: Boolean) -> Unit
+) {
+    val isEdit = existingCategory != null
+    var name by remember(existingCategory) { mutableStateOf(existingCategory?.name.orEmpty()) }
+    var description by remember(existingCategory) { mutableStateOf(existingCategory?.description.orEmpty()) }
+    var iconKey by remember(existingCategory) { mutableStateOf(existingCategory?.iconKey ?: "INDUSTRIAL") }
+    var categoryType by remember(existingCategory) { mutableStateOf(existingCategory?.categoryType ?: "CUSTOM") }
+    var isActive by remember(existingCategory) { mutableStateOf(existingCategory?.isActive ?: true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = ArcticWhite,
+        unfocusedTextColor = ArcticWhite,
+        focusedContainerColor = ObsidianElevated.copy(alpha = 0.85f),
+        unfocusedContainerColor = ObsidianDeep.copy(alpha = 0.85f),
+        focusedBorderColor = ElectricBlueGlow,
+        unfocusedBorderColor = ObsidianBorder,
+        focusedLabelColor = ElectricBlueGlow,
+        unfocusedLabelColor = PlatinumMuted,
+        cursorColor = MetallicOrangeBright
+    )
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = ObsidianMidnight,
+            border = BorderStroke(
+                1.2.dp,
+                Brush.linearGradient(listOf(ElectricBlueGlow.copy(alpha = 0.7f), MetallicOrangeBright.copy(alpha = 0.65f)))
+            ),
+            shadowElevation = 18.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .widthIn(max = 520.dp)
+                .testTag("category_editor_dialog")
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Brush.horizontalGradient(listOf(ObsidianMidnight, Color(0xFF0E2A66))))
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (isEdit) Icons.Default.Edit else Icons.Default.CreateNewFolder,
+                            contentDescription = null,
+                            tint = MetallicOrangeBright,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = if (isEdit) "Edit Category Folder" else "Create New Category",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = ArcticWhite
+                            )
+                            if (isEdit && existingCategory != null) {
+                                Text(
+                                    text = "Permanent ID #${existingCategory.id} • Stock & history stay safe",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = PlatinumSilver
+                                )
+                            }
+                        }
+                    }
+                    Surface(shape = CircleShape, color = MetallicOrange, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = onDismiss, modifier = Modifier.testTag("category_editor_close")) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = ArcticWhite, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                SignatureAccentHairline(height = 2.dp)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            error = null
+                        },
+                        label = { Text("Category Name *") },
+                        placeholder = { Text("e.g., MEDICAL GAS, SPECIALTY GAS", color = PlatinumMuted) },
+                        singleLine = true,
+                        colors = fieldColors,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("category_editor_name_input")
+                    )
+
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it.take(240) },
+                        label = { Text("Category Description (Optional)") },
+                        placeholder = { Text("Short description for staff and reports", color = PlatinumMuted) },
+                        maxLines = 2,
+                        colors = fieldColors,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("category_editor_desc_input")
+                    )
+
+                    Text(
+                        text = "Category Icon",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = ElectricBlueGlow
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CATEGORY_ICON_OPTIONS.forEach { (key, label) ->
+                            val selected = iconKey.equals(key, ignoreCase = true)
+                            FilterChip(
+                                selected = selected,
+                                onClick = { iconKey = key },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = categoryIconForKey(key),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                },
+                                label = { Text(label, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = ObsidianElevated,
+                                    labelColor = PlatinumSilver,
+                                    selectedContainerColor = MetallicOrange,
+                                    selectedLabelColor = ArcticWhite
+                                )
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Category Type",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = ElectricBlueGlow
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CATEGORY_TYPE_PRESETS.forEach { (typeKey, typeLabel) ->
+                            FilterChip(
+                                selected = categoryType.equals(typeKey, ignoreCase = true),
+                                enabled = existingCategory?.isSystemDefault != true,
+                                onClick = { categoryType = typeKey },
+                                label = { Text(typeLabel, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = ObsidianElevated,
+                                    labelColor = PlatinumSilver,
+                                    selectedContainerColor = ElectricBlueBright,
+                                    selectedLabelColor = ArcticWhite
+                                )
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = ObsidianElevated,
+                        border = BorderStroke(1.dp, ObsidianBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isActive) "Status: Active" else "Status: Inactive",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isActive) Color(0xFF34D399) else MetallicOrangeBright
+                                )
+                                Text(
+                                    text = "Inactive categories stay hidden from quick pickers while preserving history.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = PlatinumMuted
+                                )
+                            }
+                            Switch(
+                                checked = isActive,
+                                onCheckedChange = { isActive = it },
+                                modifier = Modifier.testTag("category_editor_active_switch")
+                            )
+                        }
+                    }
+
+                    if (error != null) {
+                        Text(error!!, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFCA5A5))
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, ObsidianBorder),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Cancel", color = PlatinumSilver)
+                        }
+                        Button(
+                            onClick = {
+                                if (name.trim().isEmpty()) {
+                                    error = "Category name is required."
+                                    return@Button
+                                }
+                                onSave(name.trim(), description.trim(), iconKey, categoryType, isActive)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .testTag("category_editor_save_button")
+                        ) {
+                            Text(if (isEdit) "Save Folder" else "Create Category", fontWeight = FontWeight.Bold, color = ArcticWhite)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * Admin-Only Product Editor Dialog supporting BOTH Add New Product and Edit Existing Product
  * (name, category, cylinder size / KG, and active/inactive toggle).
@@ -92,15 +364,29 @@ private val CYLINDER_SIZE_PRESETS = listOf(
 fun ProductEditorDialog(
     existingProduct: ProductEntity? = null,
     initialCategory: ProductCategory = ProductCategory.INDUSTRIAL_GAS,
+    categories: List<ProductCategoryEntity> = emptyList(),
+    initialCategoryId: Long? = null,
     onDismiss: () -> Unit,
-    onSave: (category: ProductCategory, name: String, cylinderSizeKg: String, isActive: Boolean) -> Unit
+    onSave: (category: ProductCategory, name: String, cylinderSizeKg: String, isActive: Boolean) -> Unit = { _, _, _, _ -> },
+    onSaveExtended: ((category: ProductCategory, categoryId: Long, name: String, cylinderSizeKg: String, unit: String, description: String, iconKey: String, isActive: Boolean) -> Unit)? = null
 ) {
     val isEdit = existingProduct != null
-    var category by remember(existingProduct, initialCategory) {
-        mutableStateOf(existingProduct?.category ?: initialCategory)
+    var selectedCategoryId by remember(existingProduct, initialCategoryId, initialCategory) {
+        mutableStateOf(
+            existingProduct?.categoryId
+                ?: initialCategoryId
+                ?: initialCategory.defaultCategoryId
+        )
+    }
+    var category by remember(existingProduct, initialCategory, categories) {
+        val matched = categories.firstOrNull { it.id == selectedCategoryId }
+        mutableStateOf(matched?.legacyEnum ?: existingProduct?.category ?: initialCategory)
     }
     var name by remember(existingProduct) { mutableStateOf(existingProduct?.name.orEmpty()) }
     var cylinderSizeKg by remember(existingProduct) { mutableStateOf(existingProduct?.cylinderSizeKg.orEmpty()) }
+    var unit by remember(existingProduct) { mutableStateOf(existingProduct?.unit?.ifBlank { "Cylinder" } ?: "Cylinder") }
+    var description by remember(existingProduct) { mutableStateOf(existingProduct?.description.orEmpty()) }
+    var iconKey by remember(existingProduct) { mutableStateOf(existingProduct?.iconKey?.ifBlank { "CYLINDER" } ?: "CYLINDER") }
     var isActive by remember(existingProduct) { mutableStateOf(existingProduct?.isActive ?: true) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -134,7 +420,6 @@ fun ProductEditorDialog(
                 .testTag("product_editor_dialog")
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Header
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -152,7 +437,7 @@ fun ProductEditorDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = if (isEdit) "Edit Gas Product" else "Add New Gas Product",
+                            text = if (isEdit) "Edit Gas Product" else "Add New Product",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = ArcticWhite
@@ -174,7 +459,7 @@ fun ProductEditorDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Gas Category",
+                        text = "Category Folder",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = ElectricBlueGlow
@@ -185,21 +470,46 @@ fun ProductEditorDialog(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        ProductCategory.activeEntries.forEach { cat ->
-                            val isSel = category == cat
-                            val catStyle = categoryVisualStyle(cat)
-                            FilterChip(
-                                selected = isSel,
-                                onClick = { category = cat },
-                                label = { Text(cat.displayName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = ObsidianElevated,
-                                    labelColor = PlatinumSilver,
-                                    selectedContainerColor = catStyle.primaryColor,
-                                    selectedLabelColor = ArcticWhite
-                                ),
-                                modifier = Modifier.testTag("product_cat_chip_${cat.name.lowercase()}")
-                            )
+                        if (categories.isNotEmpty()) {
+                            categories.forEach { folder ->
+                                val isSel = selectedCategoryId == folder.id
+                                val catStyle = categoryVisualStyle(folder.legacyEnum)
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = {
+                                        selectedCategoryId = folder.id
+                                        category = folder.legacyEnum
+                                    },
+                                    label = { Text(folder.name, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = ObsidianElevated,
+                                        labelColor = PlatinumSilver,
+                                        selectedContainerColor = catStyle.primaryColor,
+                                        selectedLabelColor = ArcticWhite
+                                    ),
+                                    modifier = Modifier.testTag("product_folder_chip_${folder.id}")
+                                )
+                            }
+                        } else {
+                            ProductCategory.activeEntries.forEach { cat ->
+                                val isSel = category == cat
+                                val catStyle = categoryVisualStyle(cat)
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = {
+                                        category = cat
+                                        selectedCategoryId = cat.defaultCategoryId
+                                    },
+                                    label = { Text(cat.displayName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = ObsidianElevated,
+                                        labelColor = PlatinumSilver,
+                                        selectedContainerColor = catStyle.primaryColor,
+                                        selectedLabelColor = ArcticWhite
+                                    ),
+                                    modifier = Modifier.testTag("product_cat_chip_${cat.name.lowercase()}")
+                                )
+                            }
                         }
                     }
 
@@ -210,7 +520,7 @@ fun ProductEditorDialog(
                             error = null
                         },
                         label = { Text("Product Name *") },
-                        placeholder = { Text("e.g., Oxygen, Argon Mix, CO2 30kg, LPG 22kg", color = PlatinumMuted) },
+                        placeholder = { Text("e.g., Oxygen, MCG 22 KG, 11 KG, Oxygen 48 CFT", color = PlatinumMuted) },
                         singleLine = true,
                         colors = fieldColors,
                         modifier = Modifier
@@ -218,17 +528,54 @@ fun ProductEditorDialog(
                             .testTag("product_editor_name_input")
                     )
 
-                    OutlinedTextField(
-                        value = cylinderSizeKg,
-                        onValueChange = { cylinderSizeKg = it.take(24) },
-                        label = { Text("Cylinder Size / KG") },
-                        placeholder = { Text("e.g., 47L, 48 CFT, 20 KG, 30 KG, 44 KG", color = PlatinumMuted) },
-                        singleLine = true,
-                        colors = fieldColors,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = cylinderSizeKg,
+                            onValueChange = { cylinderSizeKg = it.take(30) },
+                            label = { Text("Product Size") },
+                            placeholder = { Text("e.g., 47L, 48 CFT, 22 KG", color = PlatinumMuted) },
+                            singleLine = true,
+                            colors = fieldColors,
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .testTag("product_editor_size_input")
+                        )
+                        OutlinedTextField(
+                            value = unit,
+                            onValueChange = { unit = it.take(24) },
+                            label = { Text("Unit") },
+                            placeholder = { Text("KG / Cylinder / CFT", color = PlatinumMuted) },
+                            singleLine = true,
+                            colors = fieldColors,
+                            modifier = Modifier
+                                .weight(0.9f)
+                                .testTag("product_editor_unit_input")
+                        )
+                    }
+
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("product_editor_size_input")
-                    )
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        PRODUCT_UNIT_PRESETS.forEach { u ->
+                            FilterChip(
+                                selected = unit.equals(u, ignoreCase = true),
+                                onClick = { unit = u },
+                                label = { Text(u, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = ObsidianElevated,
+                                    labelColor = PlatinumSilver,
+                                    selectedContainerColor = ElectricBlueBright,
+                                    selectedLabelColor = ArcticWhite
+                                )
+                            )
+                        }
+                    }
 
                     Row(
                         modifier = Modifier
@@ -251,39 +598,73 @@ fun ProductEditorDialog(
                         }
                     }
 
-                    if (isEdit) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = ObsidianElevated,
-                            border = BorderStroke(1.dp, ObsidianBorder),
-                            modifier = Modifier.fillMaxWidth()
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it.take(240) },
+                        label = { Text("Product Description (Optional)") },
+                        placeholder = { Text("Specs, pressure, or handling notes", color = PlatinumMuted) },
+                        maxLines = 2,
+                        colors = fieldColors,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("product_editor_desc_input")
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CATEGORY_ICON_OPTIONS.take(6).forEach { (key, label) ->
+                            FilterChip(
+                                selected = iconKey.equals(key, ignoreCase = true),
+                                onClick = { iconKey = key },
+                                leadingIcon = {
+                                    Icon(categoryIconForKey(key), contentDescription = null, modifier = Modifier.size(14.dp))
+                                },
+                                label = { Text(label, fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = ObsidianElevated,
+                                    labelColor = PlatinumSilver,
+                                    selectedContainerColor = MetallicOrange,
+                                    selectedLabelColor = ArcticWhite
+                                )
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = ObsidianElevated,
+                        border = BorderStroke(1.dp, ObsidianBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = if (isActive) "Product Active" else "Product Inactive",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isActive) Color(0xFF34D399) else MetallicOrangeBright
-                                    )
-                                    Text(
-                                        text = "Inactive products stay hidden from new entries while preserving history.",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = PlatinumMuted
-                                    )
-                                }
-                                Switch(
-                                    checked = isActive,
-                                    onCheckedChange = { isActive = it },
-                                    modifier = Modifier.testTag("product_editor_active_switch")
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isActive) "Product Active" else "Product Inactive",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isActive) Color(0xFF34D399) else MetallicOrangeBright
+                                )
+                                Text(
+                                    text = "Active products appear across Store, Vehicle, Purchase, Sales, Exchange & Reports.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = PlatinumMuted
                                 )
                             }
+                            Switch(
+                                checked = isActive,
+                                onCheckedChange = { isActive = it },
+                                modifier = Modifier.testTag("product_editor_active_switch")
+                            )
                         }
                     }
 
@@ -313,7 +694,20 @@ fun ProductEditorDialog(
                                     error = "Product name is required."
                                     return@Button
                                 }
-                                onSave(category, name.trim(), cylinderSizeKg.trim(), isActive)
+                                if (onSaveExtended != null) {
+                                    onSaveExtended(
+                                        category,
+                                        selectedCategoryId,
+                                        name.trim(),
+                                        cylinderSizeKg.trim(),
+                                        unit.trim().ifBlank { "Cylinder" },
+                                        description.trim(),
+                                        iconKey,
+                                        isActive
+                                    )
+                                } else {
+                                    onSave(category, name.trim(), cylinderSizeKg.trim(), isActive)
+                                }
                             },
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
@@ -393,7 +787,10 @@ fun AdminReorderableProductRow(
     onDragSwap: (deltaSteps: Int) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onToggleActive: () -> Unit
+    onToggleActive: () -> Unit,
+    categoryDisplayLabel: String? = null,
+    stockSummaryText: String? = null,
+    readOnly: Boolean = false
 ) {
     val catStyle = categoryVisualStyle(product.category)
     val isDark = LocalIsDarkTheme.current
@@ -518,9 +915,18 @@ fun AdminReorderableProductRow(
                             )
                             if (showCategoryLabel) {
                                 Text(
-                                    text = "• ${product.category.displayName}",
+                                    text = "• ${categoryDisplayLabel ?: product.category.displayName}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = catStyle.primaryColor
+                                    color = catStyle.primaryColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (product.unit.isNotBlank()) {
+                                Text(
+                                    text = "• ${product.unit}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             if (!product.isActive) {
@@ -532,16 +938,27 @@ fun AdminReorderableProductRow(
                                 )
                             }
                         }
+                        if (!stockSummaryText.isNullOrBlank()) {
+                            Text(
+                                text = stockSummaryText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMono,
+                                color = if (isDark) ElectricBlueGlow else MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
 
-                Switch(
-                    checked = product.isActive,
-                    onCheckedChange = { onToggleActive() },
-                    modifier = Modifier.testTag("product_active_switch_${product.id}")
-                )
+                if (!readOnly) {
+                    Switch(
+                        checked = product.isActive,
+                        onCheckedChange = { onToggleActive() },
+                        modifier = Modifier.testTag("product_active_switch_${product.id}")
+                    )
+                }
             }
 
+            if (!readOnly) {
             // Clear Admin Action Row: Move Up, Move Down, Edit, Delete
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -619,6 +1036,7 @@ fun AdminReorderableProductRow(
                         Text("Delete", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = BrandRedSecondary)
                     }
                 }
+            }
             }
         }
     }
