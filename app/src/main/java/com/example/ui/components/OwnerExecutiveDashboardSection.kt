@@ -175,23 +175,30 @@ fun OwnerExecutiveDashboardSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Futuristic 3D Executive Crown Banner
+        val isDarkOwner = com.example.ui.theme.LocalIsDarkTheme.current
         Surface(
             shape = RoundedCornerShape(22.dp),
-            color = DeepSpaceNavy,
+            color = if (isDarkOwner) DeepSpaceNavy else Color(0xFF1D63ED),
             border = BorderStroke(
                 1.4.dp,
-                Brush.linearGradient(listOf(ChromeSilverHighlight.copy(alpha = 0.7f), MoltenOrangeGlow, NeonCyanGlow))
+                Brush.linearGradient(listOf(ChromeSilverHighlight.copy(alpha = 0.85f), MoltenOrangeGlow, NeonCyanGlow))
             ),
-            shadowElevation = 14.dp,
+            shadowElevation = 10.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        Brush.horizontalGradient(
-                            listOf(CinematicMidnightBlack, DeepSpaceNavy, RoyalBlueDeep)
-                        )
+                        if (isDarkOwner) {
+                            Brush.horizontalGradient(
+                                listOf(CinematicMidnightBlack, DeepSpaceNavy, RoyalBlueDeep)
+                            )
+                        } else {
+                            Brush.horizontalGradient(
+                                listOf(Color(0xFF1D63ED), Color(0xFF2563EB), Color(0xFF3B82F6))
+                            )
+                        }
                     )
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)

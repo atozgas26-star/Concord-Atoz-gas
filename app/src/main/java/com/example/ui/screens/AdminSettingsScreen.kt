@@ -139,6 +139,7 @@ import com.example.ui.components.DynamicCategoryFolderStat
 import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.LuxurySectionHeader
 import com.example.ui.components.OpenedCategoryFolderHeader
+import com.example.ui.components.OpenedDynamicCategoryFolderHeader
 import com.example.ui.components.OpenedSectionFolderHeader
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.filled.DragIndicator
@@ -224,6 +225,7 @@ fun AdminSettingsScreen(
     onUpdatePin: (userId: Long, newPin: String) -> Unit,
     onCreateCategory: (name: String, description: String, iconKey: String, categoryType: String, isActive: Boolean) -> Unit = { _, _, _, _, _ -> },
     onUpdateCategory: (categoryId: Long, name: String, description: String, iconKey: String, categoryType: String, isActive: Boolean) -> Unit = { _, _, _, _, _, _ -> },
+    onMoveCategoryOrder: (categoryId: Long, delta: Int) -> Unit = { _, _ -> },
     onAddProduct: (ProductCategory, String, String) -> Unit,
     onAddProductExtended: ((category: ProductCategory, categoryId: Long, name: String, cylinderSizeKg: String, unit: String, description: String, iconKey: String, isActive: Boolean) -> Unit)? = null,
     onUpdateProduct: (productId: Long, category: ProductCategory, name: String, cylinderSizeKg: String, isActive: Boolean) -> Unit = { _, _, _, _, _ -> },
@@ -1301,6 +1303,10 @@ fun AdminSettingsScreen(
                                 hasUnsavedOrderChanges = false
                             },
                             onEditCategory = { cat -> editingCategory = cat },
+                            canReorder = true,
+                            onMoveCategoryUp = { catId -> onMoveCategoryOrder(catId, -1) },
+                            onMoveCategoryDown = { catId -> onMoveCategoryOrder(catId, 1) },
+                            onDragSwapCategory = { catId, delta -> onMoveCategoryOrder(catId, delta) },
                             sectionTitle = "Product Master Category Folders (${categories.size})"
                         )
                     } else {
@@ -1358,13 +1364,10 @@ fun AdminSettingsScreen(
                     if (useDynamicFolders && openedDynamicCategory != null) {
                         item(key = "product_master_opened_dynamic_${openedDynamicCategory.id}") {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OpenedSectionFolderHeader(
-                                    title = openedDynamicCategory.name,
+                                OpenedDynamicCategoryFolderHeader(
+                                    category = openedDynamicCategory,
+                                    itemCount = displayedProducts.size,
                                     subtitle = "${displayedProducts.count { it.isActive }} active / ${displayedProducts.size} total • ID #${openedDynamicCategory.id}",
-                                    accentColor = ElectricBlueBright,
-                                    containerColor = ObsidianDeep,
-                                    onContainerColor = ArcticWhite,
-                                    icon = categoryIconForKey(openedDynamicCategory.iconKey),
                                     onClose = {
                                         selectedDynamicCategoryId = null
                                         selectedProductCategory = null

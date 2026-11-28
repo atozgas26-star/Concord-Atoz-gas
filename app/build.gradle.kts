@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.concordgas.r8k4mz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 17
-    versionName = "5.0.0"
+    versionCode = 18
+    versionName = "5.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

@@ -50,12 +50,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.ProductCategory
 import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.DynamicCategoryFolderGrid
+import com.example.ui.components.DynamicCategoryFolderStat
 import com.example.ui.components.Futuristic3DCylinderVisual
 import com.example.ui.components.FuturisticSpaceBackdrop
 import com.example.ui.components.InsideOutsideScopeToggle
@@ -63,6 +66,7 @@ import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.LuxurySectionHeader
 import com.example.ui.components.OpenedCategoryFolderHeader
+import com.example.ui.components.OpenedDynamicCategoryFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.SignatureAccentHairline
 import com.example.ui.components.StockPill
@@ -95,6 +99,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 fun CompanyInventoryScreen(
     selectedDate: String,
     stockRows: List<CompanyStockRow>,
+    categories: List<ProductCategoryEntity> = emptyList(),
     isReadOnly: Boolean = false,
     onDateSelected: (String) -> Unit,
     onOpenProductMaster: () -> Unit,
@@ -105,14 +110,32 @@ fun CompanyInventoryScreen(
 
     var activeZone by remember { mutableStateOf(StockZoneScope.INSIDE_STORE) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var selectedDynamicCategoryId by remember { mutableStateOf<Long?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredRows = remember(stockRows, selectedCategory, searchQuery) {
+    val sortedCategories = remember(categories) {
+        categories.filter { it.isActive }.sortedWith(compareBy<ProductCategoryEntity> { it.sortOrder }.thenBy { it.id })
+    }
+    val useDynamicFolders = sortedCategories.isNotEmpty()
+    val categoryById = remember(categories) { categories.associateBy { it.id } }
+    val openedDynamicCategory = remember(sortedCategories, selectedDynamicCategoryId) {
+        sortedCategories.firstOrNull { it.id == selectedDynamicCategoryId }
+    }
+
+    val filteredRows = remember(stockRows, selectedCategory, openedDynamicCategory, useDynamicFolders, searchQuery, categoryById) {
         stockRows.filter { row ->
-            (selectedCategory == null || row.product.category == selectedCategory) &&
-                (searchQuery.isBlank() ||
-                    row.product.name.contains(searchQuery, ignoreCase = true) ||
-                    row.product.category.displayName.contains(searchQuery, ignoreCase = true))
+            val catMatch = if (useDynamicFolders) {
+                openedDynamicCategory == null ||
+                    row.product.categoryId == openedDynamicCategory.id ||
+                    (row.product.categoryId == 0L && row.product.category == openedDynamicCategory.legacyEnum)
+            } else {
+                selectedCategory == null || row.product.category == selectedCategory
+            }
+            val liveCatName = categoryById[row.product.categoryId]?.name ?: row.product.category.displayName
+            catMatch && (searchQuery.isBlank() ||
+                row.product.name.contains(searchQuery, ignoreCase = true) ||
+                liveCatName.contains(searchQuery, ignoreCase = true) ||
+                row.product.category.displayName.contains(searchQuery, ignoreCase = true))
         }
     }
 
@@ -120,6 +143,28 @@ fun CompanyInventoryScreen(
     val allInsideEmpty = remember(stockRows) { stockRows.sumOf { it.storeEmpty } }
     val allOutsideFull = remember(stockRows) { stockRows.sumOf { it.vehiclesFull } }
     val allOutsideEmpty = remember(stockRows) { stockRows.sumOf { it.vehiclesEmpty } }
+
+    val dynamicFolderStats = remember(stockRows, sortedCategories, activeZone) {
+        sortedCategories.map { cat ->
+            val catRows = stockRows.filter {
+                it.product.categoryId == cat.id || (it.product.categoryId == 0L && it.product.category == cat.legacyEnum)
+            }
+            DynamicCategoryFolderStat(
+                category = cat,
+                itemCount = catRows.size,
+                fullTotal = if (activeZone == StockZoneScope.INSIDE_STORE) {
+                    catRows.sumOf { it.storeFull }
+                } else {
+                    catRows.sumOf { it.vehiclesFull }
+                },
+                emptyTotal = if (activeZone == StockZoneScope.INSIDE_STORE) {
+                    catRows.sumOf { it.storeEmpty }
+                } else {
+                    catRows.sumOf { it.vehiclesEmpty }
+                }
+            )
+        }
+    }
 
     val folderStats = remember(stockRows, activeZone) {
         ProductCategory.activeEntries.map { cat ->
@@ -338,17 +383,30 @@ fun CompanyInventoryScreen(
             }
 
             item(key = "inv_category_folders") {
-                CategoryFolderGrid(
-                    stats = folderStats,
-                    selectedCategory = selectedCategory,
-                    onSelectCategory = { selectedCategory = it },
-                    sectionTitle = if (activeZone == StockZoneScope.INSIDE_STORE) {
-                        "Inside Store Category Folders"
-                    } else {
-                        "Outside Fleet Category Folders"
-                    },
-                    onMidnightBackground = isDark
-                )
+                val folderTitle = if (activeZone == StockZoneScope.INSIDE_STORE) {
+                    "Inside Store Category Folders"
+                } else {
+                    "Outside Fleet Category Folders"
+                }
+                if (useDynamicFolders) {
+                    DynamicCategoryFolderGrid(
+                        stats = dynamicFolderStats,
+                        selectedCategoryId = selectedDynamicCategoryId,
+                        onSelectCategoryId = { id ->
+                            selectedDynamicCategoryId = id
+                            selectedCategory = sortedCategories.firstOrNull { it.id == id }?.legacyEnum
+                        },
+                        sectionTitle = folderTitle
+                    )
+                } else {
+                    CategoryFolderGrid(
+                        stats = folderStats,
+                        selectedCategory = selectedCategory,
+                        onSelectCategory = { selectedCategory = it },
+                        sectionTitle = folderTitle,
+                        onMidnightBackground = isDark
+                    )
+                }
             }
 
             item(key = "inv_search") {
@@ -393,9 +451,22 @@ fun CompanyInventoryScreen(
                 }
             }
 
-            val showProducts = selectedCategory != null || searchQuery.isNotBlank()
+            val showProducts = (if (useDynamicFolders) openedDynamicCategory != null else selectedCategory != null) || searchQuery.isNotBlank()
             if (showProducts) {
-                selectedCategory?.let { openCat ->
+                if (useDynamicFolders && openedDynamicCategory != null) {
+                    item(key = "inv_opened_dynamic_${openedDynamicCategory.id}") {
+                        OpenedDynamicCategoryFolderHeader(
+                            category = openedDynamicCategory,
+                            itemCount = filteredRows.size,
+                            subtitle = (if (activeZone == StockZoneScope.INSIDE_STORE) "Inside Store" else "Outside Fleet") +
+                                " • ${filteredRows.size} products inside folder",
+                            onClose = {
+                                selectedDynamicCategoryId = null
+                                selectedCategory = null
+                            }
+                        )
+                    }
+                } else selectedCategory?.let { openCat ->
                     item(key = "inv_opened_folder_header_${openCat.name}") {
                         OpenedCategoryFolderHeader(
                             category = openCat,
@@ -449,8 +520,9 @@ fun CompanyInventoryScreen(
                                             color = if (isDarkCard) catStyle.darkContainer else catStyle.lightContainer,
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
+                                            val liveCategoryLabel = categoryById[row.product.categoryId]?.name ?: row.product.category.displayName
                                             Text(
-                                                text = row.product.category.displayName.uppercase(),
+                                                text = liveCategoryLabel.uppercase(),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (isDarkCard) catStyle.darkOnContainer else catStyle.lightOnContainer,
                                                 fontWeight = FontWeight.Bold,

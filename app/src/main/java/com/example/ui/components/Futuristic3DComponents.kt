@@ -56,6 +56,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.ui.theme.ArcticWhite
+import com.example.ui.theme.BrightIceBottom
+import com.example.ui.theme.BrightSilverTop
+import com.example.ui.theme.BrightSkyBlueMid
 import com.example.ui.theme.ChromeSilverHighlight
 import com.example.ui.theme.ChromeSilverMid
 import com.example.ui.theme.ChromeSilverShadow
@@ -64,6 +67,7 @@ import com.example.ui.theme.DeepSpaceNavy
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MoltenOrangeCore
@@ -103,6 +107,7 @@ fun FuturisticSpaceBackdrop(
 ) {
     val context = LocalContext.current
     val lightweight = remember(context) { isLightweightMotionMode(context) }
+    val isDark = LocalIsDarkTheme.current
 
     val infiniteTransition = rememberInfiniteTransition(label = "space_backdrop")
     val orbitPhase by if (lightweight || !showEnergyParticles) {
@@ -119,22 +124,36 @@ fun FuturisticSpaceBackdrop(
         )
     }
 
-    Box(modifier = modifier.background(CinematicMidnightBlack)) {
+    Box(modifier = modifier.background(if (isDark) CinematicMidnightBlack else BrightSilverTop)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
 
-            // Deep Space Midnight gradient
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        CinematicMidnightBlack,
-                        DeepSpaceNavy,
-                        Color(0xFF050C1F),
-                        CinematicMidnightBlack
+            if (isDark) {
+                // Deep Space Midnight gradient (only when Dark Mode is enabled)
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            CinematicMidnightBlack,
+                            DeepSpaceNavy,
+                            Color(0xFF050C1F),
+                            CinematicMidnightBlack
+                        )
                     )
                 )
-            )
+            } else {
+                // Bright Silver / Light Blue 3D Luxury Gradient
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            BrightSilverTop,
+                            BrightSkyBlueMid,
+                            Color(0xFFEEF5FF),
+                            BrightIceBottom
+                        )
+                    )
+                )
+            }
 
             // Volumetric Electric Blue top-left halo
             val blueCenter = Offset(
@@ -143,11 +162,19 @@ fun FuturisticSpaceBackdrop(
             )
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        NeonElectricBlue.copy(alpha = 0.24f),
-                        NeonCyanGlow.copy(alpha = 0.08f),
-                        Color.Transparent
-                    ),
+                    colors = if (isDark) {
+                        listOf(
+                            NeonElectricBlue.copy(alpha = 0.24f),
+                            NeonCyanGlow.copy(alpha = 0.08f),
+                            Color.Transparent
+                        )
+                    } else {
+                        listOf(
+                            ElectricBlueBright.copy(alpha = 0.14f),
+                            NeonCyanGlow.copy(alpha = 0.09f),
+                            Color.Transparent
+                        )
+                    },
                     center = blueCenter,
                     radius = w * 0.72f
                 ),
@@ -155,18 +182,26 @@ fun FuturisticSpaceBackdrop(
                 center = blueCenter
             )
 
-            // Volumetric Molten Metallic Orange bottom-right energy halo
+            // Volumetric Metallic Orange bottom-right luminous accent
             val orangeCenter = Offset(
                 x = w * (0.86f - 0.04f * cos(orbitPhase * 2f * PI).toFloat()),
                 y = h * 0.78f
             )
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        MoltenOrangeGlow.copy(alpha = 0.20f),
-                        MoltenOrangeCore.copy(alpha = 0.06f),
-                        Color.Transparent
-                    ),
+                    colors = if (isDark) {
+                        listOf(
+                            MoltenOrangeGlow.copy(alpha = 0.20f),
+                            MoltenOrangeCore.copy(alpha = 0.06f),
+                            Color.Transparent
+                        )
+                    } else {
+                        listOf(
+                            MetallicOrange.copy(alpha = 0.11f),
+                            MetallicOrangeBright.copy(alpha = 0.05f),
+                            Color.Transparent
+                        )
+                    },
                     center = orangeCenter,
                     radius = w * 0.65f
                 ),
@@ -174,33 +209,37 @@ fun FuturisticSpaceBackdrop(
                 center = orangeCenter
             )
 
-            // Subtle chrome architectural orbital arcs in background
+            // Subtle chrome architectural orbital arcs
             val arcCenter = Offset(w * 0.5f, h * 0.22f)
             drawCircle(
-                color = NeonCyanGlow.copy(alpha = 0.06f),
+                color = if (isDark) NeonCyanGlow.copy(alpha = 0.06f) else ElectricBlueBright.copy(alpha = 0.08f),
                 radius = w * 0.62f,
                 center = arcCenter,
                 style = Stroke(width = 1.dp.toPx())
             )
             drawCircle(
-                color = MoltenOrangeGlow.copy(alpha = 0.05f),
+                color = if (isDark) MoltenOrangeGlow.copy(alpha = 0.05f) else MetallicOrange.copy(alpha = 0.07f),
                 radius = w * 0.44f,
                 center = arcCenter,
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            // Ambient electric-blue & molten-orange floating energy sparks
+            // Ambient electric-blue & metallic-orange light particles
             if (showEnergyParticles) {
-                val sparkCount = if (lightweight) 8 else 18
+                val sparkCount = if (lightweight) 6 else 14
                 for (i in 0 until sparkCount) {
                     val seed = i * 37.3f
                     val px = ((seed * 19.1f) % 100f) / 100f * w
                     val baseY = ((seed * 11.7f) % 100f) / 100f
-                    val py = ((baseY - orbitPhase * (0.25f + (i % 3) * 0.1f) + 1f) % 1f) * h
+                    val py = ((baseY - orbitPhase * (0.22f + (i % 3) * 0.08f) + 1f) % 1f) * h
                     val isOrange = i % 3 == 0
-                    val sparkColor = if (isOrange) MoltenOrangeCore else NeonCyanGlow
-                    val alpha = if (lightweight) 0.25f else (0.18f + 0.35f * sin((orbitPhase * 2f * PI + i).toDouble()).toFloat().coerceAtLeast(0f))
-                    val r = (1.4f + (i % 3) * 0.8f).dp.toPx()
+                    val sparkColor = if (isOrange) MetallicOrange else ElectricBlueBright
+                    val alpha = if (isDark) {
+                        if (lightweight) 0.24f else (0.16f + 0.30f * sin((orbitPhase * 2f * PI + i).toDouble()).toFloat().coerceAtLeast(0f))
+                    } else {
+                        if (lightweight) 0.16f else (0.10f + 0.18f * sin((orbitPhase * 2f * PI + i).toDouble()).toFloat().coerceAtLeast(0f))
+                    }
+                    val r = (1.5f + (i % 3) * 0.75f).dp.toPx()
                     drawCircle(
                         color = sparkColor.copy(alpha = alpha),
                         radius = r,
@@ -728,11 +767,11 @@ fun Futuristic3DKpiTile(
     accentColor: Color = ElectricBlueBright,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalIsDarkTheme.current
     LuxuryGlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        accentGlow = accentColor,
-        forceMidnight = true
+        accentGlow = accentColor
     ) {
         Column(
             modifier = Modifier
@@ -753,7 +792,7 @@ fun Futuristic3DKpiTile(
                 Text(
                     text = label.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = PlatinumSilver,
+                    color = if (isDark) PlatinumSilver else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.6.sp,
                     maxLines = 1
@@ -762,7 +801,7 @@ fun Futuristic3DKpiTile(
             AnimatedStockCounter(
                 count = value,
                 style = MaterialTheme.typography.headlineSmall,
-                color = ArcticWhite,
+                color = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.ExtraBold
             )
             if (!subtitle.isNullOrBlank()) {
@@ -770,6 +809,7 @@ fun Futuristic3DKpiTile(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
                     color = accentColor,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1
                 )
             }

@@ -19,37 +19,10 @@ import com.example.data.model.ThemePreset
 
 val LocalIsDarkTheme = staticCompositionLocalOf { false }
 
-// Signature Flagship Midnight Royal Blue Scheme:
-// Midnight Royal Blue • Electric Blue • Metallic Orange • Arctic White • Platinum Grey
-private val SignatureRoyalColorScheme = darkColorScheme(
-    primary = ElectricBlueBright,
-    onPrimary = PureWhite,
-    primaryContainer = Color(0xFF153273),
-    onPrimaryContainer = Color(0xFFDBEAFE),
-    secondary = MetallicOrangeBright,
-    onSecondary = Color(0xFF2B1002),
-    secondaryContainer = Color(0xFF472009),
-    onSecondaryContainer = Color(0xFFFFEDD5),
-    tertiary = PlatinumSilver,
-    onTertiary = ObsidianMidnight,
-    tertiaryContainer = SignatureRoyalElevated,
-    onTertiaryContainer = PlatinumSilver,
-    background = SignatureRoyalBackground,
-    onBackground = TextPrimaryDark,
-    surface = SignatureRoyalSurface,
-    onSurface = TextPrimaryDark,
-    surfaceVariant = SignatureRoyalElevated,
-    onSurfaceVariant = TextSecondaryDark,
-    outline = SignatureRoyalBorder,
-    outlineVariant = ObsidianBorder,
-    error = DarkRedSecondary,
-    onError = DarkRedOnSecondary,
-    errorContainer = DarkRedContainer,
-    onErrorContainer = DarkRedOnContainer
-)
-
-// Fallback Platinum Light Scheme (unused by default; kept clean)
-private val LightColorScheme = lightColorScheme(
+// Signature Flagship Bright Premium 3D Luxury Scheme:
+// Electric Blue Primary • Metallic Orange Secondary • Chrome Silver Accent
+// Bright Silver / Light Blue Gradient Background • Glossy White-Blue Cards • Deep Navy Text
+private val BrightLuxuryColorScheme = lightColorScheme(
     primary = RoyalElectricBlue,
     onPrimary = PureWhite,
     primaryContainer = ElectricBlueSoft,
@@ -58,19 +31,19 @@ private val LightColorScheme = lightColorScheme(
     onSecondary = PureWhite,
     secondaryContainer = MetallicOrangeSoft,
     onSecondaryContainer = MetallicOrangeOnSoft,
-    tertiary = SlateTertiary,
+    tertiary = CategoryVioletBlue,
     onTertiary = PureWhite,
-    tertiaryContainer = SlateContainer,
-    onTertiaryContainer = SlateOnContainer,
-    background = ArcticWhite,
-    onBackground = TextPrimaryLight,
-    surface = PureWhite,
-    onSurface = TextPrimaryLight,
-    surfaceVariant = ArcticSurfaceSubtle,
-    onSurfaceVariant = TextSecondaryLight,
-    outline = PlatinumOutline,
+    tertiaryContainer = Color(0xFFEDE9FE),
+    onTertiaryContainer = Color(0xFF3B1D8F),
+    background = BrightSilverTop,
+    onBackground = DeepNavyText,
+    surface = GlossyCardWhite,
+    onSurface = DeepNavyText,
+    surfaceVariant = GlossyCardBlueTint,
+    onSurfaceVariant = DarkCharcoalSecondary,
+    outline = ChromeBorderLight,
     outlineVariant = PlatinumSilver,
-    error = BrandRedBright,
+    error = BrandRedSecondary,
     onError = PureWhite,
     errorContainer = BrandRedContainer,
     onErrorContainer = BrandRedOnContainer
@@ -90,14 +63,14 @@ private val OceanicTealColorScheme = lightColorScheme(
     tertiaryContainer = MetallicOrangeSoft,
     onTertiaryContainer = MetallicOrangeOnSoft,
     background = TealBackground,
-    onBackground = TextPrimaryLight,
-    surface = PureWhite,
-    onSurface = TextPrimaryLight,
+    onBackground = DeepNavyText,
+    surface = GlossyCardWhite,
+    onSurface = DeepNavyText,
     surfaceVariant = TealSurfaceVariant,
-    onSurfaceVariant = TextSecondaryLight,
-    outline = PlatinumOutline,
+    onSurfaceVariant = DarkCharcoalSecondary,
+    outline = ChromeBorderLight,
     outlineVariant = PlatinumSilver,
-    error = BrandRedBright,
+    error = BrandRedSecondary,
     onError = PureWhite,
     errorContainer = BrandRedContainer,
     onErrorContainer = BrandRedOnContainer
@@ -112,25 +85,25 @@ private val SunsetAmberColorScheme = lightColorScheme(
     onSecondary = PureWhite,
     secondaryContainer = FlameSecondaryContainer,
     onSecondaryContainer = FlameSecondaryOnContainer,
-    tertiary = ObsidianElevated,
+    tertiary = CategoryEmeraldGreen,
     onTertiary = PureWhite,
-    tertiaryContainer = PlatinumSilver,
-    onTertiaryContainer = ObsidianMidnight,
+    tertiaryContainer = BrandGreenContainer,
+    onTertiaryContainer = BrandGreenOnContainer,
     background = FlameBackground,
-    onBackground = TextPrimaryLight,
-    surface = PureWhite,
-    onSurface = TextPrimaryLight,
+    onBackground = DeepNavyText,
+    surface = GlossyCardWhite,
+    onSurface = DeepNavyText,
     surfaceVariant = FlameSurfaceVariant,
-    onSurfaceVariant = TextSecondaryLight,
-    outline = PlatinumOutline,
+    onSurfaceVariant = DarkCharcoalSecondary,
+    outline = ChromeBorderLight,
     outlineVariant = PlatinumSilver,
-    error = BrandRedBright,
+    error = BrandRedSecondary,
     onError = PureWhite,
     errorContainer = BrandRedContainer,
     onErrorContainer = BrandRedOnContainer
 )
 
-// Signature Flagship Dark Scheme: Obsidian Midnight Blue, Royal Electric Blue, Signature Metallic Orange
+// Explicit Dark Mode Scheme (Only used when user selects Dark Mode or MIDNIGHT_DARK preset)
 private val EmeraldDarkColorScheme = darkColorScheme(
     primary = ElectricBlueBright,
     onPrimary = PureWhite,
@@ -210,36 +183,35 @@ private val SunsetAmberDarkColorScheme = darkColorScheme(
 
 val AppShapes = Shapes(
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(22.dp)
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp)
 )
 
 @Composable
 fun ConcordGasTheme(
     themePreset: ThemePreset = ThemePreset.EMERALD_CORPORATE,
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val effectiveDark = darkTheme || themePreset == ThemePreset.MIDNIGHT_DARK
-    val useMidnightTheme = effectiveDark || themePreset == ThemePreset.EMERALD_CORPORATE
     val colorScheme = when (themePreset) {
         ThemePreset.MIDNIGHT_DARK -> EmeraldDarkColorScheme
         ThemePreset.OCEANIC_TEAL -> if (effectiveDark) OceanicTealDarkColorScheme else OceanicTealColorScheme
         ThemePreset.SUNSET_AMBER -> if (effectiveDark) SunsetAmberDarkColorScheme else SunsetAmberColorScheme
-        ThemePreset.EMERALD_CORPORATE -> if (effectiveDark) EmeraldDarkColorScheme else SignatureRoyalColorScheme
+        ThemePreset.EMERALD_CORPORATE -> if (effectiveDark) EmeraldDarkColorScheme else BrightLuxuryColorScheme
     }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
-        LaunchedEffect(view, useMidnightTheme) {
+        LaunchedEffect(view, effectiveDark) {
             val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
             val controller = WindowCompat.getInsetsController(window, view)
-            controller.isAppearanceLightStatusBars = !useMidnightTheme
-            controller.isAppearanceLightNavigationBars = !useMidnightTheme
+            controller.isAppearanceLightStatusBars = !effectiveDark
+            controller.isAppearanceLightNavigationBars = !effectiveDark
         }
     }
 
-    CompositionLocalProvider(LocalIsDarkTheme provides useMidnightTheme) {
+    CompositionLocalProvider(LocalIsDarkTheme provides effectiveDark) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

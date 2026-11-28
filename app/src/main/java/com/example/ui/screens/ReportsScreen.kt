@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.ExchangePeriodFilter
 import com.example.data.model.ExchangeSectionFilter
@@ -68,8 +69,11 @@ import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.DynamicCategoryFolderGrid
+import com.example.ui.components.DynamicCategoryFolderStat
 import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.OpenedCategoryFolderHeader
+import com.example.ui.components.OpenedDynamicCategoryFolderHeader
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.SignatureAccentHairline
 import com.example.ui.components.luxuryTapScale
@@ -106,6 +110,7 @@ fun ReportsScreen(
     selectedDate: String,
     selectedYearMonth: String,
     vehicles: List<VehicleEntity>,
+    categories: List<ProductCategoryEntity> = emptyList(),
     selectedVehicleId: Long?,
     recentPurchaseCompanies: List<String> = emptyList(),
     isReadOnly: Boolean = false,
@@ -126,7 +131,16 @@ fun ReportsScreen(
     var exchangeSection by remember { mutableStateOf(ExchangeSectionFilter.ALL) }
     var purchaseCompanyFilter by remember { mutableStateOf<String?>(null) }
     var selectedCategory by remember(selectedReport, vehicleFilterId) { mutableStateOf<ProductCategory?>(null) }
+    var selectedDynamicCategoryId by remember(selectedReport, vehicleFilterId) { mutableStateOf<Long?>(null) }
     var showAllReportRows by remember(selectedReport, vehicleFilterId) { mutableStateOf(false) }
+
+    val sortedCategories = remember(categories) {
+        categories.filter { it.isActive }.sortedWith(compareBy<ProductCategoryEntity> { it.sortOrder }.thenBy { it.id })
+    }
+    val useDynamicFolders = sortedCategories.isNotEmpty()
+    val openedDynamicCategory = remember(sortedCategories, selectedDynamicCategoryId) {
+        sortedCategories.firstOrNull { it.id == selectedDynamicCategoryId }
+    }
 
     val baseTable = if (selectedReport == ReportType.LPG_EXCHANGE_REPORT && buildExchangeReportTable != null) {
         buildExchangeReportTable(vehicleFilterId, exchangePeriod, exchangeSection)
@@ -134,8 +148,24 @@ fun ReportsScreen(
         buildReportTable(selectedReport, vehicleFilterId, purchaseDailyMode, purchaseCompanyFilter)
     }
 
-    val supportsCategoryFolders = remember(baseTable) {
-        baseTable.rows.any { detectRowCategory(it) != null }
+    val supportsCategoryFolders = remember(baseTable, sortedCategories) {
+        baseTable.rows.any { row ->
+            detectRowDynamicCategory(row, sortedCategories) != null || detectRowCategory(row) != null
+        }
+    }
+
+    val dynamicFolderStats = remember(baseTable, supportsCategoryFolders, selectedReport, sortedCategories) {
+        if (!supportsCategoryFolders || !useDynamicFolders) emptyList()
+        else sortedCategories.map { cat ->
+            val matching = baseTable.rows.filter { detectRowDynamicCategory(it, sortedCategories)?.id == cat.id }
+            val (fullTotal, emptyTotal) = computeFolderPreviewTotals(selectedReport, matching)
+            DynamicCategoryFolderStat(
+                category = cat,
+                itemCount = matching.size,
+                fullTotal = fullTotal,
+                emptyTotal = emptyTotal
+            )
+        }
     }
 
     val folderStats = remember(baseTable, supportsCategoryFolders, selectedReport) {
@@ -152,9 +182,14 @@ fun ReportsScreen(
         }
     }
 
-    val table = remember(baseTable, selectedCategory) {
-        if (selectedCategory == null) baseTable
-        else filterReportTableByCategory(baseTable, selectedCategory!!)
+    val table = remember(baseTable, selectedCategory, openedDynamicCategory, useDynamicFolders, sortedCategories) {
+        when {
+            useDynamicFolders && openedDynamicCategory != null ->
+                filterReportTableByDynamicCategory(baseTable, openedDynamicCategory, sortedCategories)
+            !useDynamicFolders && selectedCategory != null ->
+                filterReportTableByCategory(baseTable, selectedCategory!!)
+            else -> baseTable
+        }
     }
 
     // SAF launchers to save PDF / Excel directly to user's chosen location (Play-policy compliant)
@@ -457,29 +492,53 @@ fun ReportsScreen(
             // Compact Small-List Style Category Folders for instant category-wise report view & export
             if (supportsCategoryFolders) {
                 item(key = "report_category_folders") {
-                    CategoryFolderGrid(
-                        stats = folderStats,
-                        selectedCategory = selectedCategory,
-                        onSelectCategory = { cat ->
-                            selectedCategory = cat
-                            if (cat != null) showAllReportRows = false
-                        },
-                        sectionTitle = "Report Category Folders",
-                        headerTrailingAction = if (!showAllReportRows && baseTable.rows.isNotEmpty()) {
-                            {
-                                TextButton(
-                                    onClick = { showAllReportRows = true },
-                                    modifier = Modifier.testTag("report_view_all_rows_button")
+                    val trailingAllAction: (@Composable () -> Unit)? = if (!showAllReportRows && baseTable.rows.isNotEmpty()) {
+                        {
+                            TextButton(
+                                onClick = { showAllReportRows = true },
+                                modifier = Modifier.testTag("report_view_all_rows_button")
+                            ) {
+                                Text(
+                                    text = "All (${baseTable.rows.size})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    } else null
+                    if (useDynamicFolders) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            DynamicCategoryFolderGrid(
+                                stats = dynamicFolderStats,
+                                selectedCategoryId = selectedDynamicCategoryId,
+                                onSelectCategoryId = { id ->
+                                    selectedDynamicCategoryId = id
+                                    selectedCategory = sortedCategories.firstOrNull { it.id == id }?.legacyEnum
+                                    if (id != null) showAllReportRows = false
+                                },
+                                sectionTitle = "Report Category Folders"
+                            )
+                            if (trailingAllAction != null && selectedDynamicCategoryId == null) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
                                 ) {
-                                    Text(
-                                        text = "All (${baseTable.rows.size})",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    trailingAllAction()
                                 }
                             }
-                        } else null
-                    )
+                        }
+                    } else {
+                        CategoryFolderGrid(
+                            stats = folderStats,
+                            selectedCategory = selectedCategory,
+                            onSelectCategory = { cat ->
+                                selectedCategory = cat
+                                if (cat != null) showAllReportRows = false
+                            },
+                            sectionTitle = "Report Category Folders",
+                            headerTrailingAction = trailingAllAction
+                        )
+                    }
                 }
             }
 
@@ -559,9 +618,22 @@ fun ReportsScreen(
             }
 
             // Report Preview: Keep product rows neatly inside Category Folders until opened
-            val showTable = !supportsCategoryFolders || selectedCategory != null || showAllReportRows
+            val hasOpenFolder = if (useDynamicFolders) openedDynamicCategory != null else selectedCategory != null
+            val showTable = !supportsCategoryFolders || hasOpenFolder || showAllReportRows
             if (showTable) {
-                selectedCategory?.let { openCat ->
+                if (useDynamicFolders && openedDynamicCategory != null) {
+                    item(key = "report_opened_dynamic_${openedDynamicCategory.id}") {
+                        OpenedDynamicCategoryFolderHeader(
+                            category = openedDynamicCategory,
+                            itemCount = table.rows.size,
+                            subtitle = "${selectedReport.title} • ${table.rows.size} items inside folder",
+                            onClose = {
+                                selectedDynamicCategoryId = null
+                                selectedCategory = null
+                            }
+                        )
+                    }
+                } else selectedCategory?.let { openCat ->
                     item(key = "report_opened_folder_header_${openCat.name}") {
                         OpenedCategoryFolderHeader(
                             category = openCat,
@@ -571,7 +643,7 @@ fun ReportsScreen(
                         )
                     }
                 }
-                if (supportsCategoryFolders && selectedCategory == null && showAllReportRows) {
+                if (supportsCategoryFolders && !hasOpenFolder && showAllReportRows) {
                     item(key = "report_collapse_all_bar") {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -769,6 +841,52 @@ private fun computeFolderPreviewTotals(
             qty to 0
         }
     }
+}
+
+private fun detectRowDynamicCategory(
+    row: List<String>,
+    categories: List<ProductCategoryEntity>
+): ProductCategoryEntity? {
+    if (categories.isEmpty()) return null
+    for (cell in row.take(4)) {
+        val trimmed = cell.trim()
+        categories.firstOrNull { cat ->
+            trimmed.equals(cat.name, ignoreCase = true) ||
+                trimmed.startsWith("${cat.name} -", ignoreCase = true) ||
+                trimmed.equals(cat.legacyEnum.displayName, ignoreCase = true) ||
+                trimmed.startsWith("${cat.legacyEnum.shortCode} -", ignoreCase = true)
+        }?.let { return it }
+    }
+    return null
+}
+
+private fun filterReportTableByDynamicCategory(
+    base: ReportTable,
+    category: ProductCategoryEntity,
+    allCategories: List<ProductCategoryEntity>
+): ReportTable {
+    val filteredRows = base.rows.filter { detectRowDynamicCategory(it, allCategories)?.id == category.id }
+    val recalculatedFooter = base.footerTotals?.mapIndexed { colIdx, origVal ->
+        when {
+            colIdx == 0 -> "${category.name.take(12).uppercase()} TOTAL"
+            origVal.toIntOrNull() != null -> {
+                filteredRows.sumOf { row -> row.getOrNull(colIdx)?.toIntOrNull() ?: 0 }.toString()
+            }
+            origVal.contains("Items", ignoreCase = true) ||
+                origVal.contains("Products", ignoreCase = true) ||
+                origVal.contains("Cylinders", ignoreCase = true) ||
+                origVal.contains("Entries", ignoreCase = true) -> {
+                "${filteredRows.size} Items"
+            }
+            else -> origVal
+        }
+    }
+    return base.copy(
+        reportTitle = "${base.reportTitle} • ${category.name}",
+        subtitle = "${base.subtitle}  •  Folder: ${category.name} (${filteredRows.size} rows)",
+        rows = filteredRows,
+        footerTotals = recalculatedFooter
+    )
 }
 
 private fun filterReportTableByCategory(

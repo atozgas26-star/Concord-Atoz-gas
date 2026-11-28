@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.StockTransactionEntity
 import com.example.data.local.VehicleEntity
@@ -78,10 +79,13 @@ import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.DynamicCategoryFolderGrid
+import com.example.ui.components.DynamicCategoryFolderStat
 import com.example.ui.components.EditTransactionDialog
 import com.example.ui.components.Futuristic3DCylinderVisual
 import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.OpenedCategoryFolderHeader
+import com.example.ui.components.OpenedDynamicCategoryFolderHeader
 import com.example.ui.components.OpeningStockEditDialog
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
@@ -91,8 +95,13 @@ import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenLight
 import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedSecondary
+import com.example.ui.theme.ChromeBorderLight
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.GlossyCardWhite
+import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.ObsidianBorder
@@ -133,6 +142,7 @@ fun StoreManagementScreen(
     storeRows: List<StoreStockRow>,
     products: List<ProductEntity>,
     allProducts: List<ProductEntity> = products,
+    categories: List<ProductCategoryEntity> = emptyList(),
     vehicles: List<VehicleEntity>,
     transactions: List<TransactionDisplayItem>,
     recentPurchaseCompanies: List<String> = emptyList(),
@@ -171,8 +181,10 @@ fun StoreManagementScreen(
     onOpenDifferentGasReturn: () -> Unit = {},
     onOpenReturnHistory: () -> Unit = {}
 ) {
+    val isDark = LocalIsDarkTheme.current
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var selectedDynamicCategoryId by remember { mutableStateOf<Long?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var activeModal by remember { mutableStateOf<StoreModalAction?>(null) }
     var showCustomerChangeDialog by remember { mutableStateOf(false) }
@@ -181,12 +193,29 @@ fun StoreManagementScreen(
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var deleteCandidateId by remember { mutableStateOf<Long?>(null) }
 
-    val filteredRows = remember(storeRows, selectedCategory, searchQuery) {
+    val sortedCategories = remember(categories) {
+        categories.filter { it.isActive }.sortedWith(compareBy<ProductCategoryEntity> { it.sortOrder }.thenBy { it.id })
+    }
+    val useDynamicFolders = sortedCategories.isNotEmpty()
+    val categoryById = remember(categories) { categories.associateBy { it.id } }
+    val openedDynamicCategory = remember(sortedCategories, selectedDynamicCategoryId) {
+        sortedCategories.firstOrNull { it.id == selectedDynamicCategoryId }
+    }
+
+    val filteredRows = remember(storeRows, selectedCategory, openedDynamicCategory, useDynamicFolders, searchQuery, categoryById) {
         storeRows.filter { row ->
-            (selectedCategory == null || row.product.category == selectedCategory) &&
-                (searchQuery.isBlank() ||
-                    row.product.name.contains(searchQuery, ignoreCase = true) ||
-                    row.product.category.displayName.contains(searchQuery, ignoreCase = true))
+            val catMatch = if (useDynamicFolders) {
+                openedDynamicCategory == null ||
+                    row.product.categoryId == openedDynamicCategory.id ||
+                    (row.product.categoryId == 0L && row.product.category == openedDynamicCategory.legacyEnum)
+            } else {
+                selectedCategory == null || row.product.category == selectedCategory
+            }
+            val liveCatName = categoryById[row.product.categoryId]?.name ?: row.product.category.displayName
+            catMatch && (searchQuery.isBlank() ||
+                row.product.name.contains(searchQuery, ignoreCase = true) ||
+                liveCatName.contains(searchQuery, ignoreCase = true) ||
+                row.product.category.displayName.contains(searchQuery, ignoreCase = true))
         }
     }
 
@@ -197,6 +226,20 @@ fun StoreManagementScreen(
     val totalFull = storeRows.sumOf { it.storeFullBalance }
     val totalEmpty = storeRows.sumOf { it.storeEmptyBalance }
     val totalDamaged = storeRows.sumOf { it.damagedBalance }
+
+    val dynamicFolderStats = remember(storeRows, sortedCategories) {
+        sortedCategories.map { cat ->
+            val catRows = storeRows.filter {
+                it.product.categoryId == cat.id || (it.product.categoryId == 0L && it.product.category == cat.legacyEnum)
+            }
+            DynamicCategoryFolderStat(
+                category = cat,
+                itemCount = catRows.size,
+                fullTotal = catRows.sumOf { it.storeFullBalance },
+                emptyTotal = catRows.sumOf { it.storeEmptyBalance }
+            )
+        }
+    }
 
     val folderStats = remember(storeRows) {
         ProductCategory.activeEntries.map { cat ->
@@ -213,15 +256,21 @@ fun StoreManagementScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        ObsidianMidnight,
-                        ObsidianDeep,
-                        SignatureRoyalBackground,
-                        ObsidianMidnight
+            .then(
+                if (isDark) {
+                    Modifier.background(
+                        Brush.verticalGradient(
+                            listOf(
+                                ObsidianMidnight,
+                                ObsidianDeep,
+                                SignatureRoyalBackground,
+                                ObsidianMidnight
+                            )
+                        )
                     )
-                )
+                } else {
+                    Modifier
+                }
             )
     ) {
         BrandHeaderBanner(
@@ -242,7 +291,7 @@ fun StoreManagementScreen(
             DateSelectorBar(
                 selectedDate = selectedDate,
                 onDateSelected = onDateSelected,
-                midnightSurface = true
+                midnightSurface = isDark
             )
 
             if (!isReadOnly) {
@@ -309,14 +358,14 @@ fun StoreManagementScreen(
 
         TabRow(
             selectedTabIndex = activeTab,
-            containerColor = ObsidianDeep,
-            contentColor = ArcticWhite,
+            containerColor = if (isDark) ObsidianDeep else GlossyCardWhite.copy(alpha = 0.94f),
+            contentColor = if (isDark) ArcticWhite else RoyalElectricBlue,
             indicator = { tabPositions ->
                 if (activeTab < tabPositions.size) {
                     TabRowDefaults.SecondaryIndicator(
                         modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
-                        height = 2.5.dp,
-                        color = MetallicOrangeBright
+                        height = 3.dp,
+                        color = if (isDark) MetallicOrangeBright else RoyalElectricBlue
                     )
                 }
             }
@@ -324,56 +373,100 @@ fun StoreManagementScreen(
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                selectedContentColor = ArcticWhite,
-                unselectedContentColor = PlatinumMuted,
-                text = { Text("Folder Balance (${storeRows.size})", fontWeight = FontWeight.SemiBold) }
+                selectedContentColor = if (isDark) ArcticWhite else RoyalElectricBlue,
+                unselectedContentColor = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                text = { Text("Folder Balance (${storeRows.size})", fontWeight = FontWeight.Bold) }
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
-                selectedContentColor = ArcticWhite,
-                unselectedContentColor = PlatinumMuted,
-                text = { Text("Day Ledger (${dayTransactions.size})", fontWeight = FontWeight.SemiBold) }
+                selectedContentColor = if (isDark) ArcticWhite else RoyalElectricBlue,
+                unselectedContentColor = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                text = { Text("Day Ledger (${dayTransactions.size})", fontWeight = FontWeight.Bold) }
             )
         }
 
         if (activeTab == 0) {
-            val showProducts = selectedCategory != null || searchQuery.isNotBlank()
+            val showProducts = (if (useDynamicFolders) openedDynamicCategory != null else selectedCategory != null) || searchQuery.isNotBlank()
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item(key = "store_category_folders") {
-                    CategoryFolderGrid(
-                        stats = folderStats,
-                        selectedCategory = selectedCategory,
-                        onSelectCategory = { selectedCategory = it },
-                        sectionTitle = "Inside Store Category Folders",
-                        onMidnightBackground = true
-                    )
+                    if (useDynamicFolders) {
+                        DynamicCategoryFolderGrid(
+                            stats = dynamicFolderStats,
+                            selectedCategoryId = selectedDynamicCategoryId,
+                            onSelectCategoryId = { id ->
+                                selectedDynamicCategoryId = id
+                                selectedCategory = sortedCategories.firstOrNull { it.id == id }?.legacyEnum
+                            },
+                            sectionTitle = "Inside Store Category Folders"
+                        )
+                    } else {
+                        CategoryFolderGrid(
+                            stats = folderStats,
+                            selectedCategory = selectedCategory,
+                            onSelectCategory = { selectedCategory = it },
+                            sectionTitle = "Inside Store Category Folders",
+                            onMidnightBackground = isDark
+                        )
+                    }
                 }
                 item(key = "store_search_field") {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search cylinder or category...", color = PlatinumMuted) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = ElectricBlueGlow) },
+                        placeholder = {
+                            Text(
+                                "Search cylinder or category...",
+                                color = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = if (isDark) ElectricBlueGlow else RoyalElectricBlue
+                            )
+                        },
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = ObsidianSurface,
-                            unfocusedContainerColor = ObsidianSurface,
-                            focusedBorderColor = ElectricBlueBright,
-                            unfocusedBorderColor = ObsidianBorder,
-                            focusedTextColor = ArcticWhite,
-                            unfocusedTextColor = ArcticWhite
-                        ),
+                        colors = if (isDark) {
+                            OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = ObsidianSurface,
+                                unfocusedContainerColor = ObsidianSurface,
+                                focusedBorderColor = ElectricBlueBright,
+                                unfocusedBorderColor = ObsidianBorder,
+                                focusedTextColor = ArcticWhite,
+                                unfocusedTextColor = ArcticWhite
+                            )
+                        } else {
+                            OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = GlossyCardWhite,
+                                unfocusedContainerColor = GlossyCardWhite.copy(alpha = 0.92f),
+                                focusedBorderColor = RoyalElectricBlue,
+                                unfocusedBorderColor = ChromeBorderLight
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
                 if (showProducts) {
-                    selectedCategory?.let { openCat ->
+                    if (useDynamicFolders && openedDynamicCategory != null) {
+                        item(key = "store_opened_dynamic_${openedDynamicCategory.id}") {
+                            OpenedDynamicCategoryFolderHeader(
+                                category = openedDynamicCategory,
+                                itemCount = filteredRows.size,
+                                subtitle = "Inside Store • ${filteredRows.size} products inside folder",
+                                onClose = {
+                                    selectedDynamicCategoryId = null
+                                    selectedCategory = null
+                                }
+                            )
+                        }
+                    } else selectedCategory?.let { openCat ->
                         item(key = "store_opened_folder_header_${openCat.name}") {
                             OpenedCategoryFolderHeader(
                                 category = openCat,
@@ -388,14 +481,16 @@ fun StoreManagementScreen(
                             Text(
                                 text = "No matching products found.",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = PlatinumSilver,
+                                color = if (isDark) PlatinumSilver else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
                         }
                     } else {
                         items(filteredRows, key = { it.product.id }) { row ->
+                            val liveCategoryName = categoryById[row.product.categoryId]?.name ?: row.product.category.displayName
                             StoreProductCard(
                                 row = row,
+                                categoryLabel = liveCategoryName,
                                 canEditOpening = !isReadOnly,
                                 onEditOpening = { if (!isReadOnly) editingOpeningRow = row }
                             )
@@ -414,7 +509,7 @@ fun StoreManagementScreen(
                         Text(
                             text = "No store or vehicle transactions recorded on $selectedDate.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = PlatinumSilver
+                            color = if (isDark) PlatinumSilver else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
@@ -423,8 +518,7 @@ fun StoreManagementScreen(
                         val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(tx.timestamp))
                         LuxuryGlassCard(
                             shape = RoundedCornerShape(18.dp),
-                            accentGlow = RoyalElectricBlue,
-                            forceMidnight = true
+                            accentGlow = RoyalElectricBlue
                         ) {
                             Row(
                                 modifier = Modifier
@@ -436,7 +530,7 @@ fun StoreManagementScreen(
                                     Text(
                                         text = "${tx.type.label} — ${item.productName}",
                                         style = MaterialTheme.typography.titleSmall,
-                                        color = ArcticWhite,
+                                        color = if (isDark) ArcticWhite else DeepNavyText,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
@@ -713,26 +807,33 @@ private fun StoreActionChip(
     tint: Color,
     onClick: () -> Unit
 ) {
+    val isDark = LocalIsDarkTheme.current
+    val resolvedTint = if (isDark) tint else when (tint) {
+        ElectricBlueGlow -> RoyalElectricBlue
+        MetallicOrangeBright -> MetallicOrange
+        BrandGreenLight -> Color(0xFF059669)
+        else -> tint
+    }
     AssistChip(
         onClick = onClick,
         label = {
             Text(
                 text = label,
-                fontWeight = FontWeight.SemiBold,
-                color = ArcticWhite
+                fontWeight = FontWeight.Bold,
+                color = if (isDark) ArcticWhite else DeepNavyText
             )
         },
         leadingIcon = {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(18.dp))
+            Icon(icon, contentDescription = label, tint = resolvedTint, modifier = Modifier.size(18.dp))
         },
         colors = AssistChipDefaults.assistChipColors(
-            containerColor = ObsidianElevated,
-            labelColor = ArcticWhite,
-            leadingIconContentColor = tint
+            containerColor = if (isDark) ObsidianElevated else GlossyCardWhite,
+            labelColor = if (isDark) ArcticWhite else DeepNavyText,
+            leadingIconContentColor = resolvedTint
         ),
         border = AssistChipDefaults.assistChipBorder(
             enabled = true,
-            borderColor = ElectricBlueBright.copy(alpha = 0.42f)
+            borderColor = if (isDark) ElectricBlueBright.copy(alpha = 0.42f) else ChromeBorderLight
         ),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.testTag("store_action_${label.lowercase().replace(' ', '_')}")
@@ -742,26 +843,19 @@ private fun StoreActionChip(
 @Composable
 private fun StoreProductCard(
     row: StoreStockRow,
+    categoryLabel: String = row.product.category.displayName,
     canEditOpening: Boolean = true,
     onEditOpening: () -> Unit
 ) {
+    val isDark = LocalIsDarkTheme.current
     val catStyle = categoryVisualStyle(row.product.category)
     LuxuryGlassCard(
         shape = RoundedCornerShape(18.dp),
-        accentGlow = catStyle.primaryColor,
-        forceMidnight = true
+        accentGlow = catStyle.primaryColor
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            ObsidianSurface,
-                            ObsidianElevated.copy(alpha = 0.72f)
-                        )
-                    )
-                )
                 .padding(14.dp)
         ) {
             Row(
@@ -783,16 +877,16 @@ private fun StoreProductCard(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = row.product.category.displayName,
+                            text = categoryLabel,
                             style = MaterialTheme.typography.labelSmall,
-                            color = ElectricBlueGlow,
+                            color = if (isDark) ElectricBlueGlow else catStyle.primaryColor,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = row.product.name,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = ArcticWhite
+                            color = if (isDark) ArcticWhite else DeepNavyText
                         )
                     }
                 }
@@ -800,8 +894,8 @@ private fun StoreProductCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    StockPill(label = "Full", value = row.storeFullBalance, isFull = true, forceMidnight = true)
-                    StockPill(label = "Empty", value = row.storeEmptyBalance, isFull = false, forceMidnight = true)
+                    StockPill(label = "Full", value = row.storeFullBalance, isFull = true)
+                    StockPill(label = "Empty", value = row.storeEmptyBalance, isFull = false)
                     if (canEditOpening) {
                         IconButton(
                             onClick = onEditOpening,
@@ -810,7 +904,7 @@ private fun StoreProductCard(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Edit opening stock",
-                                tint = MetallicOrangeBright,
+                                tint = if (isDark) MetallicOrangeBright else MetallicOrange,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -822,32 +916,34 @@ private fun StoreProductCard(
 
             // Full Breakdown
             Surface(
-                color = ObsidianMidnight.copy(alpha = 0.72f),
+                color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f) else catStyle.lightContainer.copy(alpha = 0.7f),
                 shape = RoundedCornerShape(9.dp),
-                border = BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = 0.36f)),
+                border = BorderStroke(0.8.dp, ElectricBlueBright.copy(alpha = if (isDark) 0.36f else 0.25f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = "FULL: Op ${row.openingFull} + Pur ${row.fullPurchases} + In ${row.fullReturns} - Disp ${row.fullDispatch} = ${row.storeFullBalance}",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = JetBrainsMono,
-                    color = ElectricBlueGlow,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDark) ElectricBlueGlow else RoyalElectricBlue,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
             Spacer(Modifier.height(5.dp))
             // Empty Breakdown
             Surface(
-                color = ObsidianMidnight.copy(alpha = 0.72f),
+                color = if (isDark) ObsidianMidnight.copy(alpha = 0.72f) else Color(0xFFFFF3E8),
                 shape = RoundedCornerShape(9.dp),
-                border = BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.36f)),
+                border = BorderStroke(0.8.dp, MetallicOrange.copy(alpha = if (isDark) 0.36f else 0.25f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = "EMPTY: Op ${row.openingEmpty} + Pur ${row.emptyPurchases} + Ret ${row.emptyReturnsToStore} - Disp ${row.emptyDispatch} = ${row.storeEmptyBalance}",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = JetBrainsMono,
-                    color = MetallicOrangeBright,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDark) MetallicOrangeBright else Color(0xFFC2410C),
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
@@ -859,7 +955,7 @@ private fun StoreProductCard(
                 ) {
                     if (row.damagedBalance > 0) {
                         Surface(
-                            color = Color(0xFF45141E),
+                            color = if (isDark) Color(0xFF45141E) else Color(0xFFFEE2E2),
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(0.8.dp, BrandRedBright.copy(alpha = 0.65f))
                         ) {
@@ -868,22 +964,22 @@ private fun StoreProductCard(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = JetBrainsMono,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFCA5A5),
+                                color = if (isDark) Color(0xFFFCA5A5) else BrandRedSecondary,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
                     }
                     if (row.storeFullBalance <= 5) {
                         Surface(
-                            color = Color(0xFF3E2208),
+                            color = if (isDark) Color(0xFF3E2208) else Color(0xFFFFEDD5),
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(0.8.dp, MetallicOrangeBright.copy(alpha = 0.7f))
+                            border = BorderStroke(0.8.dp, MetallicOrange.copy(alpha = 0.6f))
                         ) {
                             Text(
                                 text = if (row.storeFullBalance <= 0) "OUT OF STOCK" else "LOW STOCK (${row.storeFullBalance})",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = MetallicOrangeBright,
+                                color = if (isDark) MetallicOrangeBright else Color(0xFFC2410C),
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }

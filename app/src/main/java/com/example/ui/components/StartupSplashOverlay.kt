@@ -70,13 +70,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.lerp
 import com.example.audio.SoundEffectsManager
 import com.example.audio.StartupSoundStyle
 import com.example.data.model.ThemePreset
 import com.example.ui.theme.ArcticWhite
+import com.example.ui.theme.BrightIceBottom
+import com.example.ui.theme.BrightSilverTop
+import com.example.ui.theme.BrightSkyBlueMid
 import com.example.ui.theme.ChromeSilverHighlight
 import com.example.ui.theme.ChromeSilverMid
 import com.example.ui.theme.CinematicMidnightBlack
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.DeepSpaceNavy
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
@@ -89,6 +94,8 @@ import com.example.ui.theme.NeonCyanGlow
 import com.example.ui.theme.NeonElectricBlue
 import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.PureWhite
+import com.example.ui.theme.RoyalElectricBlue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -133,6 +140,7 @@ fun StartupSplashOverlay(
     var isMuted by remember(soundEnabled) { mutableStateOf(!soundEnabled) }
 
     val particleIgnition = remember { Animatable(if (lightweightMode) 1f else 0f) }
+    val brightBloom = remember { Animatable(if (lightweightMode) 1f else 0f) }
     val fireSweep = remember { Animatable(if (lightweightMode) 1f else 0f) }
     val orbitalLock = remember { Animatable(if (lightweightMode) 1f else 0f) }
     val emblemScale = remember { Animatable(if (lightweightMode) 1f else 0.36f) }
@@ -216,10 +224,11 @@ fun StartupSplashOverlay(
             cameraZoom.animateTo(1.03f, tween(durationMillis = 4400, easing = FastOutSlowInEasing))
         }
 
-        // Stage 1: Midnight void -> electric-blue & orange energy particles ignite
+        // Stage 1: Dark-to-bright luxury bloom + electric-blue & orange energy particles ignite
         launch { particleIgnition.animateTo(1f, tween(520, easing = FastOutSlowInEasing)) }
+        launch { brightBloom.animateTo(1f, tween(1550, easing = FastOutSlowInEasing)) }
 
-        // Stage 2: Sweeping molten orange energy trails cross the screen
+        // Stage 2: Sweeping metallic orange energy trails cross the screen
         delay(220)
         launch { fireSweep.animateTo(1f, tween(820, easing = FastOutSlowInEasing)) }
 
@@ -273,22 +282,28 @@ fun StartupSplashOverlay(
         derivedStateOf {
             val p = launchProgress.value
             when {
-                p < 0.24f -> "Igniting 3D C&A Energy Core..."
-                p < 0.50f -> "C&A GAS • Next-Generation 3D Platform"
+                p < 0.24f -> "Igniting 3D Bright Luxury Engine..."
+                p < 0.50f -> "WELCOME TO C&A GAS"
                 p < 0.78f -> "Dispatching Fleet & Live Cylinder Telemetry..."
-                else -> "Welcome • Concord & Atoz Gas Trading LLC"
+                else -> "Opening Secure PIN Workspace..."
             }
         }
     }
+
+    val bloom = brightBloom.value
+    val isBrightNow = bloom > 0.52f
+    val fgPrimary = lerp(ArcticWhite, DeepNavyText, bloom)
+    val fgSecondary = lerp(PlatinumSilver, Color(0xFF334A70), bloom)
+    val chipBg = lerp(ObsidianMidnight.copy(alpha = 0.72f), PureWhite.copy(alpha = 0.88f), bloom)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { alpha = exitAlpha.value }
-            .background(CinematicMidnightBlack)
+            .background(lerp(Color(0xFF0A1D4A), BrightSilverTop, bloom))
             .testTag("startup_splash_overlay")
     ) {
-        // Cinematic 3D lighting, sweeping orange fire trails, rotating metallic orbital rings & particle burst
+        // Cinematic Dark-to-Bright 3D lighting, sweeping orange fire trails, rotating chrome orbital rings & particle burst
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -301,15 +316,13 @@ fun StartupSplashOverlay(
             val h = size.height
             val center = Offset(w * 0.5f, h * 0.30f)
 
-            // Deep Space Midnight gradient
+            // Smooth Dark-to-Bright Luxury Sky/Silver Gradient
+            val topGrad = lerp(Color(0xFF091A42), BrightSilverTop, bloom)
+            val midGrad = lerp(Color(0xFF14357A), BrightSkyBlueMid, bloom)
+            val botGrad = lerp(Color(0xFF0D2357), BrightIceBottom, bloom)
             drawRect(
                 brush = Brush.verticalGradient(
-                    colors = listOf(
-                        CinematicMidnightBlack,
-                        DeepSpaceNavy.copy(alpha = 0.85f * particleIgnition.value.coerceAtLeast(0.25f)),
-                        Color(0xFF061028),
-                        CinematicMidnightBlack
-                    )
+                    colors = listOf(topGrad, midGrad, botGrad)
                 )
             )
 
@@ -467,8 +480,9 @@ fun StartupSplashOverlay(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = ObsidianMidnight.copy(alpha = 0.72f),
-                    border = BorderStroke(1.dp, NeonCyanGlow.copy(alpha = 0.42f))
+                    color = chipBg,
+                    border = BorderStroke(1.2.dp, RoyalElectricBlue.copy(alpha = 0.45f)),
+                    shadowElevation = 4.dp
                 ) {
                     IconButton(
                         onClick = {
@@ -484,7 +498,7 @@ fun StartupSplashOverlay(
                         Icon(
                             imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
                             contentDescription = if (isMuted) "Unmute opening sound" else "Mute opening sound",
-                            tint = if (isMuted) PlatinumSilver else MoltenOrangeCore,
+                            tint = if (isMuted) fgSecondary else MetallicOrange,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -493,32 +507,32 @@ fun StartupSplashOverlay(
                 OutlinedButton(
                     onClick = { triggerSmoothExit() },
                     border = BorderStroke(
-                        1.1.dp,
-                        Brush.horizontalGradient(listOf(NeonCyanGlow.copy(alpha = 0.7f), MoltenOrangeGlow.copy(alpha = 0.85f)))
+                        1.2.dp,
+                        Brush.horizontalGradient(listOf(RoyalElectricBlue, MetallicOrange))
                     ),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = ObsidianMidnight.copy(alpha = 0.72f),
-                        contentColor = ArcticWhite
+                        containerColor = chipBg,
+                        contentColor = fgPrimary
                     ),
                     shape = RoundedCornerShape(22.dp),
                     modifier = Modifier.testTag("splash_skip_button")
                 ) {
                     Text(
-                        text = "Skip Animation",
-                        style = MaterialTheme.typography.labelMedium,
+                        text = "Skip",
+                        style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Skip Animation",
-                        tint = MoltenOrangeCore,
-                        modifier = Modifier.size(17.dp)
+                        tint = MetallicOrange,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            // Centerpiece: Signature 3D Emblem + Metallic Brand Reveal + 3D Delivery Truck Stage
+            // Centerpiece: Signature 3D Emblem + WELCOME TO C&A GAS Reveal + 3D Delivery Truck Stage
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
@@ -533,7 +547,7 @@ fun StartupSplashOverlay(
                         }
                 ) {
                     Signature3DEmblem(
-                        size = 138.dp,
+                        size = 136.dp,
                         enableOrbitAnimation = !lightweightMode,
                         showOuterHalo = true
                     )
@@ -542,22 +556,23 @@ fun StartupSplashOverlay(
                 Spacer(Modifier.height(12.dp))
 
                 Surface(
-                    color = DeepSpaceNavy.copy(alpha = 0.78f),
+                    color = if (isBrightNow) PureWhite.copy(alpha = 0.90f) else DeepSpaceNavy.copy(alpha = 0.78f),
                     shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(
-                        1.dp,
+                        1.2.dp,
                         Brush.horizontalGradient(
-                            listOf(ChromeSilverHighlight.copy(alpha = 0.55f), NeonCyanGlow.copy(alpha = 0.75f), MoltenOrangeGlow.copy(alpha = 0.85f))
+                            listOf(RoyalElectricBlue, NeonCyanGlow, MetallicOrange)
                         )
                     ),
+                    shadowElevation = 4.dp,
                     modifier = Modifier.graphicsLayer { alpha = titleAlpha.value }
                 ) {
                     Text(
-                        text = "C&A GAS  •  NEXT-GEN 3D EDITION",
+                        text = "PREMIUM 3D BRIGHT LUXURY EDITION",
                         style = MaterialTheme.typography.labelSmall,
-                        color = ChromeSilverHighlight,
+                        color = if (isBrightNow) RoyalElectricBlue else ChromeSilverHighlight,
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.6.sp,
+                        letterSpacing = 1.4.sp,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
                     )
                 }
@@ -565,19 +580,21 @@ fun StartupSplashOverlay(
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = "C&A GAS",
+                    text = "WELCOME TO C&A GAS",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    color = MoltenOrangeCore,
-                    letterSpacing = 3.2.sp,
+                    color = if (isBrightNow) RoyalElectricBlue else MoltenOrangeCore,
+                    letterSpacing = 1.8.sp,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.graphicsLayer { alpha = titleAlpha.value }
+                    modifier = Modifier
+                        .testTag("splash_welcome_headline")
+                        .graphicsLayer { alpha = titleAlpha.value }
                 )
                 Text(
                     text = "CONCORD & ATOZ GAS TRADING LLC",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = ArcticWhite,
+                    color = if (isBrightNow) MetallicOrange else ArcticWhite,
                     letterSpacing = 1.0.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
@@ -587,7 +604,7 @@ fun StartupSplashOverlay(
 
                 Spacer(Modifier.height(10.dp))
 
-                // Premium 3D C&A GAS Delivery Truck driving through with plasma trails
+                // Premium 3D C&A GAS Delivery Truck driving through
                 CinematicDeliveryTruckStage(
                     truckXFraction = truckX.value,
                     brakePitchDeg = brakePitch.value,
@@ -608,56 +625,57 @@ fun StartupSplashOverlay(
                     Text(
                         text = msg,
                         style = MaterialTheme.typography.bodySmall,
-                        color = PlatinumSilver.copy(alpha = 0.92f),
-                        fontWeight = FontWeight.Medium,
+                        color = fgSecondary,
+                        fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center
                     )
                 }
 
                 Spacer(Modifier.height(10.dp))
 
-                // Glowing Energy Progress Bar
+                // Luminous Energy Progress Bar
                 Box(
                     modifier = Modifier
                         .width(230.dp)
-                        .height(4.dp)
+                        .height(5.dp)
                         .clip(CircleShape)
-                        .background(ChromeSilverMid.copy(alpha = 0.16f))
+                        .background(RoyalElectricBlue.copy(alpha = 0.16f))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(launchProgress.value.coerceIn(0f, 1f))
-                            .height(4.dp)
+                            .height(5.dp)
                             .clip(CircleShape)
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(ElectricBlueBright, NeonCyanGlow, MoltenOrangeGlow, ChromeSilverHighlight)
+                                    listOf(RoyalElectricBlue, NeonCyanGlow, MetallicOrange, MetallicOrangeBright)
                                 )
                             )
                     )
                 }
 
                 Spacer(Modifier.height(6.dp))
-                SplashCountdownLabel(progressProvider = { launchProgress.value })
+                SplashCountdownLabel(progressProvider = { launchProgress.value }, labelColor = fgSecondary)
             }
 
             // Bottom Metallic Signature Pill
             Surface(
-                color = ObsidianMidnight.copy(alpha = 0.72f),
+                color = chipBg,
                 shape = RoundedCornerShape(14.dp),
                 border = BorderStroke(
                     1.dp,
                     Brush.horizontalGradient(
-                        listOf(ChromeSilverMid.copy(alpha = 0.4f), NeonCyanGlow.copy(alpha = 0.45f), MoltenOrangeGlow.copy(alpha = 0.55f))
+                        listOf(RoyalElectricBlue.copy(alpha = 0.45f), MetallicOrange.copy(alpha = 0.55f))
                     )
-                )
+                ),
+                shadowElevation = 3.dp
             ) {
                 Text(
                     text = "Built by Ragavan  •  ${themePreset.title}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = ArcticWhite,
-                    letterSpacing = 0.6.sp,
+                    color = fgPrimary,
+                    letterSpacing = 0.5.sp,
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
                 )
             }
@@ -666,7 +684,7 @@ fun StartupSplashOverlay(
 }
 
 @Composable
-private fun SplashCountdownLabel(progressProvider: () -> Float) {
+private fun SplashCountdownLabel(progressProvider: () -> Float, labelColor: Color) {
     val tenthsRemaining by remember {
         derivedStateOf {
             (((1f - progressProvider()) * STARTUP_LAUNCH_DURATION_SECONDS) * 10f)
@@ -675,10 +693,10 @@ private fun SplashCountdownLabel(progressProvider: () -> Float) {
         }
     }
     Text(
-        text = String.format(Locale.US, "Entering C&A Workspace... %.1fs", tenthsRemaining / 10f),
+        text = String.format(Locale.US, "Entering C&A PIN Login... %.1fs", tenthsRemaining / 10f),
         style = MaterialTheme.typography.labelSmall,
         fontFamily = JetBrainsMono,
-        color = PlatinumSilver.copy(alpha = 0.80f),
+        color = labelColor,
         modifier = Modifier.testTag("splash_countdown_label")
     )
 }

@@ -312,6 +312,8 @@ class AppViewModel(
     private var adminLoginLockoutUntilMs: Long = 0L
     private var failedOwnerLoginAttempts: Int = 0
     private var ownerLoginLockoutUntilMs: Long = 0L
+    private val staffPinFailedAttempts: MutableMap<Long, Int> = mutableMapOf()
+    private val staffPinLockoutUntilMs: MutableMap<Long, Long> = mutableMapOf()
     private var seenCloudLoginEventIds: MutableSet<String> = mutableSetOf()
     private var initialCloudLoginSnapshotLoaded: Boolean = false
 
@@ -1436,18 +1438,24 @@ class AppViewModel(
                     return@launch
                 }
 
-                // If this device was explicitly revoked by Admin for Staff, require Mobile + OTP + Existing PIN re-registration
+                // If this device was explicitly revoked by Admin for Staff, block access until re-authorized by Admin
                 val existingDevice = repository.getRegisteredDeviceById(currentDeviceId())
                 if (targetRole == UserRole.STAFF && existingDevice != null && existingDevice.isRevoked) {
-                    _loginError.value = "This device was revoked by Admin. Complete UAE Mobile + SMS OTP + Existing PIN verification first."
+                    _loginError.value = "This device was revoked by Admin. Please contact Admin to re-authorize this device."
                     return@launch
                 }
 
-                // Check temporary lockout on any linked authorized mobile
+                // Enforce temporary PIN lockout (works purely on PIN without requiring any mobile number)
                 val linkedMobile = authorizedMobiles.value.firstOrNull {
                     it.role == UserRole.STAFF && (it.staffUserId == localUser.id || it.displayName.equals(localUser.displayName, ignoreCase = true))
                 }
                 val nowMs = System.currentTimeMillis()
+                val localLockoutUntil = staffPinLockoutUntilMs[localUser.id] ?: 0L
+                if (localLockoutUntil > nowMs) {
+                    val waitSec = ((localLockoutUntil - nowMs) / 1000L).coerceAtLeast(1L)
+                    _loginError.value = "Too many failed PIN attempts. Account temporarily locked for ${waitSec}s. Contact Admin."
+                    return@launch
+                }
                 if (linkedMobile != null && linkedMobile.lockedUntilMs > nowMs) {
                     val waitMins = ((linkedMobile.lockedUntilMs - nowMs) / 60_000L).coerceAtLeast(1L)
                     _loginError.value = "Too many failed PIN attempts. Account locked for ${waitMins}m. Contact Admin."
@@ -1461,12 +1469,19 @@ class AppViewModel(
                         pin = pin
                     )
                     if (cloudCheck.isFailure) {
+                        val nextAttempts = (staffPinFailedAttempts[localUser.id] ?: 0) + 1
+                        if (nextAttempts >= MAX_LOGIN_ATTEMPTS) {
+                            staffPinLockoutUntilMs[localUser.id] = System.currentTimeMillis() + LOGIN_LOCKOUT_MS
+                            staffPinFailedAttempts[localUser.id] = 0
+                        } else {
+                            staffPinFailedAttempts[localUser.id] = nextAttempts
+                        }
                         linkedMobile?.let { repository.recordMobilePinFailure(it.id) }
                         repository.logSecurityEvent(
                             eventType = "FAILED_PIN_LOGIN",
                             role = targetRole.name,
                             actorName = localUser.displayName,
-                            phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                            phoneE164 = "",
                             deviceLabel = currentDeviceLabel(),
                             details = "Failed PIN attempt for ${localUser.displayName}.",
                             isAlert = true
@@ -1479,6 +1494,8 @@ class AppViewModel(
 
                 val session = repository.authenticate(userId, pin, targetRole)
                 if (session != null) {
+                    staffPinFailedAttempts.remove(localUser.id)
+                    staffPinLockoutUntilMs.remove(localUser.id)
                     linkedMobile?.let { repository.resetMobilePinFailures(it.id) }
                     if (autoLoginEnabled.value) {
                         sessionPreferences?.saveLoggedInUserId(session.user.id, session.user.role)
@@ -1493,7 +1510,7 @@ class AppViewModel(
                     repository.registerOrTouchDevice(
                         deviceId = currentDeviceId(),
                         deviceLabel = currentDeviceLabel(),
-                        phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                        phoneE164 = "",
                         userId = session.user.id,
                         displayName = session.user.displayName,
                         role = session.user.role
@@ -1502,9 +1519,9 @@ class AppViewModel(
                         eventType = "PIN_LOGIN_SUCCESS",
                         role = session.user.role.name,
                         actorName = session.user.displayName,
-                        phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                        phoneE164 = "",
                         deviceLabel = currentDeviceLabel(),
-                        details = "Signed in via registered device individual PIN.",
+                        details = "Signed in via secure individual PIN.",
                         isAlert = false
                     )
                     _shouldAutoPromptBiometric.value = false
@@ -1518,24 +1535,34 @@ class AppViewModel(
                         emitStaffLoginNotification(session)
                     }
                 } else {
-                    val failInfo = linkedMobile?.let { repository.recordMobilePinFailure(it.id) }
+                    val nextAttempts = (staffPinFailedAttempts[localUser.id] ?: 0) + 1
+                    val lockedNow = nextAttempts >= MAX_LOGIN_ATTEMPTS
+                    if (lockedNow) {
+                        staffPinLockoutUntilMs[localUser.id] = System.currentTimeMillis() + LOGIN_LOCKOUT_MS
+                        staffPinFailedAttempts[localUser.id] = 0
+                    } else {
+                        staffPinFailedAttempts[localUser.id] = nextAttempts
+                    }
+                    linkedMobile?.let { repository.recordMobilePinFailure(it.id) }
                     repository.logSecurityEvent(
-                        eventType = "FAILED_PIN_LOGIN",
+                        eventType = if (lockedNow) "PIN_LOCKOUT" else "FAILED_PIN_LOGIN",
                         role = targetRole.name,
                         actorName = localUser.displayName,
-                        phoneE164 = linkedMobile?.phoneE164.orEmpty(),
+                        phoneE164 = "",
                         deviceLabel = currentDeviceLabel(),
-                        details = "Invalid PIN entered for ${localUser.displayName}.",
+                        details = if (lockedNow) {
+                            "Account temporarily locked after $MAX_LOGIN_ATTEMPTS failed PIN attempts for ${localUser.displayName}."
+                        } else {
+                            "Invalid PIN entered for ${localUser.displayName} ($nextAttempts/$MAX_LOGIN_ATTEMPTS)."
+                        },
                         isAlert = true
                     )
-                    val remainingMsg = failInfo?.let { (attempts, lockedUntil) ->
-                        if (lockedUntil > System.currentTimeMillis()) {
-                            " Account temporarily locked for 15 minutes."
-                        } else {
-                            val left = (InventoryRepository.MAX_PIN_ATTEMPTS - attempts).coerceAtLeast(1)
-                            " ($left attempt(s) remaining)."
-                        }
-                    }.orEmpty()
+                    val remainingMsg = if (lockedNow) {
+                        " Too many failed attempts. Locked temporarily."
+                    } else {
+                        val left = (MAX_LOGIN_ATTEMPTS - nextAttempts).coerceAtLeast(1)
+                        " ($left attempt(s) remaining)."
+                    }
                     _loginError.value = "Invalid PIN for ${targetRole.name} '${localUser.displayName}'.${remainingMsg}"
                 }
             } finally {
@@ -1627,7 +1654,7 @@ class AppViewModel(
             try {
                 val existingDevice = repository.getRegisteredDeviceById(currentDeviceId())
                 if (existingDevice != null && existingDevice.isRevoked && existingDevice.role == UserRole.OWNER_VIEW) {
-                    _loginError.value = "This device session was revoked. Complete UAE Mobile + SMS OTP + Existing Owner PIN registration first."
+                    _loginError.value = "This device session was revoked by Admin. Please contact Admin to re-authorize this device."
                     return@launch
                 }
                 val savedHash = sessionPreferences?.ownerViewPasswordHashFlow?.first().orEmpty()
@@ -3664,6 +3691,34 @@ class AppViewModel(
         }
     }
 
+    fun reorderCategories(orderedCategoryIds: List<Long>) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can reorder category folders.")
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.reorderCategories(orderedCategoryIds, session.user)
+            handleOperationResult(result)
+        }
+    }
+
+    fun moveCategoryOrder(categoryId: Long, delta: Int) {
+        val session = _authSession.value ?: return
+        if (session.user.role != UserRole.ADMIN) {
+            _warningAlert.value = WarningAlert("Admin Only", "Only Admin can reorder category folders.")
+            return
+        }
+        val currentIds = categories.value.sortedWith(compareBy<ProductCategoryEntity> { it.sortOrder }.thenBy { it.id }).map { it.id }.toMutableList()
+        val fromIdx = currentIds.indexOf(categoryId)
+        if (fromIdx == -1) return
+        val toIdx = (fromIdx + delta).coerceIn(0, currentIds.lastIndex)
+        if (toIdx == fromIdx) return
+        val moved = currentIds.removeAt(fromIdx)
+        currentIds.add(toIdx, moved)
+        reorderCategories(currentIds)
+    }
+
     fun addProduct(
         category: ProductCategory,
         name: String,
@@ -3974,10 +4029,25 @@ class AppViewModel(
         val date = _selectedDate.value
         val ym = _selectedYearMonth.value
         val actorName = _authSession.value?.user?.displayName ?: "Admin"
+        val categoryById = categories.value.associateBy { it.id }
+        fun liveCatName(product: ProductEntity): String =
+            categoryById[product.categoryId]?.name ?: product.category.displayName
+        fun liveCatShortOrName(product: ProductEntity): String {
+            val cat = categoryById[product.categoryId]
+            return if (cat != null && !cat.name.equals(product.category.displayName, ignoreCase = true)) {
+                cat.name
+            } else {
+                product.category.shortCode
+            }
+        }
+        fun liveCatSort(product: ProductEntity): Int =
+            categoryById[product.categoryId]?.sortOrder ?: (product.category.sortOrder * 10)
 
         return when (reportType) {
             ReportType.DAILY_STORE -> {
-                val rows = storeRows.value
+                val rows = storeRows.value.sortedWith(
+                    compareBy({ liveCatSort(it.product) }, { it.product.sortOrder }, { it.product.name })
+                )
                 ReportTable(
                     reportTitle = "Daily Store Report",
                     subtitle = "Business Date: $date",
@@ -3988,7 +4058,7 @@ class AppViewModel(
                     ),
                     rows = rows.map { r ->
                         listOf(
-                            "${r.product.category.shortCode} - ${r.product.name}",
+                            "${liveCatShortOrName(r.product)} - ${r.product.name}",
                             r.openingFull.toString(),
                             r.fullPurchases.toString(),
                             r.fullReturns.toString(),
@@ -4022,7 +4092,9 @@ class AppViewModel(
             ReportType.DAILY_VEHICLE -> {
                 val selectedVeh = vehicles.value.firstOrNull { it.id == vehicleFilterId }
                 if (selectedVeh != null && vehicleFilterId == _selectedVehicleId.value) {
-                    val vRows = selectedVehicleRows.value
+                    val vRows = selectedVehicleRows.value.sortedWith(
+                        compareBy({ liveCatSort(it.product) }, { it.product.sortOrder }, { it.product.name })
+                    )
                     ReportTable(
                         reportTitle = "Daily Vehicle Report — ${selectedVeh.name}",
                         subtitle = "Business Date: $date",
@@ -4033,7 +4105,7 @@ class AppViewModel(
                         ),
                         rows = vRows.map { r ->
                             listOf(
-                                "${r.product.category.shortCode} - ${r.product.name}",
+                                "${liveCatShortOrName(r.product)} - ${r.product.name}",
                                 r.oldFull.toString(),
                                 r.fullReceived.toString(),
                                 r.totalFull.toString(),
@@ -4140,7 +4212,7 @@ class AppViewModel(
                 }
 
                 val sortedProducts = allProducts.value.sortedWith(
-                    compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.name })
+                    compareBy({ liveCatSort(it) }, { it.sortOrder }, { it.name })
                 )
 
                 var grandRecd = 0
@@ -4162,7 +4234,7 @@ class AppViewModel(
                         grandEmp += a.custEmpty
                         grandComp += a.compRepl
                         listOf(
-                            p.category.displayName,
+                            liveCatName(p),
                             p.name,
                             a.fullRecd.toString(),
                             a.regSales.toString(),
@@ -4198,7 +4270,7 @@ class AppViewModel(
                         .sortedWith(
                             compareBy<Map.Entry<Pair<Long, Long>, StaffProdAgg>>(
                                 { vehicleMap[it.key.first]?.name ?: "Vehicle #${it.key.first}" },
-                                { productMap[it.key.second]?.category?.sortOrder ?: Int.MAX_VALUE },
+                                { productMap[it.key.second]?.let { p -> liveCatSort(p) } ?: Int.MAX_VALUE },
                                 { productMap[it.key.second]?.sortOrder ?: Int.MAX_VALUE },
                                 { productMap[it.key.second]?.name ?: "" }
                             )
@@ -4206,7 +4278,7 @@ class AppViewModel(
                     val builtRows = allPairs.map { (key, a) ->
                         val vName = vehicleMap[key.first]?.name ?: "Vehicle #${key.first}"
                         val prod = productMap[key.second]
-                        val prodLabel = if (prod != null) "${prod.category.shortCode} - ${prod.name}" else "Product #${key.second}"
+                        val prodLabel = if (prod != null) "${liveCatShortOrName(prod)} - ${prod.name}" else "Product #${key.second}"
                         grandRecd += a.fullRecd
                         grandReg += a.regSales
                         grandNew += a.newCustSales
@@ -4399,7 +4471,9 @@ class AppViewModel(
             }
 
             ReportType.PRODUCT_WISE_SALES -> {
-                val rows = productWiseSales.value
+                val rows = productWiseSales.value.sortedWith(
+                    compareBy({ liveCatSort(it.product) }, { it.product.sortOrder }, { it.product.name })
+                )
                 ReportTable(
                     reportTitle = "Product-Wise Sales Report",
                     subtitle = "Month: $ym",
@@ -4407,7 +4481,7 @@ class AppViewModel(
                     headers = listOf("Category", "Product", "Cylinders Sold", "Empty Collected"),
                     rows = rows.map {
                         listOf(
-                            it.product.category.displayName,
+                            liveCatName(it.product),
                             it.product.name,
                             it.totalSold.toString(),
                             it.emptyCollected.toString()
@@ -4489,7 +4563,9 @@ class AppViewModel(
             }
 
             ReportType.FULL_EMPTY_STOCK -> {
-                val rows = companyStockReport.value
+                val rows = companyStockReport.value.sortedWith(
+                    compareBy({ liveCatSort(it.product) }, { it.product.sortOrder }, { it.product.name })
+                )
                 ReportTable(
                     reportTitle = "Full & Empty Stock Report",
                     subtitle = "As of Date: $date",
@@ -4500,7 +4576,7 @@ class AppViewModel(
                     ),
                     rows = rows.map {
                         listOf(
-                            it.product.category.displayName,
+                            liveCatName(it.product),
                             it.product.name,
                             it.storeFull.toString(),
                             it.vehiclesFull.toString(),

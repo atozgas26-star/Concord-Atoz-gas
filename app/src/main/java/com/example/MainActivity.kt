@@ -757,6 +757,7 @@ fun ConcordGasRootApp(
                         vehicleRows = staffVehicleRows,
                         storeRows = storeRows,
                         products = activeProducts,
+                        categories = categories,
                         allTransactions = allTransactions,
                         pendingCustomers = staffVehiclePendingRows,
                         recentCustomerNames = recentCustomerNames,
@@ -979,6 +980,7 @@ fun ConcordGasRootApp(
                                 CompanyInventoryScreen(
                                     selectedDate = selectedDate,
                                     stockRows = companyStockReport,
+                                    categories = categories,
                                     isReadOnly = isReadOnly,
                                     onDateSelected = viewModel::setSelectedDate,
                                     onOpenProductMaster = {
@@ -1002,6 +1004,7 @@ fun ConcordGasRootApp(
                                     rows = selectedVehicleRows,
                                     storeRows = storeRows,
                                     products = activeProducts,
+                                    categories = categories,
                                     transactions = allTransactions,
                                     pendingCustomers = selectedVehiclePendingRows,
                                     recentCustomerNames = recentCustomerNames,
@@ -1149,6 +1152,7 @@ fun ConcordGasRootApp(
                                         storeRows = storeRows,
                                         products = activeProducts,
                                         allProducts = allProducts,
+                                        categories = categories,
                                         vehicles = vehicles,
                                         transactions = allTransactions,
                                         recentPurchaseCompanies = recentPurchaseCompanies,
@@ -1209,6 +1213,7 @@ fun ConcordGasRootApp(
                                         selectedDate = selectedDate,
                                         selectedYearMonth = selectedYearMonth,
                                         vehicles = vehicles,
+                                        categories = categories,
                                         selectedVehicleId = selectedVehicleId,
                                         recentPurchaseCompanies = recentPurchaseCompanies,
                                         isReadOnly = isReadOnly,
@@ -1295,6 +1300,7 @@ fun ConcordGasRootApp(
                                         onUpdatePin = viewModel::updateUserPin,
                                         onCreateCategory = viewModel::createCategory,
                                         onUpdateCategory = viewModel::updateCategory,
+                                        onMoveCategoryOrder = viewModel::moveCategoryOrder,
                                         onAddProduct = { cat, name, sizeKg ->
                                             viewModel.addProduct(category = cat, name = name, cylinderSizeKg = sizeKg)
                                         },

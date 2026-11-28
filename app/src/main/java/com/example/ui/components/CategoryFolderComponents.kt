@@ -64,12 +64,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import com.example.data.local.ProductCategoryEntity
 import com.example.data.model.CompanyStockRow
 import com.example.data.model.ProductCategory
 import com.example.ui.theme.ArcticWhite
+import com.example.ui.theme.CategoryElectricBlue
+import com.example.ui.theme.CategoryEmeraldGreen
+import com.example.ui.theme.CategoryMetallicOrange
+import com.example.ui.theme.CategoryVioletBlue
+import com.example.ui.theme.ChromeBorderLight
+import com.example.ui.theme.DarkCharcoalSecondary
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.GlossyCardBlueTint
+import com.example.ui.theme.GlossyCardWhite
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
@@ -80,6 +97,7 @@ import com.example.ui.theme.ObsidianElevated
 import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
 
@@ -88,25 +106,25 @@ import com.example.ui.theme.RoyalElectricBlue
  * and Outside Fleet screens are immediately recognizable at a glance.
  */
 object RoleHeaderPalettes {
-    // Admin: Obsidian Midnight & Royal Electric Blue with Signature Metallic Orange Accent
-    val AdminGradient = listOf(Color(0xFF050D1F), Color(0xFF0A1D47), Color(0xFF13347A))
+    // Admin: Bright Premium Electric Blue Executive Gradient + Metallic Orange Accent
+    val AdminGradient = listOf(Color(0xFF1348C9), Color(0xFF1D63ED), Color(0xFF3B82F6))
     val AdminAccent = Color(0xFFFF7A2F)
 
-    // Owner View (Read-Only): Executive Obsidian & Platinum Sapphire with Amber Gold Accent
-    val OwnerGradient = listOf(Color(0xFF080E24), Color(0xFF1B2452), Color(0xFF2E3A78))
+    // Owner View (Read-Only): Bright Royal Violet-Sapphire Executive Gradient + Warm Gold Accent
+    val OwnerGradient = listOf(Color(0xFF3B28CC), Color(0xFF5441E8), Color(0xFF3B82F6))
     val OwnerAccent = Color(0xFFF59E0B)
 
-    // Staff: Obsidian & Electric Cyan-Blue Field Command
-    val StaffGradient = listOf(Color(0xFF051329), Color(0xFF0B2A57), Color(0xFF0F4C81))
-    val StaffAccent = Color(0xFF38BDF8)
+    // Staff: Bright Electric Azure-Blue Field Command
+    val StaffGradient = listOf(Color(0xFF0369A1), Color(0xFF0284C7), Color(0xFF2563EB))
+    val StaffAccent = Color(0xFFFF8533)
 
-    // Inside (Main Store / Yard): Royal Electric Blue
-    val InsideStoreGradient = listOf(Color(0xFF061638), Color(0xFF0E2F73), Color(0xFF1D4ED8))
-    val InsideStoreAccent = Color(0xFF60A5FA)
+    // Inside (Main Store / Yard): Vibrant Electric Blue
+    val InsideStoreGradient = listOf(Color(0xFF154AC9), Color(0xFF1D63ED), Color(0xFF38BDF8))
+    val InsideStoreAccent = Color(0xFFFFFFFF)
 
-    // Outside (Vehicles / Fleet): Obsidian & Signature Metallic Orange
-    val OutsideFleetGradient = listOf(Color(0xFF1A0D0A), Color(0xFF531E09), Color(0xFF9A3412))
-    val OutsideFleetAccent = Color(0xFFFF7A2F)
+    // Outside (Vehicles / Fleet): Bright Metallic Orange Energy
+    val OutsideFleetGradient = listOf(Color(0xFFC2410C), Color(0xFFEA580C), Color(0xFFFF7A2F))
+    val OutsideFleetAccent = Color(0xFFFFFFFF)
 }
 
 enum class StockZoneScope(
@@ -173,8 +191,8 @@ fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (
     ProductCategory.INDUSTRIAL_GAS -> CategoryVisualStyle(
         category = category,
         shortTitle = "INDUSTRIAL GAS – REGULAR",
-        primaryColor = Color(0xFF1D4ED8), // Royal Electric Blue
-        lightContainer = Color(0xFFEAF1FF),
+        primaryColor = CategoryElectricBlue, // Electric Blue
+        lightContainer = Color(0xFFE6F0FF),
         darkContainer = Color(0xFF112454),
         lightOnContainer = Color(0xFF0A2463),
         darkOnContainer = Color(0xFFDBEAFE),
@@ -183,31 +201,31 @@ fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (
     ProductCategory.SMALL_48_CFT -> CategoryVisualStyle(
         category = category,
         shortTitle = "INDUSTRIAL GAS – 48 CFT SMALL",
-        primaryColor = Color(0xFF0284C7), // Precision Arctic Azure
-        lightContainer = Color(0xFFE0F2FE),
-        darkContainer = Color(0xFF0C2D48),
-        lightOnContainer = Color(0xFF075985),
-        darkOnContainer = Color(0xFFBAE6FD),
+        primaryColor = CategoryVioletBlue, // Violet Blue
+        lightContainer = Color(0xFFEDE9FE),
+        darkContainer = Color(0xFF26185B),
+        lightOnContainer = Color(0xFF3B1D8F),
+        darkOnContainer = Color(0xFFDDD6FE),
         icon = Icons.Default.PropaneTank
     )
     ProductCategory.COOKING_GAS -> CategoryVisualStyle(
         category = category,
         shortTitle = "LPG GAS",
-        primaryColor = Color(0xFFFF6B1A), // Signature Metallic Orange
-        lightContainer = Color(0xFFFFF1E8),
+        primaryColor = CategoryMetallicOrange, // Metallic Orange
+        lightContainer = Color(0xFFFFEFE5),
         darkContainer = Color(0xFF3E1908),
-        lightOnContainer = Color(0xFF7C2D12),
+        lightOnContainer = Color(0xFF8A2C06),
         darkOnContainer = Color(0xFFFFEDD5),
         icon = Icons.Default.LocalFireDepartment
     )
     ProductCategory.MCG_CUTTING_GAS -> CategoryVisualStyle(
         category = category,
         shortTitle = "CUTTING GAS",
-        primaryColor = Color(0xFF6366F1), // Metallic Indigo Slate
-        lightContainer = Color(0xFFEEF2FF),
-        darkContainer = Color(0xFF1E1B4B),
-        lightOnContainer = Color(0xFF312E81),
-        darkOnContainer = Color(0xFFE0E7FF),
+        primaryColor = CategoryEmeraldGreen, // Emerald Green
+        lightContainer = Color(0xFFD1FAE5),
+        darkContainer = Color(0xFF064E3B),
+        lightOnContainer = Color(0xFF065F46),
+        darkOnContainer = Color(0xFFA7F3D0),
         icon = Icons.Default.Build
     )
 }
@@ -280,16 +298,23 @@ private fun ZoneScopePillCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalIsDarkTheme.current
     val bgBrush = if (selected) {
         Brush.horizontalGradient(
-            listOf(RoyalBlueDeep, accent, MetallicOrange.copy(alpha = 0.72f))
+            listOf(accent, accent.copy(alpha = 0.88f), MetallicOrange.copy(alpha = 0.82f))
         )
-    } else {
+    } else if (isDark) {
         Brush.horizontalGradient(
             listOf(ObsidianSurface, ObsidianElevated, RoyalBlueDeep.copy(alpha = 0.45f))
         )
+    } else {
+        Brush.horizontalGradient(
+            listOf(GlossyCardWhite, GlossyCardBlueTint, softBg)
+        )
     }
-    val borderColor = if (selected) MetallicOrangeBright else accent.copy(alpha = 0.5f)
+    val borderColor = if (selected) MetallicOrangeBright else if (isDark) accent.copy(alpha = 0.5f) else accent.copy(alpha = 0.35f)
+    val textColor = if (selected || isDark) ArcticWhite else DeepNavyText
+    val subTextColor = if (selected) ArcticWhite.copy(alpha = 0.94f) else if (isDark) PlatinumSilver else DarkCharcoalSecondary
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
@@ -297,9 +322,9 @@ private fun ZoneScopePillCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         color = Color.Transparent,
-        border = BorderStroke(if (selected) 1.6.dp else 1.dp, borderColor),
+        border = BorderStroke(if (selected) 1.6.dp else 1.2.dp, borderColor),
         tonalElevation = 0.dp,
-        shadowElevation = if (selected) 6.dp else 2.dp
+        shadowElevation = if (selected) 7.dp else 3.dp
     ) {
         Column(
             modifier = Modifier
@@ -314,14 +339,14 @@ private fun ZoneScopePillCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = title,
-                    tint = if (selected) MetallicOrangeBright else ElectricBlueGlow,
+                    tint = if (selected) PureWhite else accent,
                     modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = ArcticWhite,
+                    color = textColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -332,7 +357,7 @@ private fun ZoneScopePillCard(
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = JetBrainsMono,
                 fontWeight = FontWeight.Bold,
-                color = if (selected) ArcticWhite else PlatinumSilver
+                color = subTextColor
             )
         }
     }
@@ -421,125 +446,122 @@ fun CategoryFolderGrid(
             orderedStats.forEach { stat ->
                 val style = categoryVisualStyle(stat.category)
                 val isSelected = selectedCategory == stat.category
-                val cardGradient = if (isSelected) {
-                    Brush.horizontalGradient(
-                        listOf(RoyalBlueDeep, RoyalElectricBlue, ObsidianElevated)
+                val cardGradient = when {
+                    isSelected -> Brush.horizontalGradient(
+                        listOf(style.primaryColor, style.primaryColor.copy(alpha = 0.86f), RoyalElectricBlue)
                     )
-                } else {
-                    Brush.horizontalGradient(
-                        listOf(ObsidianSurface, ObsidianElevated, RoyalBlueDeep.copy(alpha = 0.62f))
+                    isDark -> Brush.horizontalGradient(
+                        listOf(ObsidianSurface, ObsidianElevated, style.darkContainer.copy(alpha = 0.72f))
                     )
-                }
-                val borderBrush = if (isSelected) {
-                    Brush.horizontalGradient(listOf(ElectricBlueGlow, MetallicOrangeBright))
-                } else {
-                    Brush.linearGradient(
-                        listOf(
-                            ElectricBlueBright.copy(alpha = 0.38f),
-                            ObsidianBorder.copy(alpha = 0.85f),
-                            MetallicOrangeBright.copy(alpha = 0.24f)
-                        )
+                    else -> Brush.horizontalGradient(
+                        listOf(GlossyCardWhite, GlossyCardBlueTint, style.lightContainer.copy(alpha = 0.55f))
                     )
                 }
-                val badgeBg = ObsidianMidnight.copy(alpha = 0.82f)
-                val badgeBorder = if (isSelected) {
-                    MetallicOrangeBright.copy(alpha = 0.85f)
-                } else {
-                    ElectricBlueBright.copy(alpha = 0.42f)
+                val borderBrush = when {
+                    isSelected -> Brush.horizontalGradient(listOf(PureWhite, MetallicOrangeBright))
+                    isDark -> Brush.linearGradient(
+                        listOf(style.primaryColor.copy(alpha = 0.55f), ObsidianBorder, MetallicOrangeBright.copy(alpha = 0.24f))
+                    )
+                    else -> Brush.linearGradient(
+                        listOf(style.primaryColor.copy(alpha = 0.48f), ChromeBorderLight, PureWhite)
+                    )
                 }
+                val badgeBg = when {
+                    isSelected -> PureWhite.copy(alpha = 0.20f)
+                    isDark -> ObsidianMidnight.copy(alpha = 0.82f)
+                    else -> style.lightContainer
+                }
+                val badgeBorder = if (isSelected) PureWhite.copy(alpha = 0.7f) else style.primaryColor.copy(alpha = 0.45f)
+                val titleColor = if (isSelected || isDark) ArcticWhite else DeepNavyText
+                val subColor = if (isSelected) ArcticWhite.copy(alpha = 0.9f) else if (isDark) PlatinumSilver else DarkCharcoalSecondary
 
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 52.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .heightIn(min = 54.dp)
+                        .clip(RoundedCornerShape(15.dp))
                         .luxuryTapScale()
                         .clickable {
                             onSelectCategory(if (isSelected) null else stat.category)
                         }
                         .testTag("category_folder_${stat.category.name.lowercase()}"),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(15.dp),
                     color = Color.Transparent,
                     border = BorderStroke(
-                        width = if (isSelected) 1.6.dp else 1.dp,
+                        width = if (isSelected) 1.6.dp else 1.2.dp,
                         brush = borderBrush
                     ),
-                    shadowElevation = if (isSelected) 6.dp else 2.dp,
+                    shadowElevation = if (isSelected) 7.dp else 4.dp,
                     tonalElevation = 0.dp
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(cardGradient)
-                            .padding(horizontal = 11.dp, vertical = 8.dp),
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Midnight Folder Icon Badge (zero white background or wash)
                         Surface(
-                            shape = RoundedCornerShape(9.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = badgeBg,
                             border = BorderStroke(1.dp, badgeBorder),
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = if (isSelected) Icons.Default.FolderOpen else Icons.Default.Folder,
+                                    imageVector = if (isSelected) Icons.Default.FolderOpen else style.icon,
                                     contentDescription = style.shortTitle,
-                                    tint = if (isSelected) MetallicOrangeBright else style.darkOnContainer,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = if (isSelected) PureWhite else style.primaryColor,
+                                    modifier = Modifier.size(19.dp)
                                 )
                             }
                         }
 
-                        // Category Name + Item Count
                         Column(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
                                 text = style.shortTitle,
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = ArcticWhite,
+                                color = titleColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "${stat.category.shortCode} • ${stat.itemCount} items",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
-                                color = PlatinumSilver,
+                                fontSize = 10.5.sp,
+                                color = subColor,
                                 maxLines = 1
                             )
                         }
 
-                        // Compact High-Contrast Full / Empty Mono Pill (zero white wash)
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = badgeBg,
+                            color = if (isSelected) PureWhite.copy(alpha = 0.22f) else if (isDark) ObsidianMidnight.copy(alpha = 0.8f) else style.lightContainer,
                             border = BorderStroke(
-                                0.9.dp,
-                                if (isSelected) MetallicOrangeBright.copy(alpha = 0.72f)
-                                else ElectricBlueBright.copy(alpha = 0.36f)
+                                1.dp,
+                                if (isSelected) PureWhite.copy(alpha = 0.65f) else style.primaryColor.copy(alpha = 0.35f)
                             )
                         ) {
                             Text(
                                 text = "F:${stat.fullTotal} E:${stat.emptyTotal}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = JetBrainsMono,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isSelected) PureWhite else if (isDark) ElectricBlueGlow else style.lightOnContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
 
-                        // Expand / Collapse Chevron
                         Icon(
                             imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = if (isSelected) "Collapse folder" else "Open folder",
-                            tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
-                            modifier = Modifier.size(18.dp)
+                            tint = if (isSelected) PureWhite else style.primaryColor,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
@@ -746,6 +768,30 @@ fun OpenedCategoryFolderHeader(
 }
 
 /**
+ * Dynamic Opened-Folder header showing the live edited category name, icon, and brand color.
+ */
+@Composable
+fun OpenedDynamicCategoryFolderHeader(
+    category: ProductCategoryEntity,
+    itemCount: Int,
+    subtitle: String = "$itemCount products inside folder",
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val style = categoryVisualStyle(category.legacyEnum)
+    OpenedSectionFolderHeader(
+        title = category.name,
+        subtitle = subtitle,
+        accentColor = style.primaryColor,
+        containerColor = style.lightContainer,
+        onContainerColor = style.lightOnContainer,
+        icon = categoryIconForKey(category.iconKey),
+        onClose = onClose,
+        modifier = modifier.testTag("opened_dynamic_category_header_${category.id}")
+    )
+}
+
+/**
  * Reusable opened-folder header bar for any folder section (gas category or system settings).
  */
 @Composable
@@ -759,25 +805,28 @@ fun OpenedSectionFolderHeader(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalIsDarkTheme.current
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Color.Transparent,
         border = BorderStroke(
-            1.2.dp,
-            Brush.horizontalGradient(listOf(ElectricBlueGlow.copy(alpha = 0.72f), MetallicOrangeBright.copy(alpha = 0.72f)))
+            1.3.dp,
+            Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.8f), MetallicOrangeBright.copy(alpha = 0.72f)))
         ),
-        shadowElevation = 4.dp
+        shadowElevation = 5.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    Brush.horizontalGradient(
-                        listOf(ObsidianMidnight, ObsidianDeep, RoyalBlueDeep.copy(alpha = 0.85f))
-                    )
+                    if (isDark) {
+                        Brush.horizontalGradient(listOf(ObsidianMidnight, ObsidianDeep, RoyalBlueDeep.copy(alpha = 0.85f)))
+                    } else {
+                        Brush.horizontalGradient(listOf(accentColor, accentColor.copy(alpha = 0.88f), RoyalElectricBlue))
+                    }
                 )
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -788,7 +837,7 @@ fun OpenedSectionFolderHeader(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(listOf(MetallicOrange, MetallicOrangeBright))
@@ -798,23 +847,23 @@ fun OpenedSectionFolderHeader(
                     Icon(
                         imageVector = icon,
                         contentDescription = title,
-                        tint = ArcticWhite,
-                        modifier = Modifier.size(16.dp)
+                        tint = PureWhite,
+                        modifier = Modifier.size(17.dp)
                     )
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = ArcticWhite,
+                        color = PureWhite,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.labelSmall,
-                        color = PlatinumSilver,
+                        color = PureWhite.copy(alpha = 0.88f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -823,13 +872,13 @@ fun OpenedSectionFolderHeader(
             Spacer(Modifier.width(6.dp))
             OutlinedButton(
                 onClick = onClose,
-                border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.8f)),
+                border = BorderStroke(1.2.dp, PureWhite.copy(alpha = 0.85f)),
                 modifier = Modifier.testTag("close_opened_folder_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close folder",
-                    tint = MetallicOrangeBright,
+                    tint = PureWhite,
                     modifier = Modifier.size(15.dp)
                 )
                 Spacer(Modifier.width(3.dp))
@@ -837,7 +886,7 @@ fun OpenedSectionFolderHeader(
                     text = "Close",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MetallicOrangeBright
+                    color = PureWhite
                 )
             }
         }
@@ -847,15 +896,17 @@ fun OpenedSectionFolderHeader(
 data class DynamicCategoryFolderStat(
     val category: ProductCategoryEntity,
     val itemCount: Int,
-    val activeItemCount: Int,
+    val activeItemCount: Int = itemCount,
     val fullTotal: Int,
     val emptyTotal: Int
 )
 
 /**
- * Dynamic 3D Glassmorphism Category Folder Grid for Product Master & Inventory.
- * Renders all permanent-ID categories (4 default folders + any Admin-created custom folders)
- * with live product counts, Full/Empty stock summary, Active/Inactive badge, and Admin Edit action.
+ * Dynamic 3D Bright Glassmorphism Category Folder Grid for Product Master, Inventory,
+ * Store Stock, Vehicle Stock, and Staff Stock.
+ * Renders all permanent-ID categories in Admin-defined sortOrder with live edited names,
+ * consistent category colors (Electric Blue, Metallic Orange, Emerald Green, Violet Blue),
+ * and Admin Drag-and-Drop + Move Up/Down category folder sorting.
  */
 @Composable
 fun DynamicCategoryFolderGrid(
@@ -863,9 +914,14 @@ fun DynamicCategoryFolderGrid(
     selectedCategoryId: Long?,
     onSelectCategoryId: (Long?) -> Unit,
     onEditCategory: ((ProductCategoryEntity) -> Unit)? = null,
+    canReorder: Boolean = false,
+    onMoveCategoryUp: ((categoryId: Long) -> Unit)? = null,
+    onMoveCategoryDown: ((categoryId: Long) -> Unit)? = null,
+    onDragSwapCategory: ((categoryId: Long, deltaSteps: Int) -> Unit)? = null,
     sectionTitle: String = "Product Category Folders",
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalIsDarkTheme.current
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -883,14 +939,14 @@ fun DynamicCategoryFolderGrid(
                 Icon(
                     imageVector = Icons.Default.FolderOpen,
                     contentDescription = null,
-                    tint = MetallicOrangeBright,
-                    modifier = Modifier.size(18.dp)
+                    tint = MetallicOrange,
+                    modifier = Modifier.size(19.dp)
                 )
                 Text(
                     text = sectionTitle,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = ArcticWhite,
+                    color = if (isDark) ArcticWhite else DeepNavyText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -900,142 +956,254 @@ fun DynamicCategoryFolderGrid(
                     onClick = { onSelectCategoryId(null) },
                     modifier = Modifier.testTag("dynamic_category_close_all")
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close folder", tint = MetallicOrangeBright, modifier = Modifier.size(15.dp))
+                    Icon(Icons.Default.Close, contentDescription = "Close folder", tint = MetallicOrange, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(3.dp))
-                    Text("All Folders", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MetallicOrangeBright)
+                    Text("All Folders", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MetallicOrange)
                 }
             }
         }
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            stats.forEach { stat ->
+            stats.forEachIndexed { idx, stat ->
                 val cat = stat.category
                 val isSelected = selectedCategoryId == cat.id
                 val visual = categoryVisualStyle(cat.legacyEnum)
-                val cardGradient = if (isSelected) {
-                    Brush.horizontalGradient(listOf(RoyalBlueDeep, RoyalElectricBlue, ObsidianElevated))
-                } else {
-                    Brush.horizontalGradient(listOf(ObsidianSurface, ObsidianElevated, RoyalBlueDeep.copy(alpha = 0.62f)))
+                var dragOffsetY by remember(cat.id) { mutableFloatStateOf(0f) }
+                var isDragging by remember(cat.id) { mutableStateOf(false) }
+                val stepPx = 105f
+
+                val cardGradient = when {
+                    isSelected -> Brush.horizontalGradient(listOf(visual.primaryColor, visual.primaryColor.copy(alpha = 0.88f), RoyalElectricBlue))
+                    isDark -> Brush.horizontalGradient(listOf(ObsidianSurface, ObsidianElevated, visual.darkContainer.copy(alpha = 0.65f)))
+                    else -> Brush.horizontalGradient(listOf(GlossyCardWhite, GlossyCardBlueTint, visual.lightContainer.copy(alpha = 0.58f)))
                 }
-                val borderBrush = if (isSelected) {
-                    Brush.horizontalGradient(listOf(ElectricBlueGlow, MetallicOrangeBright))
-                } else if (!cat.isActive) {
-                    Brush.horizontalGradient(listOf(MetallicOrange.copy(alpha = 0.45f), ObsidianBorder))
-                } else {
-                    Brush.linearGradient(listOf(ElectricBlueBright.copy(alpha = 0.42f), ObsidianBorder, MetallicOrangeBright.copy(alpha = 0.25f)))
+                val borderBrush = when {
+                    isDragging -> Brush.horizontalGradient(listOf(MetallicOrange, ElectricBlueBright, MetallicOrangeBright))
+                    isSelected -> Brush.horizontalGradient(listOf(PureWhite, MetallicOrangeBright))
+                    !cat.isActive -> Brush.horizontalGradient(listOf(MetallicOrange.copy(alpha = 0.55f), ChromeBorderLight))
+                    isDark -> Brush.linearGradient(listOf(visual.primaryColor.copy(alpha = 0.52f), ObsidianBorder, MetallicOrangeBright.copy(alpha = 0.25f)))
+                    else -> Brush.linearGradient(listOf(visual.primaryColor.copy(alpha = 0.45f), ChromeBorderLight, PureWhite))
                 }
-                val badgeBg = ObsidianMidnight.copy(alpha = 0.86f)
+                val badgeBg = when {
+                    isSelected -> PureWhite.copy(alpha = 0.20f)
+                    isDark -> ObsidianMidnight.copy(alpha = 0.86f)
+                    else -> visual.lightContainer
+                }
+                val titleColor = if (isSelected || isDark) ArcticWhite else DeepNavyText
+                val subColor = if (isSelected) PureWhite.copy(alpha = 0.90f) else if (isDark) PlatinumSilver else DarkCharcoalSecondary
 
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 58.dp)
-                        .clip(RoundedCornerShape(15.dp))
+                        .zIndex(if (isDragging) 12f else 0f)
+                        .graphicsLayer {
+                            translationY = if (isDragging) dragOffsetY else 0f
+                            scaleX = if (isDragging) 1.02f else 1f
+                            scaleY = if (isDragging) 1.02f else 1f
+                        }
+                        .heightIn(min = 60.dp)
+                        .clip(RoundedCornerShape(16.dp))
                         .luxuryTapScale()
                         .clickable { onSelectCategoryId(if (isSelected) null else cat.id) }
                         .testTag("dynamic_category_folder_${cat.id}"),
-                    shape = RoundedCornerShape(15.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = Color.Transparent,
-                    border = BorderStroke(if (isSelected) 1.6.dp else 1.dp, borderBrush),
-                    shadowElevation = if (isSelected) 7.dp else 2.dp
+                    border = BorderStroke(if (isDragging || isSelected) 1.8.dp else 1.2.dp, borderBrush),
+                    shadowElevation = if (isDragging) 14.dp else if (isSelected) 7.dp else 4.dp
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(cardGradient)
-                            .padding(horizontal = 11.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = badgeBg,
-                            border = BorderStroke(1.dp, if (isSelected) MetallicOrangeBright else visual.primaryColor.copy(alpha = 0.55f)),
-                            modifier = Modifier.size(36.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 11.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (isSelected) Icons.Default.FolderOpen else categoryIconForKey(cat.iconKey),
-                                    contentDescription = cat.name,
-                                    tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
-                                    modifier = Modifier.size(19.dp)
+                            if (canReorder && onDragSwapCategory != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .pointerInput(cat.id, idx, stats.size) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    isDragging = true
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragEnd = {
+                                                    isDragging = false
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragCancel = {
+                                                    isDragging = false
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    dragOffsetY += dragAmount.y
+                                                    if (dragOffsetY >= stepPx) {
+                                                        onDragSwapCategory(cat.id, 1)
+                                                        dragOffsetY -= stepPx
+                                                    } else if (dragOffsetY <= -stepPx) {
+                                                        onDragSwapCategory(cat.id, -1)
+                                                        dragOffsetY += stepPx
+                                                    }
+                                                }
+                                            )
+                                        }
+                                        .testTag("category_drag_handle_${cat.id}"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DragIndicator,
+                                        contentDescription = "Hold and drag to reorder ${cat.name}",
+                                        tint = if (isDragging) MetallicOrange else if (isSelected) PureWhite else visual.primaryColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = badgeBg,
+                                border = BorderStroke(1.dp, if (isSelected) PureWhite.copy(alpha = 0.7f) else visual.primaryColor.copy(alpha = 0.5f)),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (isSelected) Icons.Default.FolderOpen else categoryIconForKey(cat.iconKey),
+                                        contentDescription = cat.name,
+                                        tint = if (isSelected) PureWhite else visual.primaryColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = cat.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = titleColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (!cat.isActive) {
+                                        Surface(shape = RoundedCornerShape(5.dp), color = MetallicOrange.copy(alpha = 0.2f)) {
+                                            Text(
+                                                text = "INACTIVE",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) PureWhite else MetallicOrange,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "${stat.activeItemCount}/${stat.itemCount} active • ${cat.description.ifBlank { cat.categoryType.replace('_', ' ') }}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 10.5.sp,
+                                    color = subColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = badgeBg,
+                                border = BorderStroke(1.dp, if (isSelected) PureWhite.copy(alpha = 0.65f) else visual.primaryColor.copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    text = "F:${stat.fullTotal} E:${stat.emptyTotal}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = JetBrainsMono,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isSelected) PureWhite else if (isDark) ElectricBlueGlow else visual.lightOnContainer,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            if (onEditCategory != null) {
+                                IconButton(
+                                    onClick = { onEditCategory(cat) },
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .testTag("edit_category_button_${cat.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit ${cat.name}",
+                                        tint = if (isSelected) PureWhite else visual.primaryColor,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+
+                            Icon(
+                                imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (isSelected) "Collapse folder" else "Open folder",
+                                tint = if (isSelected) PureWhite else visual.primaryColor,
+                                modifier = Modifier.size(19.dp)
+                            )
                         }
 
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (canReorder && (onMoveCategoryUp != null || onMoveCategoryDown != null)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isSelected) PureWhite.copy(alpha = 0.10f) else if (isDark) ObsidianMidnight.copy(alpha = 0.4f) else visual.lightContainer.copy(alpha = 0.45f))
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = cat.name,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ArcticWhite,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
+                                    text = "Order #${idx + 1} • Hold grip to drag or tap arrows",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 10.sp,
+                                    color = subColor
                                 )
-                                if (!cat.isActive) {
-                                    Surface(shape = RoundedCornerShape(5.dp), color = MetallicOrange.copy(alpha = 0.25f)) {
-                                        Text(
-                                            text = "INACTIVE",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MetallicOrangeBright,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = { onMoveCategoryUp?.invoke(cat.id) },
+                                        enabled = idx > 0,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .testTag("category_move_up_${cat.id}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowUpward,
+                                            contentDescription = "Move ${cat.name} up",
+                                            tint = if (idx > 0) (if (isSelected) PureWhite else visual.primaryColor) else subColor.copy(alpha = 0.35f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onMoveCategoryDown?.invoke(cat.id) },
+                                        enabled = idx < stats.lastIndex,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .testTag("category_move_down_${cat.id}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDownward,
+                                            contentDescription = "Move ${cat.name} down",
+                                            tint = if (idx < stats.lastIndex) (if (isSelected) PureWhite else visual.primaryColor) else subColor.copy(alpha = 0.35f),
+                                            modifier = Modifier.size(16.dp)
                                         )
                                     }
                                 }
                             }
-                            Text(
-                                text = "${stat.activeItemCount}/${stat.itemCount} active • ${cat.description.ifBlank { cat.categoryType.replace('_', ' ') }}",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
-                                color = PlatinumSilver,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
                         }
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = badgeBg,
-                            border = BorderStroke(0.9.dp, if (isSelected) MetallicOrangeBright.copy(alpha = 0.72f) else ElectricBlueBright.copy(alpha = 0.36f))
-                        ) {
-                            Text(
-                                text = "F:${stat.fullTotal} E:${stat.emptyTotal}",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = JetBrainsMono,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
-                            )
-                        }
-
-                        if (onEditCategory != null) {
-                            IconButton(
-                                onClick = { onEditCategory(cat) },
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .testTag("edit_category_button_${cat.id}")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit ${cat.name}",
-                                    tint = ElectricBlueGlow,
-                                    modifier = Modifier.size(17.dp)
-                                )
-                            }
-                        }
-
-                        Icon(
-                            imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (isSelected) "Collapse folder" else "Open folder",
-                            tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
-                            modifier = Modifier.size(18.dp)
-                        )
                     }
                 }
             }

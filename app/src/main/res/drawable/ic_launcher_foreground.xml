@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_ca_red_logo"
+        android:drawable="@drawable/ic_ca_gas_3d_official_1795866910149"
         android:gravity="center" />
 </layer-list>

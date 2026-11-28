@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.local.PendingStoreTransferEntity
+import com.example.data.local.ProductCategoryEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.StaffAttendanceEntity
 import com.example.data.local.UserAccountEntity
@@ -94,6 +95,8 @@ import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.DynamicCategoryFolderGrid
+import com.example.ui.components.DynamicCategoryFolderStat
 import com.example.ui.components.HeaderBellIconButton
 import com.example.ui.components.HeaderChatIconButton
 import com.example.ui.components.HeaderUpdateIconButton
@@ -101,6 +104,7 @@ import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.LuxurySectionHeader
 import com.example.ui.components.OpenedCategoryFolderHeader
+import com.example.ui.components.OpenedDynamicCategoryFolderHeader
 import com.example.ui.components.PendingCustomerCard
 import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StaffDutyAttendanceCard
@@ -161,6 +165,7 @@ fun StaffDashboardScreen(
     vehicleRows: List<VehicleStockRow>,
     storeRows: List<StoreStockRow>,
     products: List<ProductEntity>,
+    categories: List<ProductCategoryEntity> = emptyList(),
     allTransactions: List<TransactionDisplayItem>,
     allVehicles: List<VehicleEntity> = emptyList(),
     pendingCustomers: List<CustomerPendingRow> = emptyList(),
@@ -240,10 +245,19 @@ fun StaffDashboardScreen(
             canIndustrialDelivery || cat != ProductCategory.INDUSTRIAL_GAS
         }
     }
+    val sortedDynamicCategories = remember(categories, canIndustrialDelivery) {
+        categories.filter { cat ->
+            cat.isActive && (canIndustrialDelivery || cat.legacyEnum != ProductCategory.INDUSTRIAL_GAS)
+        }.sortedWith(compareBy<ProductCategoryEntity> { it.sortOrder }.thenBy { it.id })
+    }
+    val useDynamicFolders = sortedDynamicCategories.isNotEmpty()
+    val categoryById = remember(categories) { categories.associateBy { it.id } }
 
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var selectedDynamicCategoryId by remember { mutableStateOf<Long?>(null) }
     var selectedSalesCategory by remember { mutableStateOf<ProductCategory?>(null) }
+    var selectedDynamicSalesCategoryId by remember { mutableStateOf<Long?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var activeTxType by remember { mutableStateOf<TransactionType?>(null) }
     var prefillCustomerName by remember { mutableStateOf("") }
@@ -253,12 +267,28 @@ fun StaffDashboardScreen(
     var showAutoSessionDialog by remember { mutableStateOf(false) }
     var staffSalesDailyMode by remember { mutableStateOf(true) }
 
-    val filteredVehicleRows = remember(vehicleRows, selectedCategory, searchQuery, canIndustrialDelivery) {
+    val openedDynamicCategory = remember(sortedDynamicCategories, selectedDynamicCategoryId) {
+        sortedDynamicCategories.firstOrNull { it.id == selectedDynamicCategoryId }
+    }
+    val openedDynamicSalesCategory = remember(sortedDynamicCategories, selectedDynamicSalesCategoryId) {
+        sortedDynamicCategories.firstOrNull { it.id == selectedDynamicSalesCategoryId }
+    }
+
+    val filteredVehicleRows = remember(vehicleRows, selectedCategory, openedDynamicCategory, useDynamicFolders, searchQuery, canIndustrialDelivery, categoryById) {
         vehicleRows.filter { row ->
+            val catMatch = if (useDynamicFolders) {
+                openedDynamicCategory == null ||
+                    row.product.categoryId == openedDynamicCategory.id ||
+                    (row.product.categoryId == 0L && row.product.category == openedDynamicCategory.legacyEnum)
+            } else {
+                selectedCategory == null || row.product.category == selectedCategory
+            }
+            val liveCatName = categoryById[row.product.categoryId]?.name ?: row.product.category.displayName
             (canIndustrialDelivery || row.product.category != ProductCategory.INDUSTRIAL_GAS) &&
-                (selectedCategory == null || row.product.category == selectedCategory) &&
+                catMatch &&
                 (searchQuery.isBlank() ||
                     row.product.name.contains(searchQuery, ignoreCase = true) ||
+                    liveCatName.contains(searchQuery, ignoreCase = true) ||
                     row.product.category.displayName.contains(searchQuery, ignoreCase = true))
         }
     }
@@ -279,6 +309,20 @@ fun StaffDashboardScreen(
     val totalCustEmpty = remember(vehicleRows) { vehicleRows.sumOf { it.customerEmptyReceived } }
     val totalRetEmpty = remember(vehicleRows) { vehicleRows.sumOf { it.emptyReturnedToStore } }
     val activePendingCount = remember(pendingCustomers) { pendingCustomers.count { it.pendingEmptyBalance > 0 } }
+
+    val dynamicFolderStats = remember(vehicleRows, sortedDynamicCategories) {
+        sortedDynamicCategories.map { cat ->
+            val catRows = vehicleRows.filter {
+                it.product.categoryId == cat.id || (it.product.categoryId == 0L && it.product.category == cat.legacyEnum)
+            }
+            DynamicCategoryFolderStat(
+                category = cat,
+                itemCount = catRows.size,
+                fullTotal = catRows.sumOf { it.fullBalance },
+                emptyTotal = catRows.sumOf { it.emptyBalance }
+            )
+        }
+    }
 
     val folderStats = remember(vehicleRows, activeStaffCategories) {
         activeStaffCategories.map { cat ->
@@ -306,8 +350,14 @@ fun StaffDashboardScreen(
             t.vehicleId == assignedVehicle.id && periodMatch
         }
     }
-    val productSummaries = remember(products, scopedSalesTxs) {
-        products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.name })).map { p ->
+    val productSummaries = remember(products, scopedSalesTxs, categoryById) {
+        products.sortedWith(
+            compareBy(
+                { categoryById[it.categoryId]?.sortOrder ?: (it.category.sortOrder * 10) },
+                { it.sortOrder },
+                { it.name }
+            )
+        ).map { p ->
             val pTxs = scopedSalesTxs.filter { it.transaction.productId == p.id }.map { it.transaction }
             StaffProductSaleSummary(
                 product = p,
@@ -318,6 +368,19 @@ fun StaffDashboardScreen(
                 compRepl = pTxs.filter { it.type == TransactionType.VEHICLE_CUSTOMER_COMPLAINT_REPLACE }.sumOf { it.quantity }
             )
         }.filter { it.totalSold > 0 || it.fullRecd > 0 || it.custEmpty > 0 || it.compRepl > 0 }
+    }
+    val dynamicSalesFolderStats = remember(productSummaries, sortedDynamicCategories) {
+        sortedDynamicCategories.map { cat ->
+            val catItems = productSummaries.filter {
+                it.product.categoryId == cat.id || (it.product.categoryId == 0L && it.product.category == cat.legacyEnum)
+            }
+            DynamicCategoryFolderStat(
+                category = cat,
+                itemCount = catItems.size,
+                fullTotal = catItems.sumOf { it.totalSold },
+                emptyTotal = catItems.sumOf { it.custEmpty }
+            )
+        }
     }
     val salesFolderStats = remember(productSummaries, activeStaffCategories) {
         activeStaffCategories.map { cat ->
@@ -330,9 +393,17 @@ fun StaffDashboardScreen(
             )
         }
     }
-    val filteredSalesSummaries = remember(productSummaries, selectedSalesCategory) {
-        if (selectedSalesCategory == null) emptyList()
-        else productSummaries.filter { it.product.category == selectedSalesCategory }
+    val filteredSalesSummaries = remember(productSummaries, selectedSalesCategory, openedDynamicSalesCategory, useDynamicFolders) {
+        if (useDynamicFolders) {
+            if (openedDynamicSalesCategory == null) emptyList()
+            else productSummaries.filter {
+                it.product.categoryId == openedDynamicSalesCategory.id ||
+                    (it.product.categoryId == 0L && it.product.category == openedDynamicSalesCategory.legacyEnum)
+            }
+        } else {
+            if (selectedSalesCategory == null) emptyList()
+            else productSummaries.filter { it.product.category == selectedSalesCategory }
+        }
     }
 
     val recentRequests = remember(myStoreTransferRequests) { myStoreTransferRequests.take(3) }
@@ -835,17 +906,28 @@ fun StaffDashboardScreen(
             // Inline Content for Selected Section — all part of the SAME smooth vertical LazyColumn!
             when (activeTab) {
                 0 -> {
-                    val showVehicleProducts = selectedCategory != null || searchQuery.isNotBlank()
-                    // 4 Color-Coded My Vehicle Category Folders (Staff sees ONLY assigned vehicle)
+                    val showVehicleProducts = (if (useDynamicFolders) openedDynamicCategory != null else selectedCategory != null) || searchQuery.isNotBlank()
                     val isDarkFolders = isDark
                     item(key = "staff_category_folders") {
-                        CategoryFolderGrid(
-                            stats = folderStats,
-                            selectedCategory = selectedCategory,
-                            onSelectCategory = { selectedCategory = it },
-                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Category Folders",
-                            onMidnightBackground = isDarkFolders
-                        )
+                        if (useDynamicFolders) {
+                            DynamicCategoryFolderGrid(
+                                stats = dynamicFolderStats,
+                                selectedCategoryId = selectedDynamicCategoryId,
+                                onSelectCategoryId = { id ->
+                                    selectedDynamicCategoryId = id
+                                    selectedCategory = sortedDynamicCategories.firstOrNull { it.id == id }?.legacyEnum
+                                },
+                                sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Category Folders"
+                            )
+                        } else {
+                            CategoryFolderGrid(
+                                stats = folderStats,
+                                selectedCategory = selectedCategory,
+                                onSelectCategory = { selectedCategory = it },
+                                sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Category Folders",
+                                onMidnightBackground = isDarkFolders
+                            )
+                        }
                     }
 
                     // Search Bar
@@ -885,7 +967,19 @@ fun StaffDashboardScreen(
                     }
 
                     if (showVehicleProducts) {
-                        selectedCategory?.let { openCat ->
+                        if (useDynamicFolders && openedDynamicCategory != null) {
+                            item(key = "staff_opened_dynamic_${openedDynamicCategory.id}") {
+                                OpenedDynamicCategoryFolderHeader(
+                                    category = openedDynamicCategory,
+                                    itemCount = filteredVehicleRows.size,
+                                    subtitle = "${assignedVehicle?.name ?: "My Vehicle"} • ${filteredVehicleRows.size} products inside folder",
+                                    onClose = {
+                                        selectedDynamicCategoryId = null
+                                        selectedCategory = null
+                                    }
+                                )
+                            }
+                        } else selectedCategory?.let { openCat ->
                             item(key = "staff_opened_folder_header_${openCat.name}") {
                                 OpenedCategoryFolderHeader(
                                     category = openCat,
@@ -980,13 +1074,25 @@ fun StaffDashboardScreen(
                         }
                     }
                     item(key = "staff_sales_category_folders") {
-                        CategoryFolderGrid(
-                            stats = salesFolderStats,
-                            selectedCategory = selectedSalesCategory,
-                            onSelectCategory = { selectedSalesCategory = it },
-                            sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Sales Category Folders",
-                            onMidnightBackground = LocalIsDarkTheme.current
-                        )
+                        if (useDynamicFolders) {
+                            DynamicCategoryFolderGrid(
+                                stats = dynamicSalesFolderStats,
+                                selectedCategoryId = selectedDynamicSalesCategoryId,
+                                onSelectCategoryId = { id ->
+                                    selectedDynamicSalesCategoryId = id
+                                    selectedSalesCategory = sortedDynamicCategories.firstOrNull { it.id == id }?.legacyEnum
+                                },
+                                sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Sales Category Folders"
+                            )
+                        } else {
+                            CategoryFolderGrid(
+                                stats = salesFolderStats,
+                                selectedCategory = selectedSalesCategory,
+                                onSelectCategory = { selectedSalesCategory = it },
+                                sectionTitle = "${assignedVehicle?.name ?: "My Vehicle"} • Sales Category Folders",
+                                onMidnightBackground = LocalIsDarkTheme.current
+                            )
+                        }
                     }
                     if (productSummaries.isEmpty()) {
                         item(key = "staff_sales_empty") {
@@ -1007,15 +1113,29 @@ fun StaffDashboardScreen(
                                 )
                             }
                         }
-                    } else if (selectedSalesCategory != null) {
-                        val openSalesCat = selectedSalesCategory!!
-                        item(key = "staff_sales_opened_header_${openSalesCat.name}") {
-                            OpenedCategoryFolderHeader(
-                                category = openSalesCat,
-                                itemCount = filteredSalesSummaries.size,
-                                subtitle = "${filteredSalesSummaries.size} products sold inside folder",
-                                onClose = { selectedSalesCategory = null }
-                            )
+                    } else if ((useDynamicFolders && openedDynamicSalesCategory != null) || (!useDynamicFolders && selectedSalesCategory != null)) {
+                        val openSalesLabel = openedDynamicSalesCategory?.name ?: selectedSalesCategory?.displayName.orEmpty()
+                        if (useDynamicFolders && openedDynamicSalesCategory != null) {
+                            item(key = "staff_sales_opened_dynamic_${openedDynamicSalesCategory.id}") {
+                                OpenedDynamicCategoryFolderHeader(
+                                    category = openedDynamicSalesCategory,
+                                    itemCount = filteredSalesSummaries.size,
+                                    subtitle = "${filteredSalesSummaries.size} products sold inside folder",
+                                    onClose = {
+                                        selectedDynamicSalesCategoryId = null
+                                        selectedSalesCategory = null
+                                    }
+                                )
+                            }
+                        } else selectedSalesCategory?.let { openSalesCat ->
+                            item(key = "staff_sales_opened_header_${openSalesCat.name}") {
+                                OpenedCategoryFolderHeader(
+                                    category = openSalesCat,
+                                    itemCount = filteredSalesSummaries.size,
+                                    subtitle = "${filteredSalesSummaries.size} products sold inside folder",
+                                    onClose = { selectedSalesCategory = null }
+                                )
+                            }
                         }
                         if (filteredSalesSummaries.isEmpty()) {
                             item(key = "staff_sales_folder_empty") {
@@ -1025,7 +1145,7 @@ fun StaffDashboardScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        text = "No ${openSalesCat.displayName} sales in this period.",
+                                        text = "No $openSalesLabel sales in this period.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(16.dp)

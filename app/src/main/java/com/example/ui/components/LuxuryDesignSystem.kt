@@ -46,8 +46,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.ChromeBorderLight
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.GlossyCardBlueTint
+import com.example.ui.theme.GlossyCardWhite
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
@@ -75,7 +79,7 @@ fun LuxuryGlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val isDark = LocalIsDarkTheme.current || forceMidnight
-    val surfaceColor = if (isDark) ObsidianSurface.copy(alpha = 0.94f) else PureWhite
+    val surfaceColor = if (isDark) ObsidianSurface.copy(alpha = 0.94f) else GlossyCardWhite
     val borderBrush = if (isDark) {
         Brush.linearGradient(
             listOf(
@@ -87,9 +91,10 @@ fun LuxuryGlassCard(
     } else {
         Brush.linearGradient(
             listOf(
-                (accentGlow ?: RoyalElectricBlue).copy(alpha = 0.22f),
-                PlatinumSilver,
-                PlatinumSilver.copy(alpha = 0.8f)
+                PureWhite,
+                (accentGlow ?: RoyalElectricBlue).copy(alpha = 0.32f),
+                ChromeBorderLight,
+                MetallicOrange.copy(alpha = 0.16f)
             )
         )
     }
@@ -106,13 +111,23 @@ fun LuxuryGlassCard(
                 .fillMaxWidth()
                 .drawBehind {
                     if (isDark) {
-                        // Subtle 2.5D specular top-left ambient light reflection
                         drawRect(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
                                     (accentGlow ?: ElectricBlueGlow).copy(alpha = 0.08f),
                                     Color.Transparent,
                                     MetallicOrange.copy(alpha = 0.04f)
+                                )
+                            )
+                        )
+                    } else {
+                        // Glossy bright 3D sheen: crisp white top highlight fading into subtle blue-tinted glass
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    PureWhite.copy(alpha = 0.95f),
+                                    GlossyCardBlueTint.copy(alpha = 0.52f),
+                                    (accentGlow ?: RoyalElectricBlue).copy(alpha = 0.05f)
                                 )
                             )
                         )
@@ -129,9 +144,9 @@ fun LuxuryGlassCard(
             modifier = cardModifier,
             shape = shape,
             color = surfaceColor,
-            tonalElevation = if (isDark) 3.dp else 1.dp,
-            shadowElevation = if (isDark) 12.dp else 3.dp,
-            border = BorderStroke(1.1.dp, borderBrush),
+            tonalElevation = if (isDark) 3.dp else 2.dp,
+            shadowElevation = if (isDark) 12.dp else 6.dp,
+            border = BorderStroke(if (isDark) 1.1.dp else 1.25.dp, borderBrush),
             content = innerContent
         )
     } else {
@@ -139,9 +154,9 @@ fun LuxuryGlassCard(
             modifier = cardModifier,
             shape = shape,
             color = surfaceColor,
-            tonalElevation = if (isDark) 3.dp else 1.dp,
-            shadowElevation = if (isDark) 10.dp else 2.dp,
-            border = BorderStroke(1.1.dp, borderBrush),
+            tonalElevation = if (isDark) 3.dp else 2.dp,
+            shadowElevation = if (isDark) 10.dp else 5.dp,
+            border = BorderStroke(if (isDark) 1.1.dp else 1.25.dp, borderBrush),
             content = innerContent
         )
     }
@@ -249,42 +264,45 @@ fun LuxurySectionHeader(
 /**
  * Ambient Obsidian-Royal hero container used for executive summary cards and auth headers.
  */
-fun Modifier.obsidianRoyalAtmosphere(): Modifier = this.drawBehind {
-    drawRect(
-        brush = Brush.linearGradient(
-            colors = listOf(
-                ObsidianMidnight,
-                ObsidianDeep,
-                Color(0xFF0F2964)
-            ),
-            start = Offset.Zero,
-            end = Offset(size.width, size.height)
+fun Modifier.obsidianRoyalAtmosphere(): Modifier = composed {
+    val isDark = LocalIsDarkTheme.current
+    this.drawBehind {
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = if (isDark) {
+                    listOf(ObsidianMidnight, ObsidianDeep, Color(0xFF0F2964))
+                } else {
+                    listOf(Color(0xFF1449C9), RoyalElectricBlue, Color(0xFF2B74FF))
+                },
+                start = Offset.Zero,
+                end = Offset(size.width, size.height)
+            )
         )
-    )
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                ElectricBlueBright.copy(alpha = 0.24f),
-                Color.Transparent
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    (if (isDark) ElectricBlueBright else Color(0xFF93C5FD)).copy(alpha = if (isDark) 0.24f else 0.32f),
+                    Color.Transparent
+                ),
+                center = Offset(size.width * 0.16f, size.height * 0.12f),
+                radius = size.maxDimension * 0.58f
             ),
-            center = Offset(size.width * 0.16f, size.height * 0.12f),
-            radius = size.maxDimension * 0.58f
-        ),
-        radius = size.maxDimension * 0.58f,
-        center = Offset(size.width * 0.16f, size.height * 0.12f)
-    )
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                MetallicOrange.copy(alpha = 0.18f),
-                Color.Transparent
+            radius = size.maxDimension * 0.58f,
+            center = Offset(size.width * 0.16f, size.height * 0.12f)
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    MetallicOrange.copy(alpha = if (isDark) 0.18f else 0.28f),
+                    Color.Transparent
+                ),
+                center = Offset(size.width * 0.92f, size.height * 0.88f),
+                radius = size.maxDimension * 0.45f
             ),
-            center = Offset(size.width * 0.92f, size.height * 0.88f),
-            radius = size.maxDimension * 0.45f
-        ),
-        radius = size.maxDimension * 0.45f,
-        center = Offset(size.width * 0.92f, size.height * 0.88f)
-    )
+            radius = size.maxDimension * 0.45f,
+            center = Offset(size.width * 0.92f, size.height * 0.88f)
+        )
+    }
 }
 
 /**

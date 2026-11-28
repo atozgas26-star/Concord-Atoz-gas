@@ -541,6 +541,61 @@ class InventoryRepository(
         )
     }
 
+    /**
+     * Reorders Product Master category folders via Drag-and-Drop or Up/Down arrows.
+     * Updates only [ProductCategoryEntity.sortOrder] and [ProductCategoryEntity.updatedAtMs];
+     * permanent category IDs, product IDs, stock balances, and historical transactions remain untouched.
+     */
+    suspend fun reorderCategories(
+        orderedCategoryIds: List<Long>,
+        actor: UserAccountEntity
+    ): OperationResult {
+        if (actor.role != UserRole.ADMIN) {
+            return OperationResult.ValidationError("Only Admin can reorder product category folders.")
+        }
+        if (orderedCategoryIds.isEmpty()) {
+            return OperationResult.ValidationError("No category order specified.")
+        }
+        val updatedCategories = mutableListOf<ProductCategoryEntity>()
+        val nowMs = System.currentTimeMillis()
+        val result = db.withTransaction {
+            val allCats = productCategoryDao.getAllOnce()
+            if (allCats.isEmpty()) {
+                return@withTransaction OperationResult.ValidationError("No categories found to reorder.")
+            }
+            val byId = allCats.associateBy { it.id }
+            val explicitOrder = orderedCategoryIds.distinct().mapNotNull { byId[it] }
+            val remaining = allCats.filter { cat -> explicitOrder.none { it.id == cat.id } }
+            val finalOrder = explicitOrder + remaining
+            finalOrder.forEachIndexed { idx, cat ->
+                val newSortOrder = (idx + 1) * 10
+                if (cat.sortOrder != newSortOrder) {
+                    val updated = cat.copy(
+                        sortOrder = newSortOrder,
+                        updatedAtMs = nowMs
+                    )
+                    productCategoryDao.update(updated)
+                    updatedCategories.add(updated)
+                }
+            }
+            OperationResult.Success("Category folder order saved and synced across all screens.")
+        }
+        if (result is OperationResult.Success && updatedCategories.isNotEmpty()) {
+            updatedCategories.forEach { cat ->
+                cloudSync?.pushProductCategory(cat)
+            }
+            val orderSummary = updatedCategories.sortedBy { it.sortOrder }.joinToString(" → ") { it.name }
+            logSecurityEvent(
+                eventType = "CATEGORY_REORDERED",
+                role = actor.role.name,
+                actorName = actor.displayName,
+                details = "Updated category folder order: $orderSummary",
+                isAlert = false
+            )
+        }
+        return result
+    }
+
     suspend fun addProduct(
         category: ProductCategory,
         name: String,
