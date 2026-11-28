@@ -1,0 +1,97 @@
+name: Build & Publish C&A GAS APK Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (leave blank to auto-detect from app/build.gradle.kts, e.g. v5.0.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Detect app version
+        id: version
+        run: |
+          APP_VER=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          TAG_INPUT="${{ github.event.inputs.release_tag }}"
+          if [ -n "$TAG_INPUT" ]; then
+            TAG="$TAG_INPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v${APP_VER}"
+          fi
+          echo "app_version=${APP_VER}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare signing keystore
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
+            echo "build_mode=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_mode=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build APK
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ "${{ steps.signing.outputs.build_mode }}" = "release" ]; then
+            gradle :app:assembleRelease
+            cp app/build/outputs/apk/release/app-release.apk "CA-Gas-${{ steps.version.outputs.release_tag }}.apk"
+          else
+            gradle :app:assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "CA-Gas-${{ steps.version.outputs.release_tag }}.apk"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.release_tag }}
+          name: C&A GAS ${{ steps.version.outputs.release_tag }}
+          body: |
+            Automated APK release for **C&A GAS ${{ steps.version.outputs.release_tag }}**.
+            - Dynamic Product Master & Permanent Category Folders
+            - LPG & Industrial Gas Exchange Empty (LPG, Industrial Regular, 48 CFT Small, Cutting Gas)
+            - Secure First-Time Mobile OTP + Existing Individual PIN Registration & Salted PIN Hashing
+          files: CA-Gas-${{ steps.version.outputs.release_tag }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
