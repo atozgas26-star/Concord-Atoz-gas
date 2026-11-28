@@ -685,7 +685,8 @@ fun ReportsScreen(
                                 Text(
                                     text = table.subtitle,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.8f)
+                                    fontWeight = FontWeight.Medium,
+                                    color = com.example.ui.theme.TextSecondaryDark
                                 )
                             }
                             SignatureAccentHairline(height = 2.dp)

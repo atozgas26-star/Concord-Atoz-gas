@@ -1261,7 +1261,8 @@ private fun LowStockAlertBannerCard(
                                 text = "Fleet: ${item.vehiclesFullBalance} Full • Total: ${item.totalFullBalance}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = JetBrainsMono,
-                                color = alertTextColor.copy(alpha = 0.88f)
+                                fontWeight = FontWeight.Medium,
+                                color = alertTextColor
                             )
                         }
                         Surface(

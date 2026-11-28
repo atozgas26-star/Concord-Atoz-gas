@@ -650,7 +650,7 @@ fun DifferentGasReturnDialog(
                                     text = "${deliveredItems.size} gases • -$totalDelivered Full",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono,
-                                    color = if (delSelected) ArcticWhite.copy(alpha = 0.9f) else PlatinumMuted
+                                    color = if (delSelected) ArcticWhite else PlatinumMuted
                                 )
                             }
                         }
@@ -682,7 +682,7 @@ fun DifferentGasReturnDialog(
                                     text = "${returnedItems.size} gases • +$totalReturned Empty",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono,
-                                    color = if (retSelected) ArcticWhite.copy(alpha = 0.9f) else PlatinumMuted
+                                    color = if (retSelected) ArcticWhite else PlatinumMuted
                                 )
                             }
                         }

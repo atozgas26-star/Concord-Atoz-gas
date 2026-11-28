@@ -85,6 +85,8 @@ import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedContainer
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueSoft
+import com.example.ui.theme.ErrorDarkRed
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.RoyalElectricBlue
@@ -568,8 +570,9 @@ fun IphonePasscodePad(
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
+                val isDarkPad = LocalIsDarkTheme.current
                 Surface(
-                    color = BrandRedContainer,
+                    color = if (isDarkPad) Color(0xFF3F121D) else BrandRedContainer,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -577,9 +580,9 @@ fun IphonePasscodePad(
                 ) {
                     Text(
                         text = errorMessage.orEmpty(),
-                        color = BrandRedBright,
+                        color = if (isDarkPad) BrandRedBright else ErrorDarkRed,
                         style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                     )
@@ -667,7 +670,7 @@ fun IphonePasscodePad(
                                     color = if (pinInput.isNotEmpty()) {
                                         CrimsonAccent
                                     } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     }
                                 )
                             }

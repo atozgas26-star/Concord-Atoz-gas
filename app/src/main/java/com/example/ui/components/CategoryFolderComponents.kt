@@ -314,7 +314,7 @@ private fun ZoneScopePillCard(
     }
     val borderColor = if (selected) MetallicOrangeBright else if (isDark) accent.copy(alpha = 0.5f) else accent.copy(alpha = 0.35f)
     val textColor = if (selected || isDark) ArcticWhite else DeepNavyText
-    val subTextColor = if (selected) ArcticWhite.copy(alpha = 0.94f) else if (isDark) PlatinumSilver else DarkCharcoalSecondary
+    val subTextColor = if (selected) PlatinumSilver else if (isDark) PlatinumSilver else DarkCharcoalSecondary
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
@@ -473,7 +473,7 @@ fun CategoryFolderGrid(
                 }
                 val badgeBorder = if (isSelected) PureWhite.copy(alpha = 0.7f) else style.primaryColor.copy(alpha = 0.45f)
                 val titleColor = if (isSelected || isDark) ArcticWhite else DeepNavyText
-                val subColor = if (isSelected) ArcticWhite.copy(alpha = 0.9f) else if (isDark) PlatinumSilver else DarkCharcoalSecondary
+                val subColor = if (isSelected) PlatinumSilver else if (isDark) PlatinumSilver else DarkCharcoalSecondary
 
                 Surface(
                     modifier = Modifier
@@ -863,7 +863,8 @@ fun OpenedSectionFolderHeader(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.labelSmall,
-                        color = PureWhite.copy(alpha = 0.88f),
+                        fontWeight = FontWeight.Medium,
+                        color = com.example.ui.theme.TextSecondaryDark,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -993,7 +994,7 @@ fun DynamicCategoryFolderGrid(
                     else -> visual.lightContainer
                 }
                 val titleColor = if (isSelected || isDark) ArcticWhite else DeepNavyText
-                val subColor = if (isSelected) PureWhite.copy(alpha = 0.90f) else if (isDark) PlatinumSilver else DarkCharcoalSecondary
+                val subColor = if (isSelected) PlatinumSilver else if (isDark) PlatinumSilver else DarkCharcoalSecondary
 
                 Surface(
                     modifier = Modifier

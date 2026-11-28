@@ -416,6 +416,17 @@ fun QuickCalculatorPopupDialog(
 ) {
     var calcState by remember { mutableStateOf(QuickCalculatorState()) }
     val clipboardManager = LocalClipboardManager.current
+    val isDark = com.example.ui.theme.LocalIsDarkTheme.current
+
+    val dialogBg = if (isDark) com.example.ui.theme.ObsidianMidnight else com.example.ui.theme.SignatureRoyalBackground
+    val displayBg = if (isDark) com.example.ui.theme.ObsidianSurface else com.example.ui.theme.PureWhite
+    val tabInactiveBg = if (isDark) com.example.ui.theme.ObsidianSurface else com.example.ui.theme.PureWhite
+    val tabInactiveText = if (isDark) com.example.ui.theme.PureWhite else com.example.ui.theme.DeepNavyText
+    val primaryText = if (isDark) com.example.ui.theme.PureWhite else com.example.ui.theme.DeepNavyText
+    val secondaryText = if (isDark) com.example.ui.theme.TextSecondaryDark else com.example.ui.theme.DarkSlateSecondary
+    val blueAccent = if (isDark) ElectricBlueGlow else com.example.ui.theme.ElectricBlueTextLight
+    val orangeAccent = if (isDark) MetallicOrangeBright else com.example.ui.theme.WarningDarkOrange
+    val cardBorder = if (isDark) com.example.ui.theme.ObsidianBorder else SignatureRoyalBorder
 
     var dialogContainerSize by remember { mutableStateOf(IntSize.Zero) }
 
@@ -443,16 +454,15 @@ fun QuickCalculatorPopupDialog(
 
             Surface(
                 shape = RoundedCornerShape(26.dp),
-                color = com.example.ui.theme.CinematicMidnightBlack.copy(alpha = 0.96f),
+                color = dialogBg,
                 tonalElevation = 0.dp,
                 shadowElevation = 22.dp,
                 border = BorderStroke(
                     1.5.dp,
                     Brush.linearGradient(
                         listOf(
-                            com.example.ui.theme.NeonCyanGlow.copy(alpha = 0.85f),
-                            SignatureRoyalBorder,
-                            com.example.ui.theme.MoltenOrangeGlow.copy(alpha = 0.85f)
+                            RoyalElectricBlue,
+                            MetallicOrange
                         )
                     )
                 ),
@@ -478,7 +488,7 @@ fun QuickCalculatorPopupDialog(
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
                                     Brush.horizontalGradient(
-                                        listOf(RoyalBlueDeep, SignatureRoyalElevated)
+                                        listOf(RoyalBlueDeep, RoyalElectricBlue)
                                     )
                                 )
                                 .pointerInput(maxDragX, maxDragY) {
@@ -497,7 +507,7 @@ fun QuickCalculatorPopupDialog(
                                     .width(40.dp)
                                     .height(4.dp)
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(PlatinumSilver.copy(alpha = 0.45f))
+                                    .background(Color.White.copy(alpha = 0.55f))
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -510,8 +520,8 @@ fun QuickCalculatorPopupDialog(
                                 ) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = ElectricBlueBright.copy(alpha = 0.25f),
-                                        border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.65f)),
+                                        color = Color.White.copy(alpha = 0.2f),
+                                        border = BorderStroke(1.dp, Color.White),
                                         modifier = Modifier.size(34.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
@@ -522,7 +532,7 @@ fun QuickCalculatorPopupDialog(
                                                     Icons.Default.Calculate
                                                 },
                                                 contentDescription = null,
-                                                tint = ElectricBlueGlow,
+                                                tint = Color.White,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -537,8 +547,8 @@ fun QuickCalculatorPopupDialog(
                                                     "C&A Calculator"
                                                 },
                                                 style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = ArcticWhite,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color.White,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
@@ -546,7 +556,7 @@ fun QuickCalculatorPopupDialog(
                                             Icon(
                                                 imageVector = Icons.Default.DragIndicator,
                                                 contentDescription = "Drag to move calculator",
-                                                tint = PlatinumSilver,
+                                                tint = Color.White,
                                                 modifier = Modifier.size(15.dp)
                                             )
                                         }
@@ -557,7 +567,8 @@ fun QuickCalculatorPopupDialog(
                                                 "Normal Mode (No VAT) • Drag to move"
                                             },
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = PlatinumSilver,
+                                            fontWeight = FontWeight.Medium,
+                                            color = com.example.ui.theme.TextSecondaryDark,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -588,7 +599,7 @@ fun QuickCalculatorPopupDialog(
                                         Icon(
                                             imageVector = Icons.Default.ContentCopy,
                                             contentDescription = "Copy result",
-                                            tint = ElectricBlueGlow,
+                                            tint = Color.White,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -598,7 +609,7 @@ fun QuickCalculatorPopupDialog(
                                         onClick = onDismiss,
                                         shape = RoundedCornerShape(12.dp),
                                         color = MetallicOrange,
-                                        border = BorderStroke(1.2.dp, MetallicOrangeGold.copy(alpha = 0.85f)),
+                                        border = BorderStroke(1.2.dp, Color.White),
                                         shadowElevation = 6.dp,
                                         modifier = Modifier
                                             .minimumInteractiveComponentSize()
@@ -644,10 +655,10 @@ fun QuickCalculatorPopupDialog(
                             Surface(
                                 onClick = { calcState = QuickCalculatorEngine.setMode(calcState, CalculatorMode.NORMAL) },
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isNormal) RoyalElectricBlue else SignatureRoyalSurface,
+                                color = if (isNormal) RoyalElectricBlue else tabInactiveBg,
                                 border = BorderStroke(
                                     1.2.dp,
-                                    if (isNormal) ElectricBlueGlow else SignatureRoyalBorder
+                                    if (isNormal) RoyalElectricBlue else cardBorder
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
@@ -662,7 +673,7 @@ fun QuickCalculatorPopupDialog(
                                         text = "Normal Calculator",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isNormal) Color.White else PlatinumSilver,
+                                        color = if (isNormal) Color.White else tabInactiveText,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -673,10 +684,10 @@ fun QuickCalculatorPopupDialog(
                             Surface(
                                 onClick = { calcState = QuickCalculatorEngine.setMode(calcState, CalculatorMode.BILL_VAT_5) },
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isVat) MetallicOrange else SignatureRoyalSurface,
+                                color = if (isVat) MetallicOrange else tabInactiveBg,
                                 border = BorderStroke(
                                     1.2.dp,
-                                    if (isVat) MetallicOrangeGold else SignatureRoyalBorder
+                                    if (isVat) MetallicOrange else cardBorder
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
@@ -691,7 +702,7 @@ fun QuickCalculatorPopupDialog(
                                         text = "Bill – 5% VAT",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isVat) Color.White else PlatinumSilver,
+                                        color = if (isVat) Color.White else tabInactiveText,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -699,18 +710,15 @@ fun QuickCalculatorPopupDialog(
                             }
                         }
 
-                        // Clean Royal Blue Display Panel (no harsh black box or reflection artifacts)
+                        // High-Contrast Display Panel
                         Surface(
                             shape = RoundedCornerShape(16.dp),
-                            color = SignatureRoyalSurface,
+                            color = displayBg,
                             border = BorderStroke(
-                                1.2.dp,
-                                if (calcState.mode == CalculatorMode.BILL_VAT_5) {
-                                    MetallicOrangeBright.copy(alpha = 0.65f)
-                                } else {
-                                    ElectricBlueBright.copy(alpha = 0.55f)
-                                }
+                                1.4.dp,
+                                if (calcState.mode == CalculatorMode.BILL_VAT_5) MetallicOrange else RoyalElectricBlue
                             ),
+                            shadowElevation = 2.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -727,14 +735,15 @@ fun QuickCalculatorPopupDialog(
                                     Text(
                                         text = if (calcState.mode == CalculatorMode.BILL_VAT_5) "BILL INPUT (AED)" else "STANDARD",
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (calcState.mode == CalculatorMode.BILL_VAT_5) MetallicOrangeBright else ElectricBlueGlow
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (calcState.mode == CalculatorMode.BILL_VAT_5) orangeAccent else blueAccent
                                     )
                                     Text(
                                         text = calcState.expression.ifBlank { " " },
                                         style = MaterialTheme.typography.labelMedium,
                                         fontFamily = JetBrainsMono,
-                                        color = PlatinumSilver,
+                                        fontWeight = FontWeight.Medium,
+                                        color = secondaryText,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.testTag("calc_expression_text")
@@ -744,9 +753,13 @@ fun QuickCalculatorPopupDialog(
                                 Text(
                                     text = calcState.display,
                                     fontSize = 30.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = FontWeight.ExtraBold,
                                     fontFamily = JetBrainsMono,
-                                    color = if (calcState.hasError) MetallicOrangeBright else ArcticWhite,
+                                    color = if (calcState.hasError) {
+                                        if (isDark) Color(0xFFFCA5A5) else com.example.ui.theme.ErrorDarkRed
+                                    } else {
+                                        primaryText
+                                    },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = TextAlign.End,
@@ -759,32 +772,34 @@ fun QuickCalculatorPopupDialog(
                                 val breakdown = calcState.vatBreakdown
                                 if (breakdown != null) {
                                     Spacer(Modifier.height(8.dp))
-                                    HorizontalDivider(color = SignatureRoyalBorder.copy(alpha = 0.7f))
+                                    HorizontalDivider(color = cardBorder)
                                     Spacer(Modifier.height(8.dp))
                                     VatBreakdownRow(
                                         label = "Bill Amount",
                                         value = breakdown.billAmountFormatted,
-                                        valueColor = ArcticWhite,
+                                        labelColor = secondaryText,
+                                        valueColor = primaryText,
                                         tag = "calc_vat_bill_amount"
                                     )
                                     Spacer(Modifier.height(4.dp))
                                     VatBreakdownRow(
                                         label = "VAT (5%)",
                                         value = breakdown.vatAmountFormatted,
-                                        valueColor = ElectricBlueGlow,
+                                        labelColor = secondaryText,
+                                        valueColor = blueAccent,
                                         tag = "calc_vat_tax_amount"
                                     )
                                     Spacer(Modifier.height(6.dp))
                                     Surface(
                                         shape = RoundedCornerShape(10.dp),
                                         color = RoyalBlueDeep,
-                                        border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.7f)),
+                                        border = BorderStroke(1.2.dp, MetallicOrange),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -792,14 +807,14 @@ fun QuickCalculatorPopupDialog(
                                                 text = "Grand Total",
                                                 style = MaterialTheme.typography.labelLarge,
                                                 fontWeight = FontWeight.ExtraBold,
-                                                color = MetallicOrangeBright
+                                                color = Color(0xFFFFEDD5)
                                             )
                                             Text(
                                                 text = breakdown.grandTotalFormatted,
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontFamily = JetBrainsMono,
                                                 fontWeight = FontWeight.ExtraBold,
-                                                color = ArcticWhite,
+                                                color = Color.White,
                                                 modifier = Modifier.testTag("calc_vat_grand_total")
                                             )
                                         }
@@ -819,8 +834,8 @@ fun QuickCalculatorPopupDialog(
                                 calcState.history.forEach { entry ->
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = SignatureRoyalElevated,
-                                        border = BorderStroke(1.dp, SignatureRoyalBorder),
+                                        color = displayBg,
+                                        border = BorderStroke(1.dp, cardBorder),
                                         modifier = Modifier.clickable {
                                             calcState = QuickCalculatorEngine.applyHistoryResult(calcState, entry)
                                         }
@@ -829,15 +844,16 @@ fun QuickCalculatorPopupDialog(
                                             text = entry,
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = JetBrainsMono,
-                                            color = PlatinumSilver,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = primaryText,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                                         )
                                     }
                                 }
                             }
                         }
 
-                        // 4x5 Tactile Keypad (Midnight Royal Blue + Electric Blue + Metallic Orange)
+                        // 4x5 Tactile Keypad (High-Contrast Bright Luxury & Dark Mode)
                         val rows = listOf(
                             listOf("C", "DEL", "%", "÷"),
                             listOf("7", "8", "9", "×"),
@@ -858,28 +874,40 @@ fun QuickCalculatorPopupDialog(
                                         val isOperator = key in setOf("÷", "×", "-", "+", "%")
                                         val keyBrush = when {
                                             isEquals -> Brush.linearGradient(listOf(MetallicOrange, com.example.ui.theme.MoltenOrangeCore))
-                                            isClear -> Brush.linearGradient(listOf(Color(0xFF451624), Color(0xFF2B0E18)))
-                                            isOperator -> Brush.linearGradient(listOf(Color(0xFF132D72), Color(0xFF0A1B47)))
-                                            else -> Brush.linearGradient(listOf(Color(0xFF12234F), Color(0xFF091433)))
+                                            isClear -> if (isDark) {
+                                                Brush.linearGradient(listOf(Color(0xFF451624), Color(0xFF2B0E18)))
+                                            } else {
+                                                Brush.linearGradient(listOf(Color(0xFFFEE2E2), Color(0xFFFECACA)))
+                                            }
+                                            isOperator -> if (isDark) {
+                                                Brush.linearGradient(listOf(Color(0xFF132D72), Color(0xFF0A1B47)))
+                                            } else {
+                                                Brush.linearGradient(listOf(Color(0xFFDBEAFE), Color(0xFFBFDBFE)))
+                                            }
+                                            else -> if (isDark) {
+                                                Brush.linearGradient(listOf(Color(0xFF12234F), Color(0xFF091433)))
+                                            } else {
+                                                Brush.linearGradient(listOf(Color(0xFFFFFFFF), Color(0xFFF1F5F9)))
+                                            }
                                         }
                                         val contentColor = when {
                                             isEquals -> Color.White
-                                            isClear -> Color(0xFFFCA5A5)
-                                            isOperator -> com.example.ui.theme.NeonCyanGlow
-                                            else -> ArcticWhite
+                                            isClear -> if (isDark) Color(0xFFFCA5A5) else com.example.ui.theme.ErrorDarkRed
+                                            isOperator -> if (isDark) com.example.ui.theme.NeonCyanGlow else com.example.ui.theme.ElectricBlueTextLight
+                                            else -> primaryText
                                         }
                                         val borderBrush = when {
-                                            isEquals -> Brush.linearGradient(listOf(com.example.ui.theme.ChromeSilverHighlight.copy(alpha = 0.7f), MetallicOrangeBright))
-                                            isClear -> Brush.linearGradient(listOf(BrandRedSecondary.copy(alpha = 0.8f), Color(0xFF7F1D1D)))
-                                            isOperator -> Brush.linearGradient(listOf(com.example.ui.theme.NeonCyanGlow.copy(alpha = 0.75f), ElectricBlueBright.copy(alpha = 0.35f)))
-                                            else -> Brush.linearGradient(listOf(ElectricBlueGlow.copy(alpha = 0.35f), SignatureRoyalBorder))
+                                            isEquals -> Brush.linearGradient(listOf(Color.White, MetallicOrangeBright))
+                                            isClear -> Brush.linearGradient(listOf(com.example.ui.theme.ErrorDarkRed, com.example.ui.theme.ErrorDarkRed))
+                                            isOperator -> Brush.linearGradient(listOf(RoyalElectricBlue, ElectricBlueBright))
+                                            else -> Brush.linearGradient(listOf(cardBorder, cardBorder))
                                         }
 
                                         Surface(
                                             shape = RoundedCornerShape(14.dp),
                                             color = Color.Transparent,
                                             border = BorderStroke(1.1.dp, borderBrush),
-                                            shadowElevation = if (isEquals) 8.dp else 4.dp,
+                                            shadowElevation = if (isEquals) 8.dp else 3.dp,
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .height(52.dp)
@@ -900,7 +928,7 @@ fun QuickCalculatorPopupDialog(
                                                     Icon(
                                                         imageVector = Icons.AutoMirrored.Filled.Backspace,
                                                         contentDescription = "Backspace",
-                                                        tint = PlatinumSilver,
+                                                        tint = primaryText,
                                                         modifier = Modifier.size(20.dp)
                                                     )
                                                 } else {
@@ -929,6 +957,7 @@ fun QuickCalculatorPopupDialog(
 private fun VatBreakdownRow(
     label: String,
     value: String,
+    labelColor: Color,
     valueColor: Color,
     tag: String
 ) {
@@ -940,7 +969,8 @@ private fun VatBreakdownRow(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = PlatinumMuted
+            fontWeight = FontWeight.SemiBold,
+            color = labelColor
         )
         Text(
             text = value,

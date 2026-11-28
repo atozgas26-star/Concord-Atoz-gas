@@ -742,7 +742,7 @@ fun RoleWelcomeOverlay(
                 Text(
                     text = welcomeSubtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = PlatinumSilver.copy(alpha = 0.92f),
+                    color = PlatinumSilver,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.graphicsLayer { alpha = textAlpha.value }
                 )

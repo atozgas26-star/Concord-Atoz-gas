@@ -14,12 +14,22 @@ val BrightSilverTop = Color(0xFFF3F7FF)
 val BrightSkyBlueMid = Color(0xFFE6F0FF)
 val BrightIceBottom = Color(0xFFF6F9FF)
 val BrightSilverSurface = Color(0xFFEDF4FF)
-val GlossyCardWhite = Color(0xFFFCFDFF)
-val GlossyCardBlueTint = Color(0xFFF2F7FF)
-val ChromeBorderLight = Color(0xFFCAD8EE)
+val GlossyCardWhite = Color(0xFFFFFFFF)
+val GlossyCardBlueTint = Color(0xFFF4F8FF)
+val ChromeBorderLight = Color(0xFFCBD5E1)
 val ChromeBorderHighlight = Color(0xFFFFFFFF)
-val DeepNavyText = Color(0xFF0A1B3D)
-val DarkCharcoalSecondary = Color(0xFF3A4E6F)
+
+// High-Contrast Light-Background Text Tokens (WCAG AA/AAA)
+val DeepNavyText = Color(0xFF14233B)          // Main text (#14233B) - ~15.2:1 on #FFFFFF
+val DarkCharcoalImportant = Color(0xFF202938) // Important text (#202938) - ~14.3:1 on #FFFFFF
+val DarkSlateSecondary = Color(0xFF475569)    // Secondary text (#475569) - ~7.5:1 on #FFFFFF
+val DarkCharcoalSecondary = DarkSlateSecondary
+
+// High-Contrast Light-Background Semantic Tokens (WCAG AA >= 5.0:1 on #FFFFFF)
+val SuccessDarkGreen = Color(0xFF15803D)      // Dark Green - ~5.1:1 on #FFFFFF
+val WarningDarkOrange = Color(0xFFC2410C)     // Dark Orange - ~5.2:1 on #FFFFFF
+val ErrorDarkRed = Color(0xFFB91C1C)          // Dark Red - ~6.5:1 on #FFFFFF
+val ElectricBlueTextLight = Color(0xFF1D4ED8) // High-contrast Electric Blue text - ~6.7:1 on #FFFFFF
 
 // Consistent Category Folder Palette (Product Master, Inventory, Store Stock, Vehicle Stock)
 val CategoryElectricBlue = Color(0xFF1D63ED)
@@ -51,9 +61,9 @@ val ObsidianBorderSubtle = Color(0xFF162852)
 val RoyalElectricBlue = Color(0xFF1D63ED)
 val RoyalBlueDeep = Color(0xFF1442A6)
 val SignatureRoyalBackground = Color(0xFFEEF4FF)
-val SignatureRoyalSurface = Color(0xFFFCFDFF)
-val SignatureRoyalElevated = Color(0xFFE7F0FF)
-val SignatureRoyalBorder = Color(0xFFC7D7F2)
+val SignatureRoyalSurface = Color(0xFFFFFFFF)
+val SignatureRoyalElevated = Color(0xFFEBF2FF)
+val SignatureRoyalBorder = Color(0xFFCBD5E1)
 val ElectricBlueBright = Color(0xFF2563EB)
 val ElectricBlueGlow = Color(0xFF60A5FA)
 val ElectricBlueSoft = Color(0xFFE4EEFF)
@@ -65,44 +75,44 @@ val MetallicOrangeGold = Color(0xFFF59E0B)
 val MetallicOrangeSoft = Color(0xFFFFEFE5)
 val MetallicOrangeOnSoft = Color(0xFF7C2D12)
 
-val ArcticWhite = Color(0xFFF7FAFF)
+val ArcticWhite = Color(0xFFFFFFFF)
 val PureWhite = Color(0xFFFFFFFF)
 val ArcticSurfaceSubtle = Color(0xFFECF3FF)
 
-val PlatinumSilver = Color(0xFFDCE6F5)
-val PlatinumOutline = Color(0xFFC2D2EA)
-val PlatinumMuted = Color(0xFF64748B)
-val PlatinumDark = Color(0xFF3B4F71)
+val PlatinumSilver = Color(0xFFE2E8F0)
+val PlatinumOutline = Color(0xFFCBD5E1)
+val PlatinumMuted = Color(0xFFCBD5E1)
+val PlatinumDark = Color(0xFF334155)
 
 // Semantic & Preserved Corporate Tokens
-val BrandGreenPrimary = Color(0xFF059669)
+val BrandGreenPrimary = SuccessDarkGreen
 val BrandGreenDark = Color(0xFF0F2D6B)
 val BrandGreenLight = Color(0xFF10B981)
 val BrandGreenContainer = Color(0xFFD1FAE5)
 val BrandGreenOnContainer = Color(0xFF064E3B)
 
-val BrandRedSecondary = Color(0xFFDC2626)
+val BrandRedSecondary = ErrorDarkRed
 val BrandRedBright = Color(0xFFEF4444)
 val BrandRedContainer = Color(0xFFFEE2E2)
 val BrandRedOnContainer = Color(0xFF7F1D1D)
 
-val SlateTertiary = Color(0xFF475569)
+val SlateTertiary = DarkSlateSecondary
 val SlateContainer = Color(0xFFE2E8F0)
-val SlateOnContainer = Color(0xFF0F172A)
+val SlateOnContainer = Color(0xFF14233B)
 
-val AmberWarning = MetallicOrange
+val AmberWarning = WarningDarkOrange
 val AmberContainer = MetallicOrangeSoft
 val AmberOnContainer = MetallicOrangeOnSoft
 
 val LightBackground = BrightSilverTop
-val LightSurface = GlossyCardWhite
+val LightSurface = PureWhite
 val LightSurfaceVariant = GlossyCardBlueTint
 val LightOutline = ChromeBorderLight
-val LightOutlineVariant = PlatinumSilver
+val LightOutlineVariant = Color(0xFFD6E0EE)
 val TextPrimaryLight = DeepNavyText
-val TextSecondaryLight = DarkCharcoalSecondary
+val TextSecondaryLight = DarkSlateSecondary
 
-// Dark Theme Tokens (Available when Dark Mode is explicitly enabled)
+// Dark Theme Tokens (Pure White #FFFFFF primary, Light Silver #E2E8F0 secondary)
 val DarkGreenPrimary = ElectricBlueBright
 val DarkGreenOnPrimary = Color(0xFFFFFFFF)
 val DarkGreenContainer = Color(0xFF13295A)
@@ -120,8 +130,8 @@ val DarkOutline = ObsidianBorder
 val DarkOutlineVariant = ObsidianBorderSubtle
 val DarkHeaderStart = ObsidianMidnight
 val DarkHeaderEnd = RoyalBlueDeep
-val TextPrimaryDark = Color(0xFFF8FAFC)
-val TextSecondaryDark = Color(0xFF9FB2D0)
+val TextPrimaryDark = Color(0xFFFFFFFF)
+val TextSecondaryDark = Color(0xFFE2E8F0)
 
 // Oceanic Teal Theme Tokens
 val TealPrimary = Color(0xFF0D9488)

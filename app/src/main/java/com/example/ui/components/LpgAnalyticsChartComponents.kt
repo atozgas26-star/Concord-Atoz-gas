@@ -68,9 +68,12 @@ import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenLight
 import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.theme.ChromeSilverHighlight
+import com.example.ui.theme.DarkSlateSecondary
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.DeepSpaceNavy
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueTextLight
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
@@ -81,7 +84,11 @@ import com.example.ui.theme.NeonCyanGlow
 import com.example.ui.theme.ObsidianElevated
 import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.RoyalElectricBlue
+import com.example.ui.theme.SuccessDarkGreen
+import com.example.ui.theme.TextSecondaryDark
+import com.example.ui.theme.WarningDarkOrange
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -316,10 +323,14 @@ fun LpgInventoryGroupedBarChart(
         label = "lpg_bar_anim"
     )
 
-    val cardBg = if (isDark) DeepSpaceNavy.copy(alpha = 0.92f) else MaterialTheme.colorScheme.surface
+    val cardBg = if (isDark) DeepSpaceNavy else PureWhite
     val borderColor = if (isDark) MetallicOrange.copy(alpha = 0.42f) else MaterialTheme.colorScheme.outlineVariant
-    val titleColor = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onSurface
-    val mutedColor = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
+    val titleColor = if (isDark) PureWhite else DeepNavyText
+    val mutedColor = if (isDark) TextSecondaryDark else DarkSlateSecondary
+    val orangeAccent = if (isDark) MetallicOrangeBright else WarningDarkOrange
+    val blueAccent = if (isDark) ElectricBlueGlow else ElectricBlueTextLight
+    val greenAccent = if (isDark) BrandGreenLight else SuccessDarkGreen
+    val silverAccent = if (isDark) PlatinumSilver else DarkSlateSecondary
 
     Surface(
         modifier = modifier
@@ -380,16 +391,16 @@ fun LpgInventoryGroupedBarChart(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ChartSeriesToggleChip("Store Full", MetallicOrangeBright, showStoreFull, "toggle_series_store_full") {
+                ChartSeriesToggleChip("Store Full", orangeAccent, showStoreFull, "toggle_series_store_full") {
                     showStoreFull = !showStoreFull
                 }
-                ChartSeriesToggleChip("Fleet Full", ElectricBlueGlow, showFleetFull, "toggle_series_fleet_full") {
+                ChartSeriesToggleChip("Fleet Full", blueAccent, showFleetFull, "toggle_series_fleet_full") {
                     showFleetFull = !showFleetFull
                 }
-                ChartSeriesToggleChip("Store Empty", BrandGreenLight, showStoreEmpty, "toggle_series_store_empty") {
+                ChartSeriesToggleChip("Store Empty", greenAccent, showStoreEmpty, "toggle_series_store_empty") {
                     showStoreEmpty = !showStoreEmpty
                 }
-                ChartSeriesToggleChip("Fleet Empty", ChromeSilverHighlight, showFleetEmpty, "toggle_series_fleet_empty") {
+                ChartSeriesToggleChip("Fleet Empty", silverAccent, showFleetEmpty, "toggle_series_fleet_empty") {
                     showFleetEmpty = !showFleetEmpty
                 }
             }
@@ -435,18 +446,19 @@ fun LpgInventoryGroupedBarChart(
                                     text = "LPG ${activeMetric.label}",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = MetallicOrangeBright
+                                    color = orangeAccent
                                 )
                                 Text(
                                     text = "Today Sold: ${activeMetric.todaySales} • Damaged: ${activeMetric.damaged}",
                                     style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
                                     color = mutedColor
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                TooltipStatPill("Store F", activeMetric.storeFull, MetallicOrangeBright)
-                                TooltipStatPill("Fleet F", activeMetric.fleetFull, ElectricBlueGlow)
-                                TooltipStatPill("Empty", activeMetric.totalEmpty, BrandGreenLight)
+                                TooltipStatPill("Store F", activeMetric.storeFull, orangeAccent)
+                                TooltipStatPill("Fleet F", activeMetric.fleetFull, blueAccent)
+                                TooltipStatPill("Empty", activeMetric.totalEmpty, greenAccent)
                             }
                         }
                     }
@@ -562,7 +574,7 @@ fun LpgInventoryGroupedBarChart(
                                     text = metric.label,
                                     style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMono),
                                     fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                    color = if (isSel) MetallicOrangeBright else mutedColor,
+                                    color = if (isSel) orangeAccent else mutedColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
@@ -606,10 +618,13 @@ fun LpgSalesTrendAreaChart(
         label = "lpg_area_anim"
     )
 
-    val cardBg = if (isDark) DeepSpaceNavy.copy(alpha = 0.92f) else MaterialTheme.colorScheme.surface
+    val cardBg = if (isDark) DeepSpaceNavy else PureWhite
     val borderColor = if (isDark) ElectricBlueBright.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outlineVariant
-    val titleColor = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onSurface
-    val mutedColor = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant
+    val titleColor = if (isDark) PureWhite else DeepNavyText
+    val mutedColor = if (isDark) TextSecondaryDark else DarkSlateSecondary
+    val orangeAccent = if (isDark) MoltenOrangeGlow else WarningDarkOrange
+    val blueAccent = if (isDark) ElectricBlueGlow else ElectricBlueTextLight
+    val greenAccent = if (isDark) BrandGreenLight else SuccessDarkGreen
 
     Surface(
         modifier = modifier
@@ -691,13 +706,13 @@ fun LpgSalesTrendAreaChart(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ChartSeriesToggleChip("LPG Sales", MoltenOrangeGlow, showLpgSales, "toggle_trend_lpg_sales") {
+                ChartSeriesToggleChip("LPG Sales", orangeAccent, showLpgSales, "toggle_trend_lpg_sales") {
                     showLpgSales = !showLpgSales
                 }
-                ChartSeriesToggleChip("LPG Restock", ElectricBlueGlow, showLpgRestocks, "toggle_trend_lpg_restock") {
+                ChartSeriesToggleChip("LPG Restock", blueAccent, showLpgRestocks, "toggle_trend_lpg_restock") {
                     showLpgRestocks = !showLpgRestocks
                 }
-                ChartSeriesToggleChip("All-Gas Sales", BrandGreenLight, showAllGasSales, "toggle_trend_all_sales") {
+                ChartSeriesToggleChip("All-Gas Sales", greenAccent, showAllGasSales, "toggle_trend_all_sales") {
                     showAllGasSales = !showAllGasSales
                 }
             }
@@ -712,7 +727,7 @@ fun LpgSalesTrendAreaChart(
                 if (inspected != null) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = if (isDark) ObsidianElevated else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        color = if (isDark) ObsidianElevated else MaterialTheme.colorScheme.surfaceVariant,
                         border = BorderStroke(1.dp, ElectricBlueBright.copy(alpha = 0.45f)),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -730,18 +745,19 @@ fun LpgSalesTrendAreaChart(
                                     text = inspected.shortLabel,
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = ElectricBlueGlow
+                                    color = blueAccent
                                 )
                                 Text(
                                     text = inspected.dateIso,
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMono),
+                                    fontWeight = FontWeight.Medium,
                                     color = mutedColor
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                TooltipStatPill("LPG Sold", inspected.lpgSales, MoltenOrangeGlow)
-                                TooltipStatPill("Restock", inspected.lpgRestocks, ElectricBlueGlow)
-                                TooltipStatPill("All Gas", inspected.allGasSales, BrandGreenLight)
+                                TooltipStatPill("LPG Sold", inspected.lpgSales, orangeAccent)
+                                TooltipStatPill("Restock", inspected.lpgRestocks, blueAccent)
+                                TooltipStatPill("All Gas", inspected.allGasSales, greenAccent)
                             }
                         }
                     }
@@ -913,8 +929,8 @@ fun LpgSalesTrendAreaChart(
                                 Text(
                                     text = points[idx].shortLabel,
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMono, fontSize = 10.sp),
-                                    color = if (idx == selectedIdx) ElectricBlueGlow else mutedColor,
-                                    fontWeight = if (idx == selectedIdx) FontWeight.Bold else FontWeight.Normal
+                                    color = if (idx == selectedIdx) blueAccent else mutedColor,
+                                    fontWeight = if (idx == selectedIdx) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
                         }
@@ -989,9 +1005,9 @@ fun LpgEmptyReturnDonutChart(
                         } else {
                             var start = -90f
                             val segments = listOf(
-                                returnShare.arabGasReturns to MetallicOrangeBright,
-                                returnShare.emiratesGasReturns to ElectricBlueGlow,
-                                returnShare.otherReturns to ChromeSilverHighlight
+                                returnShare.arabGasReturns to MetallicOrange,
+                                returnShare.emiratesGasReturns to ElectricBlueBright,
+                                returnShare.otherReturns to if (isDark) PlatinumSilver else DarkSlateSecondary
                             )
                             segments.forEach { (qty, color) ->
                                 if (qty > 0) {
@@ -1018,6 +1034,7 @@ fun LpgEmptyReturnDonutChart(
                         Text(
                             text = "EMPTIES",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            fontWeight = FontWeight.Bold,
                             color = mutedColor
                         )
                     }
@@ -1032,7 +1049,7 @@ fun LpgEmptyReturnDonutChart(
                         label = "Arab Gas",
                         count = returnShare.arabGasReturns,
                         percent = if (returnShare.totalReturns > 0) (returnShare.arabGasReturns * 100 / total) else 0,
-                        color = MetallicOrangeBright,
+                        color = MetallicOrange,
                         titleColor = titleColor,
                         mutedColor = mutedColor
                     )
@@ -1040,7 +1057,7 @@ fun LpgEmptyReturnDonutChart(
                         label = "Emirates Gas",
                         count = returnShare.emiratesGasReturns,
                         percent = if (returnShare.totalReturns > 0) (returnShare.emiratesGasReturns * 100 / total) else 0,
-                        color = ElectricBlueGlow,
+                        color = ElectricBlueBright,
                         titleColor = titleColor,
                         mutedColor = mutedColor
                     )
@@ -1049,7 +1066,7 @@ fun LpgEmptyReturnDonutChart(
                             label = "Other",
                             count = returnShare.otherReturns,
                             percent = returnShare.otherReturns * 100 / total,
-                            color = ChromeSilverHighlight,
+                            color = if (isDark) PlatinumSilver else DarkSlateSecondary,
                             titleColor = titleColor,
                             mutedColor = mutedColor
                         )
@@ -1068,6 +1085,7 @@ private fun ChartSeriesToggleChip(
     tag: String,
     onToggle: () -> Unit
 ) {
+    val isDark = LocalIsDarkTheme.current
     FilterChip(
         selected = selected,
         onClick = onToggle,
@@ -1079,9 +1097,11 @@ private fun ChartSeriesToggleChip(
                     .background(if (selected) Color.White else accent)
             )
         },
-        label = { Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) },
+        label = { Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) },
         colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = accent.copy(alpha = 0.85f),
+            containerColor = if (isDark) ObsidianElevated else PureWhite,
+            labelColor = if (isDark) PureWhite else DeepNavyText,
+            selectedContainerColor = accent,
             selectedLabelColor = Color.White
         ),
         modifier = Modifier.testTag(tag)
@@ -1094,7 +1114,8 @@ private fun TooltipStatPill(label: String, value: Int, accent: Color) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            color = accent.copy(alpha = 0.85f)
+            fontWeight = FontWeight.Bold,
+            color = accent
         )
         Text(
             text = value.toString(),

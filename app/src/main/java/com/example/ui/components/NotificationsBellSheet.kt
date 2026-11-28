@@ -259,7 +259,8 @@ fun NotificationsBellDialog(
                                 else -> "All reminders checked"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.85f)
+                            fontWeight = FontWeight.Medium,
+                            color = com.example.ui.theme.TextSecondaryDark
                         )
                     }
                     if (unreadCount > 0) {
@@ -606,7 +607,8 @@ private fun NotificationItemCard(
                 Text(
                     text = timeStr,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

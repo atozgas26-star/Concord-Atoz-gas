@@ -71,25 +71,36 @@ import com.example.data.model.ProductCategory
 import com.example.data.model.TransactionType
 import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenLight
+import com.example.ui.theme.ChromeBorderLight
 import com.example.ui.theme.ChromeSilverHighlight
 import com.example.ui.theme.CinematicMidnightBlack
+import com.example.ui.theme.DarkCharcoalImportant
+import com.example.ui.theme.DarkSlateSecondary
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.DeepSpaceNavy
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueTextLight
+import com.example.ui.theme.ErrorDarkRed
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MetallicOrangeGold
 import com.example.ui.theme.MoltenOrangeCore
 import com.example.ui.theme.MoltenOrangeGlow
 import com.example.ui.theme.NeonCyanGlow
-import com.example.ui.theme.PlatinumMuted
-import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
 import com.example.ui.theme.SignatureRoyalBorder
 import com.example.ui.theme.SignatureRoyalElevated
-import com.example.ui.theme.SignatureRoyalSurface
+import com.example.ui.theme.SuccessDarkGreen
+import com.example.ui.theme.TextSecondaryDark
+import com.example.ui.theme.WarningDarkOrange
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -168,6 +179,17 @@ fun OwnerExecutiveDashboardSection(
         }
     }
 
+    val isDarkOwner = LocalIsDarkTheme.current
+    val cardBg = if (isDarkOwner) ObsidianSurface else PureWhite
+    val cardBorder = if (isDarkOwner) ObsidianBorder else ChromeBorderLight
+    val primaryText = if (isDarkOwner) PureWhite else DeepNavyText
+    val importantText = if (isDarkOwner) PureWhite else DarkCharcoalImportant
+    val secondaryText = if (isDarkOwner) TextSecondaryDark else DarkSlateSecondary
+    val blueAccent = if (isDarkOwner) ElectricBlueGlow else ElectricBlueTextLight
+    val orangeAccent = if (isDarkOwner) MetallicOrangeBright else WarningDarkOrange
+    val greenAccent = if (isDarkOwner) BrandGreenLight else SuccessDarkGreen
+    val redAccent = if (isDarkOwner) Color(0xFFFCA5A5) else ErrorDarkRed
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -175,7 +197,6 @@ fun OwnerExecutiveDashboardSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Futuristic 3D Executive Crown Banner
-        val isDarkOwner = com.example.ui.theme.LocalIsDarkTheme.current
         Surface(
             shape = RoundedCornerShape(22.dp),
             color = if (isDarkOwner) DeepSpaceNavy else Color(0xFF1D63ED),
@@ -196,7 +217,7 @@ fun OwnerExecutiveDashboardSection(
                             )
                         } else {
                             Brush.horizontalGradient(
-                                listOf(Color(0xFF1D63ED), Color(0xFF2563EB), Color(0xFF3B82F6))
+                                listOf(RoyalBlueDeep, RoyalElectricBlue, Color(0xFF2563EB))
                             )
                         }
                     )
@@ -220,20 +241,21 @@ fun OwnerExecutiveDashboardSection(
                                 text = "OWNER EXECUTIVE 3D HUB",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = ArcticWhite,
+                                color = PureWhite,
                                 letterSpacing = 0.8.sp
                             )
                             Text(
                                 text = "Strictly View-Only • Live Corporate Analytics",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MoltenOrangeCore
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFFFEDD5)
                             )
                         }
                     }
                     Surface(
                         shape = RoundedCornerShape(999.dp),
-                        color = MetallicOrange.copy(alpha = 0.24f),
-                        border = BorderStroke(1.dp, MoltenOrangeGlow)
+                        color = MetallicOrange,
+                        border = BorderStroke(1.dp, PureWhite)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
@@ -242,7 +264,7 @@ fun OwnerExecutiveDashboardSection(
                             Icon(
                                 imageVector = Icons.Default.Visibility,
                                 contentDescription = null,
-                                tint = MoltenOrangeCore,
+                                tint = PureWhite,
                                 modifier = Modifier.size(12.dp)
                             )
                             Spacer(Modifier.width(4.dp))
@@ -250,7 +272,7 @@ fun OwnerExecutiveDashboardSection(
                                 text = "VIEW ONLY",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = MoltenOrangeCore
+                                color = PureWhite
                             )
                         }
                     }
@@ -258,7 +280,7 @@ fun OwnerExecutiveDashboardSection(
                 Text(
                     text = "Real-time 3D telemetry of C&A GAS store stock, fleet vehicles, LPG exchanges (Arab Gas & Emirates Gas), daily closing balances, and security activity.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = PlatinumSilver
+                    color = TextSecondaryDark
                 )
             }
         }
@@ -273,7 +295,7 @@ fun OwnerExecutiveDashboardSection(
                 primaryValue = "${summary.storeFullBalance} Full",
                 secondaryValue = "${summary.storeEmptyBalance} Empty • ${summary.storeDamagedBalance} Damaged",
                 icon = Icons.Default.Warehouse,
-                accent = ElectricBlueGlow,
+                accent = blueAccent,
                 modifier = Modifier.weight(1f)
             )
             ExecutiveKpiCard(
@@ -281,7 +303,7 @@ fun OwnerExecutiveDashboardSection(
                 primaryValue = "${summary.allVehiclesFullBalance} Full",
                 secondaryValue = "${summary.allVehiclesEmptyBalance} Empty • ${summary.allVehiclesDamagedBalance} Dmg",
                 icon = Icons.Default.LocalShipping,
-                accent = MetallicOrangeBright,
+                accent = orangeAccent,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -295,7 +317,7 @@ fun OwnerExecutiveDashboardSection(
                 primaryValue = "+$todayPurchases Today",
                 secondaryValue = "${summary.todayFullPurchases}F / ${summary.todayEmptyPurchases}E • ${summary.todayStoreActivityCount} Store Tx",
                 icon = Icons.Default.ShoppingCart,
-                accent = BrandGreenLight,
+                accent = greenAccent,
                 modifier = Modifier.weight(1f)
             )
             ExecutiveKpiCard(
@@ -303,7 +325,7 @@ fun OwnerExecutiveDashboardSection(
                 primaryValue = "$todaySales Sold Today",
                 secondaryValue = "Closing Full: ${summary.totalFullCylinders}",
                 icon = Icons.Default.TrendingUp,
-                accent = MetallicOrangeGold,
+                accent = orangeAccent,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -311,13 +333,14 @@ fun OwnerExecutiveDashboardSection(
         // LPG Exchange Summary (Arab Gas & Emirates Gas)
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = SignatureRoyalSurface,
-            border = BorderStroke(1.dp, SignatureRoyalBorder),
+            color = cardBg,
+            border = BorderStroke(1.1.dp, cardBorder),
+            shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -328,15 +351,15 @@ fun OwnerExecutiveDashboardSection(
                         Icon(
                             imageVector = Icons.Default.SwapHoriz,
                             contentDescription = null,
-                            tint = MetallicOrangeBright,
+                            tint = orangeAccent,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = "LPG Exchange Summary (Arab Gas & Emirates Gas)",
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = ArcticWhite
+                            color = primaryText
                         )
                     }
                 }
@@ -344,9 +367,9 @@ fun OwnerExecutiveDashboardSection(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ExecutivePillMetric("Arab Gas", "$arabGasExchangeCount Tx", ElectricBlueGlow, Modifier.weight(1f))
-                    ExecutivePillMetric("Emirates Gas", "$emiratesGasExchangeCount Tx", MetallicOrangeBright, Modifier.weight(1f))
-                    ExecutivePillMetric("Delivered / Ret", "${totalExchangeDelivered}F / ${totalExchangeReturned}E", BrandGreenLight, Modifier.weight(1.2f))
+                    ExecutivePillMetric("Arab Gas", "$arabGasExchangeCount Tx", blueAccent, Modifier.weight(1f))
+                    ExecutivePillMetric("Emirates Gas", "$emiratesGasExchangeCount Tx", orangeAccent, Modifier.weight(1f))
+                    ExecutivePillMetric("Delivered / Ret", "${totalExchangeDelivered}F / ${totalExchangeReturned}E", greenAccent, Modifier.weight(1.2f))
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -354,25 +377,25 @@ fun OwnerExecutiveDashboardSection(
                 ) {
                     OutlinedButton(
                         onClick = onOpenExchangeHistory,
-                        border = BorderStroke(1.dp, ElectricBlueBright),
+                        border = BorderStroke(1.2.dp, blueAccent),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("owner_open_exchange_history_btn")
                     ) {
-                        Text("View Exchanges", color = ElectricBlueGlow, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("View Exchanges", color = blueAccent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Button(
                         onClick = onOpenReports,
-                        colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue),
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue, contentColor = PureWhite),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("owner_open_reports_btn")
                     ) {
-                        Icon(Icons.Default.Assessment, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Assessment, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Executive Reports", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Executive Reports", color = PureWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
@@ -381,8 +404,9 @@ fun OwnerExecutiveDashboardSection(
         // Visual Chart 1: Category Stock Comparison (Store Full vs Vehicle Full)
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = SignatureRoyalSurface,
-            border = BorderStroke(1.dp, SignatureRoyalBorder),
+            color = cardBg,
+            border = BorderStroke(1.1.dp, cardBorder),
+            shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -396,19 +420,19 @@ fun OwnerExecutiveDashboardSection(
                 ) {
                     Text(
                         text = "Company Stock Distribution (Full Cylinders)",
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = ArcticWhite
+                        color = primaryText
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ChartLegendDot("Store", ElectricBlueGlow)
-                        ChartLegendDot("Vehicles", MetallicOrangeBright)
+                        ChartLegendDot("Store", blueAccent)
+                        ChartLegendDot("Vehicles", orangeAccent)
                     }
                 }
                 ExecutivePairedBarChart(
                     items = categoryChartData,
                     primaryColor = ElectricBlueBright,
-                    secondaryColor = MetallicOrangeBright,
+                    secondaryColor = MetallicOrange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(132.dp)
@@ -419,11 +443,9 @@ fun OwnerExecutiveDashboardSection(
         // Visual Chart 2: Animated Molten-Orange 7-Day Sales & Purchase Energy Graph
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = SignatureRoyalSurface,
-            border = BorderStroke(
-                1.dp,
-                Brush.horizontalGradient(listOf(MoltenOrangeGlow.copy(alpha = 0.6f), SignatureRoyalBorder))
-            ),
+            color = cardBg,
+            border = BorderStroke(1.1.dp, cardBorder),
+            shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -437,13 +459,13 @@ fun OwnerExecutiveDashboardSection(
                 ) {
                     Text(
                         text = "7-Day Sales & Purchase Energy Graph",
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = ArcticWhite
+                        color = primaryText
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ChartLegendDot("Sales", MoltenOrangeGlow)
-                        ChartLegendDot("Purchases", BrandGreenLight)
+                        ChartLegendDot("Sales", orangeAccent)
+                        ChartLegendDot("Purchases", greenAccent)
                     }
                 }
                 FuturisticOrangeTrendGraph(
@@ -458,11 +480,12 @@ fun OwnerExecutiveDashboardSection(
         // Security, Login & Device Activity Overview (Read-Only)
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = SignatureRoyalSurface,
+            color = cardBg,
             border = BorderStroke(
-                1.dp,
-                if (alertLogCount > 0) MetallicOrangeBright.copy(alpha = 0.7f) else SignatureRoyalBorder
+                1.2.dp,
+                if (alertLogCount > 0) orangeAccent else cardBorder
             ),
+            shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -474,54 +497,55 @@ fun OwnerExecutiveDashboardSection(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Icon(
                             imageVector = Icons.Default.Security,
                             contentDescription = null,
-                            tint = if (alertLogCount > 0) MetallicOrangeBright else ElectricBlueGlow,
+                            tint = if (alertLogCount > 0) orangeAccent else blueAccent,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = "Security, Devices & Login Activity",
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = ArcticWhite
+                            color = primaryText
                         )
                     }
                     OutlinedButton(
                         onClick = onOpenSecurityMonitor,
-                        border = BorderStroke(1.dp, MetallicOrangeBright),
+                        border = BorderStroke(1.2.dp, orangeAccent),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.testTag("owner_open_security_monitor_btn")
                     ) {
-                        Text("Inspect", color = MetallicOrangeBright, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Inspect", color = orangeAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ExecutivePillMetric("Active Devices", "$activeDeviceCount", ElectricBlueGlow, Modifier.weight(1f))
-                    ExecutivePillMetric("Security Alerts", "$alertLogCount", if (alertLogCount > 0) Color(0xFFF87171) else BrandGreenLight, Modifier.weight(1f))
-                    ExecutivePillMetric("Audit Events", "${securityLogs.size}", PlatinumSilver, Modifier.weight(1f))
+                    ExecutivePillMetric("Active Devices", "$activeDeviceCount", blueAccent, Modifier.weight(1f))
+                    ExecutivePillMetric("Security Alerts", "$alertLogCount", if (alertLogCount > 0) redAccent else greenAccent, Modifier.weight(1f))
+                    ExecutivePillMetric("Audit Events", "${securityLogs.size}", primaryText, Modifier.weight(1f))
                 }
                 val latestLog = securityLogs.firstOrNull()
                 if (latestLog != null) {
-                    HorizontalDivider(color = SignatureRoyalBorder.copy(alpha = 0.6f))
+                    HorizontalDivider(color = cardBorder)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = if (latestLog.isAlert) Icons.Default.Warning else Icons.Default.Devices,
                             contentDescription = null,
-                            tint = if (latestLog.isAlert) Color(0xFFF87171) else ElectricBlueGlow,
-                            modifier = Modifier.size(15.dp)
+                            tint = if (latestLog.isAlert) redAccent else blueAccent,
+                            modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
                             text = "${latestLog.eventType}: ${latestLog.details}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = PlatinumSilver,
-                            maxLines = 1,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = importantText,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -540,10 +564,12 @@ private fun ExecutiveKpiCard(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalIsDarkTheme.current
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = SignatureRoyalSurface,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+        color = if (isDark) ObsidianSurface else PureWhite,
+        border = BorderStroke(1.2.dp, accent.copy(alpha = 0.55f)),
+        shadowElevation = 2.dp,
         modifier = modifier
     ) {
         Column(
@@ -555,8 +581,9 @@ private fun ExecutiveKpiCard(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = PlatinumSilver,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDark) TextSecondaryDark else DarkSlateSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -566,14 +593,15 @@ private fun ExecutiveKpiCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = JetBrainsMono,
                 fontWeight = FontWeight.ExtraBold,
-                color = ArcticWhite,
+                color = if (isDark) PureWhite else DeepNavyText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = secondaryValue,
                 style = MaterialTheme.typography.labelSmall,
-                color = PlatinumMuted,
+                fontWeight = FontWeight.Medium,
+                color = if (isDark) TextSecondaryDark else DarkSlateSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -588,27 +616,29 @@ private fun ExecutivePillMetric(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalIsDarkTheme.current
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = SignatureRoyalElevated,
-        border = BorderStroke(1.dp, SignatureRoyalBorder),
+        color = if (isDark) ObsidianElevated else SignatureRoyalElevated,
+        border = BorderStroke(1.dp, if (isDark) ObsidianBorder else ChromeBorderLight),
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = PlatinumMuted,
-                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isDark) TextSecondaryDark else DarkSlateSecondary,
+                fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelLarge,
                 fontFamily = JetBrainsMono,
                 fontWeight = FontWeight.ExtraBold,
                 color = accent,
@@ -621,6 +651,7 @@ private fun ExecutivePillMetric(
 
 @Composable
 private fun ChartLegendDot(label: String, color: Color) {
+    val isDark = LocalIsDarkTheme.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -631,8 +662,9 @@ private fun ChartLegendDot(label: String, color: Color) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = PlatinumSilver,
-            fontSize = 10.sp
+            fontWeight = FontWeight.Bold,
+            color = if (isDark) TextSecondaryDark else DarkCharcoalImportant,
+            fontSize = 11.sp
         )
     }
 }
@@ -733,6 +765,7 @@ private fun ExecutivePairedBarChart(
                 )
             }
         }
+        val isDarkChart = LocalIsDarkTheme.current
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
@@ -745,8 +778,9 @@ private fun ExecutivePairedBarChart(
                     Text(
                         text = label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = PlatinumSilver,
-                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkChart) PureWhite else DeepNavyText,
+                        fontSize = 10.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -754,8 +788,9 @@ private fun ExecutivePairedBarChart(
                         text = "$v1/$v2",
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = JetBrainsMono,
-                        color = PlatinumMuted,
-                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isDarkChart) TextSecondaryDark else DarkSlateSecondary,
+                        fontSize = 9.sp,
                         maxLines = 1
                     )
                 }
@@ -899,6 +934,7 @@ private fun FuturisticOrangeTrendGraph(
                 )
             }
         }
+        val isDarkTrend = LocalIsDarkTheme.current
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
@@ -911,8 +947,9 @@ private fun FuturisticOrangeTrendGraph(
                     Text(
                         text = label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = PlatinumSilver,
-                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTrend) PureWhite else DeepNavyText,
+                        fontSize = 10.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -920,8 +957,9 @@ private fun FuturisticOrangeTrendGraph(
                         text = "$sales/$purchases",
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = JetBrainsMono,
-                        color = MoltenOrangeCore,
-                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTrend) MoltenOrangeCore else WarningDarkOrange,
+                        fontSize = 9.sp,
                         maxLines = 1
                     )
                 }

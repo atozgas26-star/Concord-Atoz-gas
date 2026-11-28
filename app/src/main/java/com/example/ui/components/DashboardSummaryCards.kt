@@ -167,7 +167,8 @@ fun CurrentInventoryTotalsCard(
                             Text(
                                 text = "Store Yard + ${summary.vehicleOverviews.size} Fleet Vehicles",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = PlatinumSilver.copy(alpha = 0.85f)
+                                fontWeight = FontWeight.Medium,
+                                color = PlatinumSilver
                             )
                         }
                     }

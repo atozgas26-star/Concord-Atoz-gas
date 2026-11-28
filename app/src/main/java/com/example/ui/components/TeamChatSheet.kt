@@ -163,7 +163,8 @@ fun TeamChatDialog(
                                 "Admin, Owner & Staff Conversation"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.85f)
+                            fontWeight = FontWeight.Medium,
+                            color = com.example.ui.theme.TextSecondaryDark
                         )
                     }
                     IconButton(

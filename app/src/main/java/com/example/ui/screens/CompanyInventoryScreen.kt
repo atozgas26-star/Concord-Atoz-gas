@@ -324,13 +324,15 @@ fun CompanyInventoryScreen(
                                     text = "Store Yard: ${storeFull}F / ${storeEmpty}E",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono,
-                                    color = Color.White.copy(alpha = 0.85f)
+                                    fontWeight = FontWeight.Medium,
+                                    color = com.example.ui.theme.TextSecondaryDark
                                 )
                                 Text(
                                     text = "On Fleet: ${vehiclesFull}F / ${vehiclesEmpty}E",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = JetBrainsMono,
-                                    color = Color.White.copy(alpha = 0.85f)
+                                    fontWeight = FontWeight.Medium,
+                                    color = com.example.ui.theme.TextSecondaryDark
                                 )
                             }
                         }

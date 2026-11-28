@@ -408,7 +408,8 @@ fun LoginScreen(
                             Text(
                                 text = "Industrial, Cutting & LPG Cylinders • Secure PIN Login",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.90f)
+                                fontWeight = FontWeight.Medium,
+                                color = com.example.ui.theme.TextSecondaryDark
                             )
                         }
                     }
@@ -1681,8 +1682,8 @@ private fun RolePortalCard(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 color = when {
-                    !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    selected -> Color.White.copy(alpha = 0.88f)
+                    !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                    selected -> com.example.ui.theme.TextSecondaryDark
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )

@@ -96,9 +96,12 @@ import com.example.ui.theme.BrandGreenLight
 import com.example.ui.theme.BrandRedBright
 import com.example.ui.theme.BrandRedSecondary
 import com.example.ui.theme.ChromeBorderLight
+import com.example.ui.theme.DarkSlateSecondary
 import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueTextLight
+import com.example.ui.theme.ErrorDarkRed
 import com.example.ui.theme.GlossyCardWhite
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
@@ -111,9 +114,12 @@ import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
 import com.example.ui.theme.SignatureRoyalBackground
+import com.example.ui.theme.TextSecondaryDark
+import com.example.ui.theme.WarningDarkOrange
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -444,10 +450,12 @@ fun StoreManagementScreen(
                             )
                         } else {
                             OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = GlossyCardWhite,
-                                unfocusedContainerColor = GlossyCardWhite.copy(alpha = 0.92f),
+                                focusedContainerColor = PureWhite,
+                                unfocusedContainerColor = PureWhite,
                                 focusedBorderColor = RoyalElectricBlue,
-                                unfocusedBorderColor = ChromeBorderLight
+                                unfocusedBorderColor = ChromeBorderLight,
+                                focusedTextColor = DeepNavyText,
+                                unfocusedTextColor = DeepNavyText
                             )
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -530,7 +538,7 @@ fun StoreManagementScreen(
                                     Text(
                                         text = "${tx.type.label} — ${item.productName}",
                                         style = MaterialTheme.typography.titleSmall,
-                                        color = if (isDark) ArcticWhite else DeepNavyText,
+                                        color = if (isDark) PureWhite else DeepNavyText,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
@@ -538,13 +546,14 @@ fun StoreManagementScreen(
                                             (tx.vehicleName?.let { " • $it" } ?: "") +
                                             " • $timeStr",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = PlatinumSilver
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isDark) TextSecondaryDark else DarkSlateSecondary
                                     )
                                     if (tx.purchaseCompanyName.isNotBlank()) {
                                         Text(
                                             text = "Company: ${tx.purchaseCompanyName}",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = ElectricBlueGlow,
+                                            color = if (isDark) ElectricBlueGlow else ElectricBlueTextLight,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -552,7 +561,7 @@ fun StoreManagementScreen(
                                         Text(
                                             text = "Customer: ${tx.customerName}",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = MetallicOrangeBright,
+                                            color = if (isDark) MetallicOrangeBright else WarningDarkOrange,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -560,7 +569,8 @@ fun StoreManagementScreen(
                                         Text(
                                             text = "Note: ${tx.notes}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = ElectricBlueGlow
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isDark) TextSecondaryDark else DarkSlateSecondary
                                         )
                                     }
                                 }
@@ -572,7 +582,7 @@ fun StoreManagementScreen(
                                         Icon(
                                             imageVector = Icons.Default.Edit,
                                             contentDescription = "Edit transaction",
-                                            tint = MetallicOrangeBright
+                                            tint = if (isDark) MetallicOrangeBright else WarningDarkOrange
                                         )
                                     }
                                     IconButton(
@@ -582,7 +592,7 @@ fun StoreManagementScreen(
                                         Icon(
                                             imageVector = Icons.Default.Delete,
                                             contentDescription = "Delete transaction",
-                                            tint = BrandRedBright
+                                            tint = if (isDark) BrandRedBright else ErrorDarkRed
                                         )
                                     }
                                 }

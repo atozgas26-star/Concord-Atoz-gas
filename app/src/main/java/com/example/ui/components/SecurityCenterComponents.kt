@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,7 +41,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,23 +77,39 @@ import com.example.data.local.SecurityAuditLogEntity
 import com.example.data.local.UserAccountEntity
 import com.example.data.model.StaffFeaturePermission
 import com.example.data.model.UserRole
-import com.example.ui.theme.ArcticWhite
+import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenLight
-import com.example.ui.theme.BrandRedBright
+import com.example.ui.theme.BrandGreenOnContainer
+import com.example.ui.theme.BrandRedContainer
+import com.example.ui.theme.DarkCharcoalImportant
+import com.example.ui.theme.DarkSlateSecondary
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueSoft
+import com.example.ui.theme.ElectricBlueTextLight
+import com.example.ui.theme.ErrorDarkRed
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MetallicOrangeGold
-import com.example.ui.theme.PlatinumMuted
-import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.MetallicOrangeOnSoft
+import com.example.ui.theme.MetallicOrangeSoft
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianDeep
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMidnight
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.RoyalElectricBlue
 import com.example.ui.theme.SignatureRoyalBackground
 import com.example.ui.theme.SignatureRoyalBorder
 import com.example.ui.theme.SignatureRoyalElevated
-import com.example.ui.theme.SignatureRoyalSurface
+import com.example.ui.theme.SuccessDarkGreen
+import com.example.ui.theme.TextSecondaryDark
+import com.example.ui.theme.WarningDarkOrange
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -104,8 +118,13 @@ import java.util.Locale
  * Corporate Security Center Dialog:
  * - Tab 0: UAE +971 Authorized Mobiles & Staff Feature Permissions (with Protected Owner lock)
  * - Tab 1: Registered Devices & Remote Revocation / Logout All Devices
- * - Tab 2: Live Security Alerts & Login Audit Logs
+ * - Tab 2: Live Security Alerts & Login Audit Logs (Category order history, FAILED_PIN_LOGIN, etc.)
  * Strictly read-only when isReadOnly == true (Owner View).
+ *
+ * High-contrast WCAG AA typography & color palette:
+ * - Light background: Deep Navy (#14233B) primary, Dark Charcoal (#202938) important,
+ *   Dark Slate (#475569) secondary, Bright White (#FFFFFF) cards, Dark Green/Orange/Red semantics.
+ * - Dark background: Pure White (#FFFFFF) primary, Light Silver (#E2E8F0) secondary.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -141,6 +160,24 @@ fun SecurityCenterDialog(
     onLogoutAllDevices: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val isDark = LocalIsDarkTheme.current
+
+    // High-contrast semantic palette (zero reduced-opacity text)
+    val dialogBg = if (isDark) ObsidianMidnight else SignatureRoyalBackground
+    val cardBg = if (isDark) ObsidianSurface else PureWhite
+    val elevatedBg = if (isDark) ObsidianElevated else SignatureRoyalElevated
+    val cardBorder = if (isDark) ObsidianBorder else SignatureRoyalBorder
+    val primaryText = if (isDark) PureWhite else DeepNavyText
+    val importantText = if (isDark) PureWhite else DarkCharcoalImportant
+    val secondaryText = if (isDark) TextSecondaryDark else DarkSlateSecondary
+    val blueAccentText = if (isDark) ElectricBlueGlow else ElectricBlueTextLight
+    val successText = if (isDark) BrandGreenLight else SuccessDarkGreen
+    val warningText = if (isDark) MetallicOrangeBright else WarningDarkOrange
+    val errorText = if (isDark) Color(0xFFFCA5A5) else ErrorDarkRed
+    val errorBg = if (isDark) Color(0xFF45141E) else BrandRedContainer
+    val alertCardBg = if (isDark) Color(0xFF2B1226) else Color(0xFFFFF5F5)
+    val alertCardBorder = if (isDark) MetallicOrangeBright else ErrorDarkRed
+
     var activeTab by remember { mutableIntStateOf(0) }
     var showAddForm by remember { mutableStateOf(false) }
     var showLogoutAllConfirm by remember { mutableStateOf(false) }
@@ -159,15 +196,15 @@ fun SecurityCenterDialog(
     var formError by remember { mutableStateOf<String?>(null) }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedTextColor = ArcticWhite,
-        unfocusedTextColor = ArcticWhite,
-        focusedContainerColor = SignatureRoyalElevated,
-        unfocusedContainerColor = SignatureRoyalSurface,
-        focusedBorderColor = ElectricBlueGlow,
-        unfocusedBorderColor = SignatureRoyalBorder,
-        focusedLabelColor = ElectricBlueGlow,
-        unfocusedLabelColor = PlatinumMuted,
-        cursorColor = MetallicOrangeBright
+        focusedTextColor = primaryText,
+        unfocusedTextColor = primaryText,
+        focusedContainerColor = cardBg,
+        unfocusedContainerColor = cardBg,
+        focusedBorderColor = if (isDark) ElectricBlueGlow else RoyalElectricBlue,
+        unfocusedBorderColor = cardBorder,
+        focusedLabelColor = blueAccentText,
+        unfocusedLabelColor = secondaryText,
+        cursorColor = MetallicOrange
     )
 
     Dialog(
@@ -176,10 +213,15 @@ fun SecurityCenterDialog(
     ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = SignatureRoyalBackground,
+            color = dialogBg,
             border = BorderStroke(
-                1.3.dp,
-                Brush.linearGradient(listOf(ElectricBlueGlow.copy(alpha = 0.7f), MetallicOrangeBright.copy(alpha = 0.65f)))
+                1.4.dp,
+                Brush.linearGradient(
+                    listOf(
+                        RoyalElectricBlue,
+                        MetallicOrange
+                    )
+                )
             ),
             shadowElevation = 18.dp,
             modifier = Modifier
@@ -189,11 +231,16 @@ fun SecurityCenterDialog(
                 .testTag("security_center_dialog")
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Header
+                // High-contrast Electric Blue Header with Pure White bold typography
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Brush.horizontalGradient(listOf(RoyalBlueDeep, SignatureRoyalSurface)))
+                        .background(
+                            Brush.horizontalGradient(
+                                if (isDark) listOf(ObsidianDeep, RoyalBlueDeep)
+                                else listOf(RoyalBlueDeep, RoyalElectricBlue)
+                            )
+                        )
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
                     Row(
@@ -204,21 +251,27 @@ fun SecurityCenterDialog(
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MetallicOrange.copy(alpha = 0.22f),
-                                border = BorderStroke(1.dp, MetallicOrangeBright),
-                                modifier = Modifier.size(38.dp)
+                                color = MetallicOrange,
+                                border = BorderStroke(1.2.dp, PureWhite),
+                                modifier = Modifier.size(40.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Security, contentDescription = null, tint = MetallicOrangeBright, modifier = Modifier.size(20.dp))
+                                    Icon(
+                                        Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = PureWhite,
+                                        modifier = Modifier.size(22.dp)
+                                    )
                                 }
                             }
-                            Spacer(Modifier.width(10.dp))
+                            Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(
                                     text = if (isReadOnly) "Executive Security Monitor" else "Corporate Security Center",
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ArcticWhite
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = PureWhite,
+                                    modifier = Modifier.testTag("security_center_heading")
                                 )
                                 Text(
                                     text = if (isReadOnly) {
@@ -226,21 +279,28 @@ fun SecurityCenterDialog(
                                     } else {
                                         "UAE +971 Allowlist • Staff Permissions • Devices"
                                     },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = PlatinumSilver
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextSecondaryDark
                                 )
                             }
                         }
                         Surface(
                             shape = CircleShape,
                             color = MetallicOrange,
-                            modifier = Modifier.size(36.dp)
+                            border = BorderStroke(1.dp, PureWhite),
+                            modifier = Modifier.size(38.dp)
                         ) {
                             IconButton(
                                 onClick = onDismiss,
                                 modifier = Modifier.testTag("security_center_close_button")
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Close Security Center", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Close Security Center",
+                                    tint = PureWhite,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
@@ -259,6 +319,7 @@ fun SecurityCenterDialog(
                         selected = activeTab == 0,
                         onClick = { activeTab = 0 },
                         tag = "security_tab_mobiles",
+                        isDark = isDark,
                         modifier = Modifier.weight(1f)
                     )
                     SecurityTabButton(
@@ -266,6 +327,7 @@ fun SecurityCenterDialog(
                         selected = activeTab == 1,
                         onClick = { activeTab = 1 },
                         tag = "security_tab_devices",
+                        isDark = isDark,
                         modifier = Modifier.weight(1f)
                     )
                     val alertCount = securityLogs.count { it.isAlert }
@@ -274,6 +336,8 @@ fun SecurityCenterDialog(
                         selected = activeTab == 2,
                         onClick = { activeTab = 2 },
                         tag = "security_tab_logs",
+                        isDark = isDark,
+                        isAlertTab = alertCount > 0,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -297,9 +361,9 @@ fun SecurityCenterDialog(
                                     ) {
                                         Text(
                                             text = "Authorized UAE +971 Numbers",
-                                            style = MaterialTheme.typography.labelLarge,
+                                            style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = ArcticWhite
+                                            color = primaryText
                                         )
                                         Button(
                                             onClick = {
@@ -319,14 +383,22 @@ fun SecurityCenterDialog(
                                                 }
                                                 formError = null
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MetallicOrange,
+                                                contentColor = PureWhite
+                                            ),
                                             shape = RoundedCornerShape(10.dp),
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                             modifier = Modifier.testTag("security_toggle_add_mobile_btn")
                                         ) {
-                                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Default.Add, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
                                             Spacer(Modifier.width(4.dp))
-                                            Text(if (showAddForm) "Hide Form" else "Authorize +971", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = if (showAddForm) "Hide Form" else "Authorize +971",
+                                                color = PureWhite,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
                                     }
                                 }
@@ -335,23 +407,24 @@ fun SecurityCenterDialog(
                                     item {
                                         Surface(
                                             shape = RoundedCornerShape(16.dp),
-                                            color = SignatureRoyalSurface,
-                                            border = BorderStroke(1.dp, ElectricBlueBright.copy(alpha = 0.6f)),
+                                            color = cardBg,
+                                            border = BorderStroke(1.2.dp, if (isDark) ElectricBlueBright else RoyalElectricBlue),
+                                            shadowElevation = 3.dp,
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Column(
-                                                modifier = Modifier.padding(12.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                modifier = Modifier.padding(14.dp),
+                                                verticalArrangement = Arrangement.spacedBy(10.dp)
                                             ) {
                                                 Text(
                                                     text = if (editingMobileId != null) {
-                                                        "Edit Authorized UAE Mobile (+971 5X XXX XXXX)"
+                                                        "Edit Authorized UAE Record (+971 5X XXX XXXX)"
                                                     } else {
-                                                        "Register Authorized UAE Mobile (+971 5X XXX XXXX)"
+                                                        "Register Authorized UAE Record (+971 5X XXX XXXX)"
                                                     },
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    style = MaterialTheme.typography.titleSmall,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = ElectricBlueGlow
+                                                    color = blueAccentText
                                                 )
                                                 OutlinedTextField(
                                                     value = phoneInput,
@@ -360,7 +433,14 @@ fun SecurityCenterDialog(
                                                         formError = null
                                                     },
                                                     label = { Text("UAE Mobile Number (+9715XXXXXXXX)") },
-                                                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = MetallicOrangeBright, modifier = Modifier.size(18.dp)) },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            Icons.Default.Phone,
+                                                            contentDescription = null,
+                                                            tint = warningText,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    },
                                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                                                     singleLine = true,
                                                     colors = fieldColors,
@@ -396,12 +476,12 @@ fun SecurityCenterDialog(
                                                         FilterChip(
                                                             selected = selectedRole == role,
                                                             onClick = { selectedRole = role },
-                                                            label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                                            label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                                                             colors = FilterChipDefaults.filterChipColors(
-                                                                containerColor = SignatureRoyalElevated,
-                                                                labelColor = PlatinumSilver,
+                                                                containerColor = elevatedBg,
+                                                                labelColor = primaryText,
                                                                 selectedContainerColor = RoyalElectricBlue,
-                                                                selectedLabelColor = Color.White
+                                                                selectedLabelColor = PureWhite
                                                             )
                                                         )
                                                     }
@@ -412,14 +492,15 @@ fun SecurityCenterDialog(
                                                     Box(modifier = Modifier.fillMaxWidth()) {
                                                         OutlinedButton(
                                                             onClick = { staffMenuExpanded = true },
-                                                            border = BorderStroke(1.dp, SignatureRoyalBorder),
+                                                            border = BorderStroke(1.dp, cardBorder),
                                                             shape = RoundedCornerShape(10.dp),
                                                             modifier = Modifier.fillMaxWidth()
                                                         ) {
                                                             Text(
                                                                 text = selectedLinkedStaff?.let { "Linked Staff: ${it.displayName} (@${it.username})" }
                                                                     ?: "Link to Staff Account (Optional)",
-                                                                color = ArcticWhite,
+                                                                color = primaryText,
+                                                                fontWeight = FontWeight.Bold,
                                                                 fontSize = 12.sp
                                                             )
                                                         }
@@ -428,7 +509,7 @@ fun SecurityCenterDialog(
                                                             onDismissRequest = { staffMenuExpanded = false }
                                                         ) {
                                                             DropdownMenuItem(
-                                                                text = { Text("No linked staff account") },
+                                                                text = { Text("No linked staff account", color = primaryText) },
                                                                 onClick = {
                                                                     selectedLinkedStaff = null
                                                                     staffMenuExpanded = false
@@ -436,7 +517,7 @@ fun SecurityCenterDialog(
                                                             )
                                                             staffUsers.forEach { st ->
                                                                 DropdownMenuItem(
-                                                                    text = { Text("${st.displayName} (@${st.username})") },
+                                                                    text = { Text("${st.displayName} (@${st.username})", color = primaryText) },
                                                                     onClick = {
                                                                         selectedLinkedStaff = st
                                                                         if (displayNameInput.isBlank()) {
@@ -451,9 +532,9 @@ fun SecurityCenterDialog(
 
                                                     Text(
                                                         text = "Authorized Staff Features:",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = PlatinumSilver,
-                                                        fontWeight = FontWeight.SemiBold
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = importantText,
+                                                        fontWeight = FontWeight.Bold
                                                     )
                                                     FlowRow(
                                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -470,19 +551,19 @@ fun SecurityCenterDialog(
                                                                         selectedPermissions + perm
                                                                     }
                                                                 },
-                                                                label = { Text(perm.label, fontSize = 10.sp) },
+                                                                label = { Text(perm.label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                                                                 colors = FilterChipDefaults.filterChipColors(
-                                                                    containerColor = SignatureRoyalElevated,
-                                                                    labelColor = PlatinumSilver,
+                                                                    containerColor = elevatedBg,
+                                                                    labelColor = primaryText,
                                                                     selectedContainerColor = MetallicOrange,
-                                                                    selectedLabelColor = Color.White
+                                                                    selectedLabelColor = PureWhite
                                                                 )
                                                             )
                                                         }
                                                     }
                                                 }
 
-                                                // First-Time Mobile Registration & Active Status toggles
+                                                // Device Binding & Active Status toggles
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),
                                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -490,15 +571,15 @@ fun SecurityCenterDialog(
                                                 ) {
                                                     Column(modifier = Modifier.weight(1f)) {
                                                         Text(
-                                                            text = "First-Time OTP Registration",
-                                                            style = MaterialTheme.typography.labelMedium,
+                                                            text = "Allow New Device Activation",
+                                                            style = MaterialTheme.typography.labelLarge,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = ArcticWhite
+                                                            color = primaryText
                                                         )
                                                         Text(
-                                                            text = "Allow UAE +971 SMS OTP + Existing PIN device registration",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = PlatinumMuted
+                                                            text = "Permit authorized PIN sign-in from a newly registered corporate device",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = secondaryText
                                                         )
                                                     }
                                                     Switch(
@@ -513,10 +594,10 @@ fun SecurityCenterDialog(
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Text(
-                                                        text = if (mobileIsActive) "Mobile Access: Active" else "Mobile Access: Inactive",
-                                                        style = MaterialTheme.typography.labelMedium,
+                                                        text = if (mobileIsActive) "Record Access: Active" else "Record Access: Inactive",
+                                                        style = MaterialTheme.typography.labelLarge,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = if (mobileIsActive) BrandGreenLight else MetallicOrangeBright
+                                                        color = if (mobileIsActive) successText else warningText
                                                     )
                                                     Switch(
                                                         checked = mobileIsActive,
@@ -526,11 +607,19 @@ fun SecurityCenterDialog(
                                                 }
 
                                                 if (formError != null) {
-                                                    Text(
-                                                        text = formError!!,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = Color(0xFFFCA5A5)
-                                                    )
+                                                    Surface(
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        color = errorBg,
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Text(
+                                                            text = formError!!,
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = errorText,
+                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                        )
+                                                    }
                                                 }
 
                                                 Button(
@@ -572,15 +661,18 @@ fun SecurityCenterDialog(
                                                             showAddForm = false
                                                         }
                                                     },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricBlue),
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = RoyalElectricBlue,
+                                                        contentColor = PureWhite
+                                                    ),
                                                     shape = RoundedCornerShape(12.dp),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .testTag("security_save_mobile_btn")
                                                 ) {
                                                     Text(
-                                                        if (editingMobileId != null) "Update Authorized +971 Mobile" else "Save Authorized +971 Mobile",
-                                                        color = Color.White,
+                                                        if (editingMobileId != null) "Update Authorized +971 Record" else "Save Authorized +971 Record",
+                                                        color = PureWhite,
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                 }
@@ -592,22 +684,26 @@ fun SecurityCenterDialog(
 
                             if (authorizedMobiles.isEmpty()) {
                                 item {
-                                    SecurityEmptyCard("No UAE +971 authorized mobile numbers registered yet.")
+                                    SecurityEmptyCard(
+                                        message = "No UAE +971 authorized mobile numbers registered yet.",
+                                        isDark = isDark
+                                    )
                                 }
                             } else {
                                 items(authorizedMobiles, key = { it.id }) { item ->
                                     Surface(
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = SignatureRoyalSurface,
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = cardBg,
                                         border = BorderStroke(
-                                            1.dp,
-                                            if (item.isProtectedOwner) MetallicOrangeGold else SignatureRoyalBorder
+                                            1.2.dp,
+                                            if (item.isProtectedOwner) MetallicOrange else cardBorder
                                         ),
+                                        shadowElevation = 2.dp,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
@@ -620,40 +716,47 @@ fun SecurityCenterDialog(
                                                             text = item.displayName,
                                                             style = MaterialTheme.typography.titleSmall,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = ArcticWhite
+                                                            color = primaryText
                                                         )
                                                         if (item.isProtectedOwner) {
                                                             Spacer(Modifier.width(6.dp))
                                                             Icon(
                                                                 imageVector = Icons.Default.Lock,
                                                                 contentDescription = "Protected Owner",
-                                                                tint = MetallicOrangeGold,
-                                                                modifier = Modifier.size(14.dp)
+                                                                tint = warningText,
+                                                                modifier = Modifier.size(15.dp)
                                                             )
                                                         }
                                                     }
                                                     Text(
                                                         text = UaePhoneValidator.formatDisplay(item.phoneE164),
-                                                        style = MaterialTheme.typography.bodySmall,
+                                                        style = MaterialTheme.typography.bodyMedium,
                                                         fontFamily = JetBrainsMono,
-                                                        color = ElectricBlueGlow
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = blueAccentText
                                                     )
                                                 }
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    val roleBg = when (item.role) {
+                                                        UserRole.OWNER_VIEW -> if (isDark) MetallicOrange.copy(alpha = 0.28f) else MetallicOrangeSoft
+                                                        UserRole.ADMIN -> if (isDark) RoyalElectricBlue.copy(alpha = 0.35f) else ElectricBlueSoft
+                                                        UserRole.STAFF -> if (isDark) BrandGreenLight.copy(alpha = 0.24f) else BrandGreenContainer
+                                                    }
+                                                    val roleFg = when (item.role) {
+                                                        UserRole.OWNER_VIEW -> if (isDark) PureWhite else MetallicOrangeOnSoft
+                                                        UserRole.ADMIN -> if (isDark) PureWhite else ElectricBlueTextLight
+                                                        UserRole.STAFF -> if (isDark) PureWhite else BrandGreenOnContainer
+                                                    }
                                                     Surface(
                                                         shape = RoundedCornerShape(8.dp),
-                                                        color = when (item.role) {
-                                                            UserRole.OWNER_VIEW -> MetallicOrange.copy(alpha = 0.25f)
-                                                            UserRole.ADMIN -> RoyalElectricBlue.copy(alpha = 0.35f)
-                                                            UserRole.STAFF -> BrandGreenLight.copy(alpha = 0.2f)
-                                                        }
+                                                        color = roleBg
                                                     ) {
                                                         Text(
                                                             text = if (item.isProtectedOwner) "PROTECTED OWNER" else item.role.name,
                                                             style = MaterialTheme.typography.labelSmall,
                                                             fontWeight = FontWeight.ExtraBold,
-                                                            color = ArcticWhite,
-                                                            fontSize = 10.sp,
+                                                            color = roleFg,
+                                                            fontSize = 11.sp,
                                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                                         )
                                                     }
@@ -676,7 +779,7 @@ fun SecurityCenterDialog(
                                                             Icon(
                                                                 imageVector = Icons.Default.Edit,
                                                                 contentDescription = "Edit authorized number",
-                                                                tint = ElectricBlueGlow,
+                                                                tint = blueAccentText,
                                                                 modifier = Modifier.size(18.dp)
                                                             )
                                                         }
@@ -687,85 +790,94 @@ fun SecurityCenterDialog(
                                                             Icon(
                                                                 imageVector = Icons.Default.Delete,
                                                                 contentDescription = "Remove authorized number",
-                                                                tint = BrandRedBright,
+                                                                tint = errorText,
                                                                 modifier = Modifier.size(18.dp)
                                                             )
                                                         }
                                                     }
                                                 }
                                             }
-                                            // Registration Status, OTP Status, Device & Lockout badges
+
+                                            // Status Chips (High Contrast)
                                             val regStatusText = when {
-                                                !item.isActive -> "DEACTIVATED"
-                                                item.isRegistered -> "DEVICE REGISTERED"
-                                                !item.firstTimeRegEnabled -> "FIRST-TIME REG OFF"
-                                                else -> "PENDING FIRST-TIME REG"
+                                                !item.isActive -> "INACTIVE"
+                                                item.isRegistered -> "ACTIVE • REGISTERED"
+                                                item.firstTimeRegEnabled -> "ACTIVE • READY FOR PIN LOGIN"
+                                                else -> "ACTIVE"
                                             }
-                                            val regColor = when {
-                                                !item.isActive -> BrandRedBright
-                                                item.isRegistered -> BrandGreenLight
-                                                else -> MetallicOrangeBright
+                                            val regBg = when {
+                                                !item.isActive -> errorBg
+                                                item.isRegistered -> if (isDark) BrandGreenLight.copy(alpha = 0.22f) else BrandGreenContainer
+                                                else -> if (isDark) MetallicOrange.copy(alpha = 0.22f) else MetallicOrangeSoft
+                                            }
+                                            val regFg = when {
+                                                !item.isActive -> errorText
+                                                item.isRegistered -> successText
+                                                else -> warningText
                                             }
                                             FlowRow(
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
                                                 Surface(
                                                     shape = RoundedCornerShape(6.dp),
-                                                    color = regColor.copy(alpha = 0.16f)
+                                                    color = regBg
                                                 ) {
                                                     Text(
                                                         text = regStatusText,
-                                                        fontSize = 9.sp,
+                                                        fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = regColor,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        color = regFg,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                                     )
                                                 }
                                                 if (item.otpVerifiedAtMs > 0L) {
-                                                    val otpTime = SimpleDateFormat("dd MMM hh:mm a", Locale.US).format(Date(item.otpVerifiedAtMs))
+                                                    val verifiedTime = SimpleDateFormat("dd MMM • hh:mm a", Locale.US).format(Date(item.otpVerifiedAtMs))
                                                     Surface(
                                                         shape = RoundedCornerShape(6.dp),
-                                                        color = ElectricBlueBright.copy(alpha = 0.18f)
+                                                        color = if (isDark) ElectricBlueBright.copy(alpha = 0.22f) else ElectricBlueSoft
                                                     ) {
                                                         Text(
-                                                            text = "OTP Verified: $otpTime",
-                                                            fontSize = 9.sp,
+                                                            text = "Verified: $verifiedTime",
+                                                            fontSize = 11.sp,
                                                             fontWeight = FontWeight.SemiBold,
-                                                            color = ElectricBlueGlow,
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            color = blueAccentText,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                                         )
                                                     }
                                                 }
                                                 if (item.failedLoginAttempts > 0) {
                                                     Surface(
                                                         shape = RoundedCornerShape(6.dp),
-                                                        color = Color(0xFF45141E)
+                                                        color = errorBg
                                                     ) {
                                                         Text(
                                                             text = "Failed Attempts: ${item.failedLoginAttempts}",
-                                                            fontSize = 9.sp,
+                                                            fontSize = 11.sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = Color(0xFFFCA5A5),
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            color = errorText,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                                         )
                                                     }
                                                 }
                                             }
+
                                             if (item.registeredDeviceId.isNotBlank()) {
                                                 Text(
                                                     text = "Registered Device ID: ${item.registeredDeviceId}",
-                                                    style = MaterialTheme.typography.labelSmall,
+                                                    style = MaterialTheme.typography.bodySmall,
                                                     fontFamily = JetBrainsMono,
-                                                    color = PlatinumMuted
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = secondaryText
                                                 )
                                             }
                                             if (item.role == UserRole.STAFF) {
                                                 val perms = StaffFeaturePermission.parseCsv(item.allowedFeaturesCsv)
                                                 Text(
-                                                    text = "Features: ${perms.joinToString(" • ") { it.label }}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = PlatinumMuted
+                                                    text = "Staff Permissions: ${perms.joinToString(" • ") { it.label }}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = importantText
                                                 )
                                                 val linkedStaff = staffUsers.firstOrNull { it.id == item.staffUserId }
                                                 if (!isReadOnly && linkedStaff != null && (onUpdateStaffPin != null || onSetStaffActiveStatus != null)) {
@@ -776,28 +888,29 @@ fun SecurityCenterDialog(
                                                         if (onUpdateStaffPin != null) {
                                                             OutlinedButton(
                                                                 onClick = { resetPinTargetUser = linkedStaff },
-                                                                border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.7f)),
+                                                                border = BorderStroke(1.2.dp, blueAccentText),
                                                                 shape = RoundedCornerShape(8.dp),
-                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                                                 modifier = Modifier.testTag("security_reset_pin_${linkedStaff.id}")
                                                             ) {
-                                                                Icon(Icons.Default.Key, contentDescription = null, tint = ElectricBlueGlow, modifier = Modifier.size(14.dp))
+                                                                Icon(Icons.Default.Key, contentDescription = null, tint = blueAccentText, modifier = Modifier.size(15.dp))
                                                                 Spacer(Modifier.width(4.dp))
-                                                                Text("Reset PIN", color = ElectricBlueGlow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                Text("Reset PIN", color = blueAccentText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                             }
                                                         }
                                                         if (onSetStaffActiveStatus != null) {
+                                                            val toggleTint = if (linkedStaff.isActive) warningText else successText
                                                             OutlinedButton(
                                                                 onClick = { onSetStaffActiveStatus(linkedStaff.id, !linkedStaff.isActive) },
-                                                                border = BorderStroke(1.dp, if (linkedStaff.isActive) MetallicOrangeBright else BrandGreenLight),
+                                                                border = BorderStroke(1.2.dp, toggleTint),
                                                                 shape = RoundedCornerShape(8.dp),
-                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                                                 modifier = Modifier.testTag("security_toggle_staff_active_${linkedStaff.id}")
                                                             ) {
                                                                 Text(
                                                                     if (linkedStaff.isActive) "Deactivate Account" else "Activate Account",
-                                                                    color = if (linkedStaff.isActive) MetallicOrangeBright else BrandGreenLight,
-                                                                    fontSize = 11.sp,
+                                                                    color = toggleTint,
+                                                                    fontSize = 12.sp,
                                                                     fontWeight = FontWeight.Bold
                                                                 )
                                                             }
@@ -820,101 +933,121 @@ fun SecurityCenterDialog(
                                     ) {
                                         Button(
                                             onClick = { showLogoutAllConfirm = true },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = ErrorDarkRed,
+                                                contentColor = PureWhite
+                                            ),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.testTag("security_logout_all_devices_btn")
                                         ) {
-                                            Icon(Icons.Default.Logout, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Default.Logout, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
                                             Spacer(Modifier.width(6.dp))
-                                            Text("Logout All Devices", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("Logout All Devices", color = PureWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
                                     }
                                 }
                             }
                             if (registeredDevices.isEmpty()) {
-                                item { SecurityEmptyCard("No registered devices logged yet.") }
+                                item {
+                                    SecurityEmptyCard(
+                                        message = "No registered devices logged yet.",
+                                        isDark = isDark
+                                    )
+                                }
                             } else {
                                 items(registeredDevices, key = { it.id }) { dev ->
                                     val timeStr = remember(dev.lastActiveMs) {
                                         SimpleDateFormat("dd MMM • hh:mm a", Locale.US).format(Date(dev.lastActiveMs))
                                     }
                                     Surface(
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = SignatureRoyalSurface,
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = cardBg,
                                         border = BorderStroke(
-                                            1.dp,
-                                            if (dev.isRevoked) Color(0xFFEF4444).copy(alpha = 0.6f) else SignatureRoyalBorder
+                                            1.2.dp,
+                                            if (dev.isRevoked) errorText else cardBorder
                                         ),
+                                        shadowElevation = 2.dp,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(12.dp),
+                                                .padding(14.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Icon(Icons.Default.Devices, contentDescription = null, tint = ElectricBlueGlow, modifier = Modifier.size(15.dp))
+                                                    Icon(
+                                                        Icons.Default.Devices,
+                                                        contentDescription = null,
+                                                        tint = blueAccentText,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
                                                     Spacer(Modifier.width(6.dp))
                                                     Text(
                                                         text = dev.deviceLabel,
                                                         style = MaterialTheme.typography.titleSmall,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = ArcticWhite,
+                                                        color = primaryText,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
                                                 Text(
                                                     text = "${dev.displayName} (${dev.role.name}) • $timeStr",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = PlatinumSilver
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = importantText
                                                 )
                                                 if (dev.phoneE164.isNotBlank()) {
                                                     Text(
                                                         text = UaePhoneValidator.formatDisplay(dev.phoneE164),
-                                                        style = MaterialTheme.typography.labelSmall,
+                                                        style = MaterialTheme.typography.bodySmall,
                                                         fontFamily = JetBrainsMono,
-                                                        color = PlatinumMuted
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = secondaryText
                                                     )
                                                 }
                                             }
+                                            Spacer(Modifier.width(8.dp))
                                             if (dev.isRevoked) {
                                                 Surface(
                                                     shape = RoundedCornerShape(8.dp),
-                                                    color = Color(0xFF45141E)
+                                                    color = errorBg
                                                 ) {
                                                     Text(
                                                         text = "REVOKED",
                                                         style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color(0xFFFCA5A5),
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = errorText,
+                                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                                                     )
                                                 }
                                             } else if (!isReadOnly) {
                                                 OutlinedButton(
                                                     onClick = { onRevokeDevice(dev) },
-                                                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                                                    border = BorderStroke(1.2.dp, errorText),
                                                     shape = RoundedCornerShape(10.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                                     modifier = Modifier.testTag("security_revoke_device_${dev.id}")
                                                 ) {
-                                                    Text("Revoke", color = Color(0xFFFCA5A5), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Text("Revoke", color = errorText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             } else {
                                                 Surface(
                                                     shape = RoundedCornerShape(8.dp),
-                                                    color = BrandGreenLight.copy(alpha = 0.2f)
+                                                    color = if (isDark) BrandGreenLight.copy(alpha = 0.22f) else BrandGreenContainer
                                                 ) {
                                                     Text(
                                                         text = "ACTIVE",
                                                         style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = BrandGreenLight,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = successText,
+                                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                                                     )
                                                 }
                                             }
@@ -926,67 +1059,96 @@ fun SecurityCenterDialog(
 
                         else -> {
                             if (securityLogs.isEmpty()) {
-                                item { SecurityEmptyCard("No security or login audit events recorded yet.") }
+                                item {
+                                    SecurityEmptyCard(
+                                        message = "No security or login audit events recorded yet.",
+                                        isDark = isDark
+                                    )
+                                }
                             } else {
                                 items(securityLogs, key = { it.id }) { log ->
                                     val timeStr = remember(log.timestampMs) {
                                         SimpleDateFormat("dd MMM • hh:mm a", Locale.US).format(Date(log.timestampMs))
                                     }
+                                    val isCriticalFail = log.isAlert ||
+                                        log.eventType.contains("FAILED", ignoreCase = true) ||
+                                        log.eventType.contains("LOCKOUT", ignoreCase = true) ||
+                                        log.eventType.contains("DENIED", ignoreCase = true)
+                                    val titleColor = when {
+                                        isCriticalFail -> errorText
+                                        log.eventType.contains("REORDER", ignoreCase = true) ||
+                                            log.eventType.contains("UPDATE", ignoreCase = true) -> blueAccentText
+                                        log.eventType.contains("SUCCESS", ignoreCase = true) ||
+                                            log.eventType.contains("LOGIN", ignoreCase = true) -> successText
+                                        else -> primaryText
+                                    }
                                     Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (log.isAlert) Color(0xFF2B1226) else SignatureRoyalSurface,
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = if (isCriticalFail) alertCardBg else cardBg,
                                         border = BorderStroke(
-                                            1.dp,
-                                            if (log.isAlert) MetallicOrangeBright else SignatureRoyalBorder
+                                            if (isCriticalFail) 1.4.dp else 1.1.dp,
+                                            if (isCriticalFail) alertCardBorder else cardBorder
                                         ),
-                                        modifier = Modifier.fillMaxWidth()
+                                        shadowElevation = 2.dp,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("security_log_card_${log.id}")
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(10.dp),
-                                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
                                                     Icon(
-                                                        imageVector = if (log.isAlert) Icons.Default.Warning else Icons.Default.VerifiedUser,
+                                                        imageVector = if (isCriticalFail) Icons.Default.Warning else Icons.Default.VerifiedUser,
                                                         contentDescription = null,
-                                                        tint = if (log.isAlert) MetallicOrangeBright else ElectricBlueGlow,
-                                                        modifier = Modifier.size(14.dp)
+                                                        tint = titleColor,
+                                                        modifier = Modifier.size(16.dp)
                                                     )
-                                                    Spacer(Modifier.width(5.dp))
+                                                    Spacer(Modifier.width(6.dp))
                                                     Text(
                                                         text = log.eventType,
-                                                        style = MaterialTheme.typography.labelMedium,
+                                                        style = MaterialTheme.typography.labelLarge,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = if (log.isAlert) MetallicOrangeBright else ArcticWhite
+                                                        color = titleColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
+                                                Spacer(Modifier.width(8.dp))
                                                 Text(
                                                     text = timeStr,
-                                                    style = MaterialTheme.typography.labelSmall,
+                                                    style = MaterialTheme.typography.labelMedium,
                                                     fontFamily = JetBrainsMono,
-                                                    color = PlatinumMuted
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = secondaryText
                                                 )
                                             }
                                             Text(
                                                 text = log.details,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = PlatinumSilver
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium,
+                                                color = importantText
                                             )
                                             val meta = listOfNotNull(
                                                 log.actorName.takeIf { it.isNotBlank() },
-                                                log.phoneE164.takeIf { it.isNotBlank() },
+                                                log.phoneE164.takeIf { it.isNotBlank() }?.let { UaePhoneValidator.formatDisplay(it) },
                                                 log.deviceLabel.takeIf { it.isNotBlank() }
                                             ).joinToString(" • ")
                                             if (meta.isNotBlank()) {
                                                 Text(
                                                     text = meta,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = PlatinumMuted
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = secondaryText
                                                 )
                                             }
                                         }
@@ -1006,12 +1168,12 @@ fun SecurityCenterDialog(
         var pinErr by remember(staffTarget.id) { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { resetPinTargetUser = null },
-            containerColor = SignatureRoyalSurface,
+            containerColor = cardBg,
             title = {
                 Text(
                     text = "Reset Individual PIN • ${staffTarget.displayName}",
-                    color = ArcticWhite,
-                    fontWeight = FontWeight.Bold
+                    color = primaryText,
+                    fontWeight = FontWeight.ExtraBold
                 )
             },
             text = {
@@ -1019,7 +1181,7 @@ fun SecurityCenterDialog(
                     Text(
                         text = "Enter a new 4-digit individual PIN. Stored securely with salted PBKDF2 hashing (never plain text).",
                         style = MaterialTheme.typography.bodySmall,
-                        color = PlatinumSilver
+                        color = secondaryText
                     )
                     OutlinedTextField(
                         value = newPin,
@@ -1048,7 +1210,12 @@ fun SecurityCenterDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (pinErr != null) {
-                        Text(pinErr!!, style = MaterialTheme.typography.labelSmall, color = Color(0xFFFCA5A5))
+                        Text(
+                            text = pinErr!!,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = errorText
+                        )
                     }
                 }
             },
@@ -1064,14 +1231,14 @@ fun SecurityCenterDialog(
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange)
+                    colors = ButtonDefaults.buttonColors(containerColor = MetallicOrange, contentColor = PureWhite)
                 ) {
-                    Text("Save New PIN", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Save New PIN", color = PureWhite, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { resetPinTargetUser = null }) {
-                    Text("Cancel", color = PlatinumSilver)
+                    Text("Cancel", color = primaryText, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -1080,12 +1247,12 @@ fun SecurityCenterDialog(
     if (showLogoutAllConfirm) {
         AlertDialog(
             onDismissRequest = { showLogoutAllConfirm = false },
-            containerColor = SignatureRoyalSurface,
-            title = { Text("Logout All Devices?", color = ArcticWhite, fontWeight = FontWeight.Bold) },
+            containerColor = cardBg,
+            title = { Text("Logout All Devices?", color = primaryText, fontWeight = FontWeight.ExtraBold) },
             text = {
                 Text(
-                    "This will mark all registered devices as revoked and require fresh login authentication across connected devices.",
-                    color = PlatinumSilver
+                    "This will mark all registered devices as revoked and require fresh PIN login authentication across connected devices.",
+                    color = importantText
                 )
             },
             confirmButton = {
@@ -1094,14 +1261,14 @@ fun SecurityCenterDialog(
                         showLogoutAllConfirm = false
                         onLogoutAllDevices()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorDarkRed, contentColor = PureWhite)
                 ) {
-                    Text("Revoke All", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Revoke All", color = PureWhite, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutAllConfirm = false }) {
-                    Text("Cancel", color = PlatinumSilver)
+                    Text("Cancel", color = primaryText, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -1114,24 +1281,46 @@ private fun SecurityTabButton(
     selected: Boolean,
     onClick: () -> Unit,
     tag: String,
+    isDark: Boolean,
+    isAlertTab: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val container = when {
+        selected && isAlertTab -> ErrorDarkRed
+        selected -> RoyalElectricBlue
+        isDark -> ObsidianSurface
+        else -> PureWhite
+    }
+    val border = when {
+        selected && isAlertTab -> ErrorDarkRed
+        selected -> RoyalElectricBlue
+        isAlertTab -> if (isDark) MetallicOrangeBright else ErrorDarkRed
+        isDark -> ObsidianBorder
+        else -> SignatureRoyalBorder
+    }
+    val labelColor = when {
+        selected -> PureWhite
+        isAlertTab -> if (isDark) Color(0xFFFCA5A5) else ErrorDarkRed
+        isDark -> PureWhite
+        else -> DeepNavyText
+    }
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        color = if (selected) RoyalElectricBlue else SignatureRoyalSurface,
-        border = BorderStroke(1.dp, if (selected) ElectricBlueGlow else SignatureRoyalBorder),
+        color = container,
+        border = BorderStroke(1.2.dp, border),
+        shadowElevation = if (selected) 3.dp else 1.dp,
         modifier = modifier.testTag(tag)
     ) {
         Box(
-            modifier = Modifier.padding(vertical = 9.dp, horizontal = 6.dp),
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (selected) Color.White else PlatinumSilver,
+                color = labelColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1140,11 +1329,11 @@ private fun SecurityTabButton(
 }
 
 @Composable
-private fun SecurityEmptyCard(message: String) {
+private fun SecurityEmptyCard(message: String, isDark: Boolean) {
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = SignatureRoyalSurface,
-        border = BorderStroke(1.dp, SignatureRoyalBorder),
+        color = if (isDark) ObsidianSurface else PureWhite,
+        border = BorderStroke(1.1.dp, if (isDark) ObsidianBorder else SignatureRoyalBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Box(
@@ -1153,7 +1342,12 @@ private fun SecurityEmptyCard(message: String) {
                 .padding(22.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = message, style = MaterialTheme.typography.bodySmall, color = PlatinumMuted)
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = if (isDark) TextSecondaryDark else DarkSlateSecondary
+            )
         }
     }
 }

@@ -67,9 +67,13 @@ import com.example.data.model.CustomerReturnHistoryGroup
 import com.example.data.model.StaffReturnHistoryGroup
 import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandRedBright
+import com.example.ui.theme.DarkSlateSecondary
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ErrorDarkRed
 import com.example.ui.theme.JetBrainsMono
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.ObsidianBorder
@@ -79,9 +83,11 @@ import com.example.ui.theme.ObsidianMidnight
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.PlatinumSilver
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.RoyalBlueDeep
 import com.example.ui.theme.SignatureRoyalBorder
 import com.example.ui.theme.SignatureRoyalSurface
+import com.example.ui.theme.TextSecondaryDark
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -658,14 +664,21 @@ fun DifferentGasReturnHistoryDialog(
 
     val deleteTarget = pendingDeleteRecord
     if (deleteTarget != null && onDeleteRecord != null) {
+        val isDarkDialog = LocalIsDarkTheme.current
         AlertDialog(
             onDismissRequest = { pendingDeleteRecord = null },
-            containerColor = SignatureRoyalSurface,
-            title = { Text("Delete Gas Exchange?", color = ArcticWhite, fontWeight = FontWeight.Bold) },
+            containerColor = if (isDarkDialog) ObsidianMidnight else PureWhite,
+            title = {
+                Text(
+                    "Delete Gas Exchange?",
+                    color = if (isDarkDialog) PureWhite else DeepNavyText,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Text(
                     "Deleting this exchange for ${deleteTarget.customerName} will safely reverse its Full and Empty cylinder stock impact automatically.",
-                    color = PlatinumSilver
+                    color = if (isDarkDialog) TextSecondaryDark else DarkSlateSecondary
                 )
             },
             confirmButton = {
@@ -674,14 +687,18 @@ fun DifferentGasReturnHistoryDialog(
                         pendingDeleteRecord = null
                         onDeleteRecord(deleteTarget)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorDarkRed)
                 ) {
-                    Text("Delete & Reverse Stock", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Delete & Reverse Stock", color = PureWhite, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteRecord = null }) {
-                    Text("Cancel", color = PlatinumSilver)
+                    Text(
+                        "Cancel",
+                        color = if (isDarkDialog) TextSecondaryDark else DeepNavyText,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         )

@@ -934,7 +934,7 @@ fun AdminReorderableProductRow(
                                     text = "• INACTIVE",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MetallicOrangeBright
+                                    color = if (isDark) MetallicOrangeBright else com.example.ui.theme.WarningDarkOrange
                                 )
                             }
                         }

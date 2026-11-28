@@ -211,7 +211,7 @@ fun BrandHeaderBanner(
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
                             color = contentColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -219,7 +219,8 @@ fun BrandHeaderBanner(
                         Text(
                             text = subtitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = com.example.ui.theme.PlatinumSilver.copy(alpha = 0.88f),
+                            fontWeight = FontWeight.Medium,
+                            color = com.example.ui.theme.TextSecondaryDark,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1408,7 +1409,7 @@ fun CompactInlineStepper(
                         text = "0",
                         style = MaterialTheme.typography.labelMedium,
                         fontFamily = JetBrainsMono,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 BasicTextField(

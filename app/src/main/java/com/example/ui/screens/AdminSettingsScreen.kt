@@ -164,6 +164,7 @@ import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.ObsidianBorder
 import com.example.ui.theme.ObsidianDeep
 import com.example.ui.theme.ObsidianElevated
 import com.example.ui.theme.ObsidianMidnight
@@ -2142,6 +2143,7 @@ private fun SettingsCategoryFolderGrid(
                 )
             }
             if (selectedFolder != null) {
+                val closeColor = if (isDark) MetallicOrangeBright else com.example.ui.theme.WarningDarkOrange
                 TextButton(
                     onClick = { onSelectFolder(null) },
                     modifier = Modifier.testTag("settings_folder_show_all_button")
@@ -2149,11 +2151,11 @@ private fun SettingsCategoryFolderGrid(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close folder",
-                        tint = MetallicOrangeBright,
+                        tint = closeColor,
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(Modifier.width(3.dp))
-                    Text("Close", fontWeight = FontWeight.Bold, color = MetallicOrangeBright)
+                    Text("Close", fontWeight = FontWeight.Bold, color = closeColor)
                 }
             }
         }
@@ -2164,20 +2166,25 @@ private fun SettingsCategoryFolderGrid(
         ) {
             SettingsFolderSection.entries.forEach { folder ->
                 val isSelected = selectedFolder == folder
-                val cardBrush = if (isSelected) {
-                    Brush.horizontalGradient(
+                val cardBrush = when {
+                    isSelected -> Brush.horizontalGradient(
                         listOf(
                             RoyalBlueDeep,
                             RoyalElectricBlue,
                             folder.primaryColor
                         )
                     )
-                } else {
-                    Brush.horizontalGradient(
+                    isDark -> Brush.horizontalGradient(
                         listOf(
                             ObsidianSurface,
                             ObsidianElevated,
                             RoyalBlueDeep.copy(alpha = 0.72f)
+                        )
+                    )
+                    else -> Brush.horizontalGradient(
+                        listOf(
+                            com.example.ui.theme.PureWhite,
+                            com.example.ui.theme.GlossyCardBlueTint
                         )
                     )
                 }
@@ -2186,11 +2193,33 @@ private fun SettingsCategoryFolderGrid(
                     SettingsFolderSection.PRODUCT_MASTER -> "$productCount Items"
                     else -> folder.shortCode
                 }
+                val titleColor = if (isSelected || isDark) com.example.ui.theme.PureWhite else com.example.ui.theme.DeepNavyText
+                val subtitleColor = if (isSelected || isDark) com.example.ui.theme.TextSecondaryDark else com.example.ui.theme.DarkSlateSecondary
+                val iconTint = when {
+                    isSelected -> com.example.ui.theme.PureWhite
+                    isDark -> ElectricBlueGlow
+                    else -> folder.primaryColor
+                }
+                val iconBoxBg = when {
+                    isSelected -> MetallicOrange
+                    isDark -> ObsidianMidnight
+                    else -> folder.primaryColor.copy(alpha = 0.14f)
+                }
+                val badgeBg = when {
+                    isSelected -> MetallicOrange
+                    isDark -> ObsidianMidnight
+                    else -> com.example.ui.theme.ElectricBlueSoft
+                }
+                val badgeFg = when {
+                    isSelected -> com.example.ui.theme.PureWhite
+                    isDark -> ElectricBlueGlow
+                    else -> com.example.ui.theme.ElectricBlueTextLight
+                }
 
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 54.dp)
+                        .heightIn(min = 56.dp)
                         .luxuryTapScale()
                         .clip(RoundedCornerShape(14.dp))
                         .clickable {
@@ -2204,39 +2233,35 @@ private fun SettingsCategoryFolderGrid(
                     shape = RoundedCornerShape(14.dp),
                     color = Color.Transparent,
                     border = BorderStroke(
-                        width = if (isSelected) 1.5.dp else 1.dp,
-                        brush = Brush.horizontalGradient(
-                            listOf(
-                                if (isSelected) MetallicOrangeBright else ElectricBlueBright.copy(alpha = 0.48f),
-                                if (isSelected) ElectricBlueGlow else MetallicOrange.copy(alpha = 0.34f)
-                            )
-                        )
+                        width = if (isSelected) 1.5.dp else 1.1.dp,
+                        color = when {
+                            isSelected -> MetallicOrange
+                            isDark -> ObsidianBorder
+                            else -> com.example.ui.theme.ChromeBorderLight
+                        }
                     ),
-                    shadowElevation = if (isSelected) 6.dp else 3.dp
+                    shadowElevation = if (isSelected) 6.dp else 2.dp
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(cardBrush)
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(34.dp)
                                 .clip(RoundedCornerShape(9.dp))
-                                .background(
-                                    if (isSelected) MetallicOrange.copy(alpha = 0.28f)
-                                    else ObsidianMidnight.copy(alpha = 0.78f)
-                                ),
+                                .background(iconBoxBg),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = folder.icon,
                                 contentDescription = folder.title,
-                                tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
-                                modifier = Modifier.size(16.dp)
+                                tint = iconTint,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
@@ -2244,40 +2269,36 @@ private fun SettingsCategoryFolderGrid(
                                 text = folder.title,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = ArcticWhite,
+                                color = titleColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = folder.subtitle,
                                 style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
-                                color = PlatinumSilver,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = subtitleColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                         Surface(
-                            shape = RoundedCornerShape(7.dp),
-                            color = ObsidianMidnight.copy(alpha = 0.72f),
-                            border = BorderStroke(
-                                0.75.dp,
-                                if (isSelected) MetallicOrangeBright.copy(alpha = 0.65f)
-                                else ElectricBlueBright.copy(alpha = 0.36f)
-                            )
+                            shape = RoundedCornerShape(8.dp),
+                            color = badgeBg
                         ) {
                             Text(
                                 text = badgeText,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                color = badgeFg,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
                         Icon(
                             imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = if (isSelected) "Collapse folder" else "Open folder",
-                            tint = if (isSelected) MetallicOrangeBright else ElectricBlueGlow,
+                            tint = if (isSelected) com.example.ui.theme.PureWhite else if (isDark) ElectricBlueGlow else com.example.ui.theme.DeepNavyText,
                             modifier = Modifier.size(18.dp)
                         )
                     }

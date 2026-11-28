@@ -72,9 +72,12 @@ import com.example.ui.components.LpgInventoryGroupedBarChart
 import com.example.ui.components.LpgSalesTrendAreaChart
 import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenLight
+import com.example.ui.theme.DarkSlateSecondary
+import com.example.ui.theme.DeepNavyText
 import com.example.ui.theme.DeepSpaceNavy
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
+import com.example.ui.theme.ElectricBlueTextLight
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.MetallicOrange
@@ -82,7 +85,11 @@ import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MoltenOrangeGlow
 import com.example.ui.theme.ObsidianElevated
 import com.example.ui.theme.PlatinumMuted
+import com.example.ui.theme.PureWhite
 import com.example.ui.theme.RoyalElectricBlue
+import com.example.ui.theme.SuccessDarkGreen
+import com.example.ui.theme.TextSecondaryDark
+import com.example.ui.theme.WarningDarkOrange
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -259,14 +266,14 @@ fun LpgAnalyticsDashboardScreen(
                                     Icon(
                                         imageVector = Icons.Default.Visibility,
                                         contentDescription = "Owner Read-Only Mode",
-                                        tint = ElectricBlueGlow,
+                                        tint = if (isDark) ElectricBlueGlow else ElectricBlueTextLight,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Text(
                                         text = "Owner Executive View (Read-Only) — Real-Time Firestore Analytics Stream",
                                         style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onSurface
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) PureWhite else DeepNavyText
                                     )
                                 }
                             }
@@ -292,7 +299,7 @@ fun LpgAnalyticsDashboardScreen(
                                     value = snapshot.totalLpgFull.toString(),
                                     subtitle = "Store + Fleet",
                                     icon = Icons.Default.PropaneTank,
-                                    accent = MetallicOrangeBright,
+                                    accent = if (isDark) MetallicOrangeBright else WarningDarkOrange,
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("kpi_lpg_total_full")
@@ -302,7 +309,7 @@ fun LpgAnalyticsDashboardScreen(
                                     value = snapshot.totalLpgEmpty.toString(),
                                     subtitle = "Damaged: ${snapshot.totalLpgDamaged}",
                                     icon = Icons.Default.Recycling,
-                                    accent = BrandGreenLight,
+                                    accent = if (isDark) BrandGreenLight else SuccessDarkGreen,
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("kpi_lpg_total_empty")
@@ -317,7 +324,7 @@ fun LpgAnalyticsDashboardScreen(
                                     value = snapshot.periodLpgSales.toString(),
                                     subtitle = "All Gas: ${snapshot.periodAllGasSales}",
                                     icon = Icons.Default.TrendingUp,
-                                    accent = ElectricBlueGlow,
+                                    accent = if (isDark) ElectricBlueGlow else ElectricBlueTextLight,
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("kpi_lpg_period_sales")
@@ -327,7 +334,7 @@ fun LpgAnalyticsDashboardScreen(
                                     value = snapshot.peakDayQty.toString(),
                                     subtitle = snapshot.peakDayLabel,
                                     icon = Icons.Default.LocalFireDepartment,
-                                    accent = MoltenOrangeGlow,
+                                    accent = if (isDark) MoltenOrangeGlow else WarningDarkOrange,
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("kpi_lpg_peak_day")
@@ -424,7 +431,7 @@ private fun AnalyticsKpiTile(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = if (isDark) DeepSpaceNavy.copy(alpha = 0.92f) else MaterialTheme.colorScheme.surface,
+        color = if (isDark) DeepSpaceNavy else PureWhite,
         border = BorderStroke(1.dp, accent.copy(alpha = 0.42f)),
         tonalElevation = 2.dp
     ) {
@@ -442,8 +449,8 @@ private fun AnalyticsKpiTile(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDark) TextSecondaryDark else DarkSlateSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -458,11 +465,12 @@ private fun AnalyticsKpiTile(
                 text = value,
                 style = MaterialTheme.typography.headlineSmall.copy(fontFamily = JetBrainsMono),
                 fontWeight = FontWeight.ExtraBold,
-                color = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onSurface
+                color = if (isDark) PureWhite else DeepNavyText
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
                 color = accent,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -477,11 +485,15 @@ private fun LpgActivityFeedRow(event: LpgActivityEvent) {
     val timeText = remember(event.timestamp) {
         SimpleDateFormat("dd MMM • hh:mm a", Locale.US).format(Date(event.timestamp))
     }
-    val badgeColor = if (event.isSale) MetallicOrangeBright else ElectricBlueGlow
+    val badgeColor = if (event.isSale) {
+        if (isDark) MetallicOrangeBright else WarningDarkOrange
+    } else {
+        if (isDark) ElectricBlueGlow else ElectricBlueTextLight
+    }
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = if (isDark) ObsidianElevated else MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.30f)),
+        color = if (isDark) ObsidianElevated else PureWhite,
+        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -496,14 +508,15 @@ private fun LpgActivityFeedRow(event: LpgActivityEvent) {
                     text = "LPG ${event.productName} • ${event.typeLabel}",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (isDark) ArcticWhite else MaterialTheme.colorScheme.onSurface,
+                    color = if (isDark) PureWhite else DeepNavyText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "${event.actorName} (${event.vehicleOrScope}) • $timeText",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isDark) PlatinumMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isDark) TextSecondaryDark else DarkSlateSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -511,7 +524,7 @@ private fun LpgActivityFeedRow(event: LpgActivityEvent) {
             Spacer(Modifier.width(8.dp))
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = badgeColor.copy(alpha = 0.18f),
+                color = badgeColor.copy(alpha = if (isDark) 0.18f else 0.12f),
                 border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.55f))
             ) {
                 Text(
