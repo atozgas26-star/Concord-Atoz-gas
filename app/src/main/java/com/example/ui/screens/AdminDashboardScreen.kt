@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
@@ -201,6 +202,7 @@ fun AdminDashboardScreen(
     securityLogs: List<SecurityAuditLogEntity> = emptyList(),
     allTransactions: List<StockTransactionEntity> = emptyList(),
     onOpenSecurityCenter: () -> Unit = {},
+    onOpenLpgAnalytics: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
@@ -517,6 +519,80 @@ fun AdminDashboardScreen(
                                     .weight(1f)
                                     .testTag("quick_nav_security_center")
                             )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        // Real-Time LPG Inventory & Sales Trends Analytics Entry Card
+                        Surface(
+                            onClick = onOpenLpgAnalytics,
+                            shape = RoundedCornerShape(18.dp),
+                            color = if (isDarkNav) Color(0xFF0E1D34) else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                1.2.dp,
+                                Brush.horizontalGradient(listOf(MetallicOrangeBright, ElectricBlueGlow))
+                            ),
+                            tonalElevation = 2.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dashboard_open_lpg_analytics_button")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(MetallicOrange, RoyalElectricBlue)
+                                                )
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ShowChart,
+                                            contentDescription = "Open Live LPG Analytics",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Column {
+                                        Text(
+                                            text = "Live LPG Inventory & Sales Trends",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkNav) ArcticWhite else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Interactive 11 / 22 / 44 KG charts & 7D–30D Firestore trends",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isDarkNav) MetallicOrangeBright else RoyalElectricBlue
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = MetallicOrange.copy(alpha = 0.18f),
+                                    border = BorderStroke(1.dp, MetallicOrangeBright.copy(alpha = 0.6f))
+                                ) {
+                                    Text(
+                                        text = "OPEN",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isDarkNav) MetallicOrangeBright else MetallicOrange,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

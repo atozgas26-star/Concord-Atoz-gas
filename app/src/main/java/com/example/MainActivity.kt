@@ -109,6 +109,7 @@ import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.AdminSettingsScreen
 import com.example.ui.screens.CompanyInventoryScreen
 import com.example.ui.screens.LoginScreen
+import com.example.ui.screens.LpgAnalyticsDashboardScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.StaffDashboardScreen
 import com.example.ui.screens.StoreManagementScreen
@@ -638,12 +639,14 @@ fun ConcordGasRootApp(
     }
     var viewingVehicleDetail by rememberSaveable { mutableStateOf(false) }
     var viewingCompanyInventory by rememberSaveable { mutableStateOf(false) }
+    var viewingLpgAnalytics by rememberSaveable { mutableStateOf(false) }
 
     val showAdminBottomBar = session != null &&
         session.user.role != UserRole.STAFF &&
         !useRail &&
         !viewingVehicleDetail &&
-        !viewingCompanyInventory
+        !viewingCompanyInventory &&
+        !viewingLpgAnalytics
     val calcBottomClearanceDp = if (showAdminBottomBar) 92.dp else 20.dp
 
     Box(
@@ -877,6 +880,7 @@ fun ConcordGasRootApp(
                                             currentTab = tab
                                             viewingVehicleDetail = false
                                             viewingCompanyInventory = false
+                                            viewingLpgAnalytics = false
                                         },
                                         icon = {
                                             Icon(
@@ -905,7 +909,7 @@ fun ConcordGasRootApp(
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        if (useRail && !viewingVehicleDetail && !viewingCompanyInventory) {
+                        if (useRail && !viewingVehicleDetail && !viewingCompanyInventory && !viewingLpgAnalytics) {
                             NavigationRail(
                                 containerColor = if (isDarkChrome) ObsidianDeep else PureWhite,
                                 modifier = Modifier.statusBarsPadding()
@@ -918,6 +922,7 @@ fun ConcordGasRootApp(
                                             currentTab = tab
                                             viewingVehicleDetail = false
                                             viewingCompanyInventory = false
+                                            viewingLpgAnalytics = false
                                         },
                                         icon = {
                                             Icon(
@@ -947,15 +952,30 @@ fun ConcordGasRootApp(
 
                         Box(modifier = Modifier.weight(1f)) {
                             AnimatedContent(
-                                targetState = Triple(viewingCompanyInventory, viewingVehicleDetail, effectiveTab),
+                                targetState = Triple(
+                                    if (viewingLpgAnalytics) "ANALYTICS" else if (viewingCompanyInventory) "INVENTORY" else "",
+                                    viewingVehicleDetail,
+                                    effectiveTab
+                                ),
                                 transitionSpec = {
                                     (fadeIn(animationSpec = tween(220)) +
                                         slideInVertically(animationSpec = tween(220)) { it / 28 })
                                         .togetherWith(fadeOut(animationSpec = tween(150)))
                                 },
                                 label = "admin_nav_transition"
-                            ) { (showInventory, showVehicleDetail, activeNavTab) ->
-                            if (showInventory) {
+                            ) { (overlayScreen, showVehicleDetail, activeNavTab) ->
+                            if (overlayScreen == "ANALYTICS") {
+                                LpgAnalyticsDashboardScreen(
+                                    selectedDate = selectedDate,
+                                    companyStockRows = companyStockReport,
+                                    transactions = allTransactions.map { it.transaction },
+                                    lpgExchanges = allLpgExchanges,
+                                    workspaceState = workspaceState,
+                                    isReadOnly = isReadOnly,
+                                    onDateSelected = viewModel::setSelectedDate,
+                                    onBack = { viewingLpgAnalytics = false }
+                                )
+                            } else if (overlayScreen == "INVENTORY") {
                                 CompanyInventoryScreen(
                                     selectedDate = selectedDate,
                                     stockRows = companyStockReport,
@@ -1066,6 +1086,7 @@ fun ConcordGasRootApp(
                                         onDismissAppUpdateBanner = viewModel::dismissAppUpdateBanner,
                                         onDateSelected = viewModel::setSelectedDate,
                                         onOpenInventory = { viewingCompanyInventory = true },
+                                        onOpenLpgAnalytics = { viewingLpgAnalytics = true },
                                         onOpenStore = { currentTab = AdminNavTab.STORE },
                                         onOpenVehicles = { currentTab = AdminNavTab.VEHICLES },
                                         onOpenVehicleDetail = { vehicleId ->

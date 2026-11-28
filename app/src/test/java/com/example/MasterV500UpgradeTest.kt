@@ -31,6 +31,16 @@ import com.example.data.model.UserRole
 import com.example.data.repository.InventoryRepository
 import com.example.export.BackupManager
 import com.example.export.ReportExporter
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import com.example.data.local.DifferentGasReturnEntity
+import com.example.data.local.ProductEntity
+import com.example.data.local.StockTransactionEntity
+import com.example.data.model.CompanyStockRow
+import com.example.data.remote.WorkspaceConnectionState
+import com.example.ui.components.AnalyticsTimeRange
+import com.example.ui.components.LpgAnalyticsEngine
+import com.example.ui.screens.LpgAnalyticsDashboardScreen
 import com.example.ui.screens.StaffDashboardScreen
 import com.example.ui.theme.ConcordGasTheme
 import com.example.ui.viewmodel.AppViewModel
@@ -614,5 +624,122 @@ class MasterV500UpgradeTest {
 
         assertTrue(repository.categoriesFlow.first().any { it.name == "CALIBRATION GAS" })
         assertTrue(repository.activeProductsFlow.first().any { it.name == "Zero Air 10L" && it.unit == "Litre" })
+    }
+
+    @Test
+    fun lpgAnalyticsEngine_aggregatesActiveLpgSizesSalesTrendsAndCompanyReturns() {
+        val anchorDate = "2026-11-28"
+        val p11 = ProductEntity(id = 11L, category = ProductCategory.COOKING_GAS, name = "11 KG", sortOrder = 301, isActive = true, cylinderSizeKg = "11 KG")
+        val p22 = ProductEntity(id = 12L, category = ProductCategory.COOKING_GAS, name = "22 KG", sortOrder = 302, isActive = true, cylinderSizeKg = "22 KG")
+        val p44 = ProductEntity(id = 13L, category = ProductCategory.COOKING_GAS, name = "44 KG", sortOrder = 303, isActive = true, cylinderSizeKg = "44 KG")
+        val pO2 = ProductEntity(id = 1L, category = ProductCategory.INDUSTRIAL_GAS, name = "Oxygen", sortOrder = 101, isActive = true, cylinderSizeKg = "47L")
+
+        val stockRows = listOf(
+            CompanyStockRow(product = p11, storeFull = 40, vehiclesFull = 15, totalFull = 55, storeEmpty = 12, vehiclesEmpty = 8, totalEmpty = 20),
+            CompanyStockRow(product = p22, storeFull = 65, vehiclesFull = 25, totalFull = 90, storeEmpty = 20, vehiclesEmpty = 10, totalEmpty = 30),
+            CompanyStockRow(product = p44, storeFull = 30, vehiclesFull = 10, totalFull = 40, storeEmpty = 9, vehiclesEmpty = 5, totalEmpty = 14),
+            CompanyStockRow(product = pO2, storeFull = 100, vehiclesFull = 20, totalFull = 120, storeEmpty = 50, vehiclesEmpty = 10, totalEmpty = 60)
+        )
+
+        val transactions = listOf(
+            StockTransactionEntity(id = 1, businessDate = "2026-11-28", timestamp = 1000L, type = TransactionType.VEHICLE_CUSTOMER_SALE, productId = 12L, vehicleId = 1L, vehicleName = "83865", staffId = 2L, staffName = "Nadeem", quantity = 14),
+            StockTransactionEntity(id = 2, businessDate = "2026-11-28", timestamp = 2000L, type = TransactionType.STORE_FULL_DISPATCH_DIRECT, productId = 11L, staffId = 1L, staffName = "Ragavan", quantity = 6),
+            StockTransactionEntity(id = 3, businessDate = "2026-11-28", timestamp = 2500L, type = TransactionType.VEHICLE_CUSTOMER_SALE, productId = 1L, vehicleId = 1L, vehicleName = "83865", staffId = 2L, staffName = "Nadeem", quantity = 9),
+            StockTransactionEntity(id = 4, businessDate = "2026-11-26", timestamp = 3000L, type = TransactionType.VEHICLE_NEW_CUSTOMER_SALE, productId = 13L, vehicleId = 2L, vehicleName = "21409", staffId = 3L, staffName = "Sajid", quantity = 8),
+            StockTransactionEntity(id = 5, businessDate = "2026-11-27", timestamp = 4000L, type = TransactionType.STORE_PURCHASE_FULL, productId = 12L, staffId = 1L, staffName = "Ragavan", quantity = 30),
+            StockTransactionEntity(id = 6, businessDate = "2026-11-25", timestamp = 5000L, type = TransactionType.STORE_DAMAGED_ADD, productId = 12L, staffId = 1L, staffName = "Ragavan", quantity = 3),
+            StockTransactionEntity(id = 7, businessDate = "2026-11-27", timestamp = 6000L, type = TransactionType.STORE_DAMAGED_REMOVE, productId = 12L, staffId = 1L, staffName = "Ragavan", quantity = 1)
+        )
+
+        val exchanges = listOf(
+            DifferentGasReturnEntity(
+                id = 1, submissionKey = "ex1", businessDate = "2026-11-28", customerName = "Al Noor Cafe",
+                staffId = 2L, staffName = "Nadeem", deliveredSummary = "22 KG x4", returnedSummary = "22 KG x4",
+                deliveredItemsJson = "[]", returnedItemsJson = "[]", totalDeliveredQty = 4, totalReturnedQty = 4,
+                returnedEmptyCompany = "Arab Gas"
+            ),
+            DifferentGasReturnEntity(
+                id = 2, submissionKey = "ex2", businessDate = "2026-11-27", customerName = "Gulf Bakery",
+                staffId = 3L, staffName = "Sajid", deliveredSummary = "44 KG x3", returnedSummary = "44 KG x3",
+                deliveredItemsJson = "[]", returnedItemsJson = "[]", totalDeliveredQty = 3, totalReturnedQty = 3,
+                returnedEmptyCompany = "Emirates Gas"
+            )
+        )
+
+        val snap7 = LpgAnalyticsEngine.computeSnapshot(anchorDate, AnalyticsTimeRange.DAYS_7, stockRows, transactions, exchanges)
+        assertEquals(listOf("11 KG", "22 KG", "44 KG"), snap7.lpgSizes.map { it.label })
+        assertEquals(55 + 90 + 40, snap7.totalLpgFull)
+        assertEquals(20 + 30 + 14, snap7.totalLpgEmpty)
+        assertEquals(2, snap7.totalLpgDamaged)
+        assertEquals(7, snap7.trendPoints.size)
+        assertEquals(14 + 6 + 8, snap7.periodLpgSales)
+        assertEquals(14 + 6 + 9 + 8, snap7.periodAllGasSales)
+        assertEquals(20, snap7.peakDayQty)
+        assertEquals(4, snap7.returnShare.arabGasReturns)
+        assertEquals(3, snap7.returnShare.emiratesGasReturns)
+
+        val snap14 = LpgAnalyticsEngine.computeSnapshot(anchorDate, AnalyticsTimeRange.DAYS_14, stockRows, transactions, exchanges)
+        assertEquals(14, snap14.trendPoints.size)
+
+        val snap30 = LpgAnalyticsEngine.computeSnapshot(anchorDate, AnalyticsTimeRange.DAYS_30, stockRows, transactions, exchanges)
+        assertEquals(30, snap30.trendPoints.size)
+    }
+
+    @Test
+    fun lpgAnalyticsDashboardScreen_rendersLiveFirestoreChartsAndRangeToggles() {
+        var backInvoked = false
+        val p11 = ProductEntity(id = 11L, category = ProductCategory.COOKING_GAS, name = "11 KG", sortOrder = 301, isActive = true, cylinderSizeKg = "11 KG")
+        val p22 = ProductEntity(id = 12L, category = ProductCategory.COOKING_GAS, name = "22 KG", sortOrder = 302, isActive = true, cylinderSizeKg = "22 KG")
+        val p44 = ProductEntity(id = 13L, category = ProductCategory.COOKING_GAS, name = "44 KG", sortOrder = 303, isActive = true, cylinderSizeKg = "44 KG")
+
+        val stockRows = listOf(
+            CompanyStockRow(product = p11, storeFull = 25, vehiclesFull = 10, totalFull = 35, storeEmpty = 8, vehiclesEmpty = 4, totalEmpty = 12),
+            CompanyStockRow(product = p22, storeFull = 50, vehiclesFull = 20, totalFull = 70, storeEmpty = 15, vehiclesEmpty = 6, totalEmpty = 21),
+            CompanyStockRow(product = p44, storeFull = 18, vehiclesFull = 7, totalFull = 25, storeEmpty = 5, vehiclesEmpty = 3, totalEmpty = 8)
+        )
+        val txs = listOf(
+            StockTransactionEntity(id = 1, businessDate = "2026-11-28", timestamp = 1000L, type = TransactionType.VEHICLE_CUSTOMER_SALE, productId = 12L, vehicleId = 1L, vehicleName = "83865", staffId = 2L, staffName = "Nadeem", quantity = 12)
+        )
+        val exchanges = listOf(
+            DifferentGasReturnEntity(
+                id = 1, submissionKey = "ex1", businessDate = "2026-11-28", customerName = "Metro Kitchen",
+                staffId = 2L, staffName = "Nadeem", deliveredSummary = "22 KG x5", returnedSummary = "22 KG x5",
+                deliveredItemsJson = "[]", returnedItemsJson = "[]", totalDeliveredQty = 5, totalReturnedQty = 5,
+                returnedEmptyCompany = "Arab Gas"
+            )
+        )
+
+        composeRule.setContent {
+            ConcordGasTheme(themePreset = ThemePreset.EMERALD_CORPORATE, darkTheme = true) {
+                LpgAnalyticsDashboardScreen(
+                    selectedDate = "2026-11-28",
+                    companyStockRows = stockRows,
+                    transactions = txs,
+                    lpgExchanges = exchanges,
+                    workspaceState = WorkspaceConnectionState.Connected(
+                        workspaceId = "ws_concord",
+                        companyName = "Concord & Atoz Gas",
+                        inviteCode = "CAGAS1",
+                        memberCount = 5,
+                        isOwnerOrAdmin = true
+                    ),
+                    isReadOnly = true,
+                    onDateSelected = {},
+                    onBack = { backInvoked = true }
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("lpg_analytics_dashboard_screen").assertIsDisplayed()
+        composeRule.onNodeWithText("Live LPG Analytics").assertIsDisplayed()
+        composeRule.onNodeWithTag("lpg_analytics_firestore_badge").assertIsDisplayed()
+        composeRule.onNodeWithTag("lpg_inventory_bar_chart_card").assertExists()
+        composeRule.onNodeWithTag("lpg_sales_trend_area_chart_card").assertExists()
+
+        composeRule.onNodeWithTag("analytics_range_14d").performScrollTo().performClick()
+        composeRule.onNodeWithTag("analytics_range_30d").performScrollTo().performClick()
+
+        composeRule.onNodeWithTag("lpg_analytics_back_button").performClick()
+        assertTrue(backInvoked)
     }
 }
