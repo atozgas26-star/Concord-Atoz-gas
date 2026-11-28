@@ -442,17 +442,17 @@ fun QuickCalculatorPopupDialog(
             var dialogOffsetY by remember { mutableFloatStateOf(0f) }
 
             Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = SignatureRoyalBackground,
+                shape = RoundedCornerShape(26.dp),
+                color = com.example.ui.theme.CinematicMidnightBlack.copy(alpha = 0.96f),
                 tonalElevation = 0.dp,
-                shadowElevation = 18.dp,
+                shadowElevation = 22.dp,
                 border = BorderStroke(
-                    1.4.dp,
+                    1.5.dp,
                     Brush.linearGradient(
                         listOf(
-                            ElectricBlueGlow.copy(alpha = 0.72f),
+                            com.example.ui.theme.NeonCyanGlow.copy(alpha = 0.85f),
                             SignatureRoyalBorder,
-                            MetallicOrangeBright.copy(alpha = 0.65f)
+                            com.example.ui.theme.MoltenOrangeGlow.copy(alpha = 0.85f)
                         )
                     )
                 ),
@@ -856,40 +856,46 @@ fun QuickCalculatorPopupDialog(
                                         val isEquals = key == "="
                                         val isClear = key == "C"
                                         val isOperator = key in setOf("÷", "×", "-", "+", "%")
-                                        val containerColor = when {
-                                            isEquals -> MetallicOrange
-                                            isClear -> Color(0xFF3E1826)
-                                            isOperator -> RoyalBlueDeep
-                                            else -> SignatureRoyalElevated
+                                        val keyBrush = when {
+                                            isEquals -> Brush.linearGradient(listOf(MetallicOrange, com.example.ui.theme.MoltenOrangeCore))
+                                            isClear -> Brush.linearGradient(listOf(Color(0xFF451624), Color(0xFF2B0E18)))
+                                            isOperator -> Brush.linearGradient(listOf(Color(0xFF132D72), Color(0xFF0A1B47)))
+                                            else -> Brush.linearGradient(listOf(Color(0xFF12234F), Color(0xFF091433)))
                                         }
                                         val contentColor = when {
                                             isEquals -> Color.White
                                             isClear -> Color(0xFFFCA5A5)
-                                            isOperator -> ElectricBlueGlow
+                                            isOperator -> com.example.ui.theme.NeonCyanGlow
                                             else -> ArcticWhite
                                         }
-                                        val borderColor = when {
-                                            isEquals -> MetallicOrangeBright
-                                            isClear -> BrandRedSecondary.copy(alpha = 0.7f)
-                                            isOperator -> ElectricBlueBright.copy(alpha = 0.6f)
-                                            else -> SignatureRoyalBorder
+                                        val borderBrush = when {
+                                            isEquals -> Brush.linearGradient(listOf(com.example.ui.theme.ChromeSilverHighlight.copy(alpha = 0.7f), MetallicOrangeBright))
+                                            isClear -> Brush.linearGradient(listOf(BrandRedSecondary.copy(alpha = 0.8f), Color(0xFF7F1D1D)))
+                                            isOperator -> Brush.linearGradient(listOf(com.example.ui.theme.NeonCyanGlow.copy(alpha = 0.75f), ElectricBlueBright.copy(alpha = 0.35f)))
+                                            else -> Brush.linearGradient(listOf(ElectricBlueGlow.copy(alpha = 0.35f), SignatureRoyalBorder))
                                         }
 
                                         Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = containerColor,
-                                            border = BorderStroke(1.dp, borderColor),
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = Color.Transparent,
+                                            border = BorderStroke(1.1.dp, borderBrush),
+                                            shadowElevation = if (isEquals) 8.dp else 4.dp,
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(50.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .luxuryTapScale(pressedScale = 0.96f)
+                                                .height(52.dp)
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .luxuryTapScale(pressedScale = 0.94f)
                                                 .clickable {
                                                     calcState = QuickCalculatorEngine.onKeyPress(calcState, key)
                                                 }
                                                 .testTag("calc_key_$key")
                                         ) {
-                                            Box(contentAlignment = Alignment.Center) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(keyBrush),
+                                                contentAlignment = Alignment.Center
+                                            ) {
                                                 if (key == "DEL") {
                                                     Icon(
                                                         imageVector = Icons.AutoMirrored.Filled.Backspace,
@@ -901,7 +907,7 @@ fun QuickCalculatorPopupDialog(
                                                     Text(
                                                         text = key,
                                                         fontSize = if (isOperator || isEquals) 20.sp else 18.sp,
-                                                        fontWeight = FontWeight.Bold,
+                                                        fontWeight = FontWeight.ExtraBold,
                                                         fontFamily = JetBrainsMono,
                                                         color = contentColor
                                                     )

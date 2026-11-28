@@ -86,6 +86,7 @@ import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
+import com.example.ui.components.Futuristic3DCylinderVisual
 import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpeningStockEditDialog
@@ -94,6 +95,7 @@ import com.example.ui.components.RoleHeaderPalettes
 import com.example.ui.components.StockPill
 import com.example.ui.components.TransactionEntryDialog
 import com.example.ui.components.VehicleTransferDialog
+import com.example.ui.components.categoryVisualStyle
 import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenContainer
 import com.example.ui.theme.BrandGreenLight
@@ -358,7 +360,7 @@ fun VehicleDetailScreen(
 
     val pendingActiveCount = pendingCustomers.count { it.pendingEmptyBalance > 0 }
     val vehicleFolderStats = remember(rows) {
-        ProductCategory.entries.map { cat ->
+        ProductCategory.activeEntries.map { cat ->
             val catRows = rows.filter { it.product.category == cat }
             CategoryFolderStat(
                 category = cat,
@@ -1019,9 +1021,10 @@ fun VehicleProductRowCard(
     onEditOpening: (() -> Unit)? = null
 ) {
     val isDark = LocalIsDarkTheme.current
+    val catStyle = categoryVisualStyle(row.product.category)
     LuxuryGlassCard(
         shape = RoundedCornerShape(18.dp),
-        accentGlow = RoyalElectricBlue
+        accentGlow = catStyle.primaryColor
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -1029,18 +1032,31 @@ fun VehicleProductRowCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = row.product.category.displayName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isDark) ElectricBlueGlow else BrandGreenPrimary,
-                        fontWeight = FontWeight.Bold
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Futuristic3DCylinderVisual(
+                        fullCount = row.fullBalance,
+                        emptyCount = row.emptyBalance,
+                        damagedCount = row.damagedBalance,
+                        accentColor = catStyle.primaryColor,
+                        modifier = Modifier.size(width = 36.dp, height = 52.dp)
                     )
-                    Text(
-                        text = row.product.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = row.product.category.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDark) ElectricBlueGlow else BrandGreenPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = row.product.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

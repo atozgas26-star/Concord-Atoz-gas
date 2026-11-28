@@ -30,7 +30,7 @@ class BackupManager(private val db: ConcordDatabase) {
 
         val root = JSONObject().apply {
             put("app", "Concord & A to Z Gas")
-            put("schemaVersion", 3)
+            put("schemaVersion", 4)
             put("exportedAt", System.currentTimeMillis())
 
             put("users", JSONArray().apply {
@@ -128,6 +128,7 @@ class BackupManager(private val db: ConcordDatabase) {
                         put("notes", r.notes)
                         put("linkedTxRemoteIds", r.linkedTxRemoteIds)
                         put("updatedAtMs", r.updatedAtMs)
+                        put("returnedEmptyCompany", r.returnedEmptyCompany)
                     })
                 }
             })
@@ -260,7 +261,8 @@ class BackupManager(private val db: ConcordDatabase) {
                         totalReturnedQty = o.optInt("totalReturnedQty", 0),
                         notes = o.optString("notes", ""),
                         linkedTxRemoteIds = o.optString("linkedTxRemoteIds", ""),
-                        updatedAtMs = o.optLong("updatedAtMs", 0L)
+                        updatedAtMs = o.optLong("updatedAtMs", 0L),
+                        returnedEmptyCompany = o.optString("returnedEmptyCompany", "")
                     )
                 }
             } else {

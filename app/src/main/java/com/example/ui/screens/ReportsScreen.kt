@@ -131,7 +131,7 @@ fun ReportsScreen(
 
     val folderStats = remember(baseTable, supportsCategoryFolders, selectedReport) {
         if (!supportsCategoryFolders) emptyList()
-        else ProductCategory.entries.map { cat ->
+        else ProductCategory.activeEntries.map { cat ->
             val matching = baseTable.rows.filter { detectRowCategory(it) == cat }
             val (fullTotal, emptyTotal) = computeFolderPreviewTotals(selectedReport, matching)
             CategoryFolderStat(

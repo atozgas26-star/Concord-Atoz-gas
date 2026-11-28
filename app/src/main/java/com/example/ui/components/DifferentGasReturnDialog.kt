@@ -77,6 +77,7 @@ import com.example.data.local.DifferentGasReturnEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.VehicleEntity
 import com.example.data.model.CustomerExchangeItem
+import com.example.data.model.LpgReturnCompany
 import com.example.data.model.ProductCategory
 import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.ElectricBlueBright
@@ -84,6 +85,8 @@ import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
+import com.example.ui.theme.MoltenOrangeGlow
+import com.example.ui.theme.NeonCyanGlow
 import com.example.ui.theme.ObsidianBorder
 import com.example.ui.theme.ObsidianDeep
 import com.example.ui.theme.ObsidianElevated
@@ -96,10 +99,8 @@ import java.util.UUID
 
 private enum class ExchangeQuickFilter(val label: String) {
     ALL("All"),
-    ARAB_GAS("Arab Gas"),
-    EMIRATES_GAS("Emirates Gas"),
-    INDUSTRIAL("Industrial"),
-    MCG_CUTTING("MCG / Cutting")
+    LPG("LPG 11/22/44 KG"),
+    INDUSTRIAL("Industrial")
 }
 
 private fun parseExchangeItemsJson(json: String): Map<Long, Int> {
@@ -120,9 +121,9 @@ private fun parseExchangeItemsJson(json: String): Map<Long, Int> {
 }
 
 /**
- * Corporate C&A GAS LPG & Different Gas Cylinder Exchange Dialog.
+ * Futuristic C&A GAS LPG & Different Gas Cylinder Exchange Dialog.
  * Supports creating and safely editing (atomic reversal + corrected apply) non-1:1 Full/Empty exchanges
- * across Arab Gas, Emirates Gas, Industrial Gases, MCG, and Cutting Gas.
+ * across LPG (11 KG, 22 KG, 44 KG) with Returned Empty Company (Arab Gas / Emirates Gas) and Industrial Gases.
  */
 @Composable
 fun DifferentGasReturnDialog(
@@ -143,7 +144,8 @@ fun DifferentGasReturnDialog(
         customerName: String,
         customerPhone: String,
         notes: String,
-        submissionKey: String
+        submissionKey: String,
+        returnedEmptyCompany: String
     ) -> Unit
 ) {
     val isEditMode = editingRecord != null
@@ -174,6 +176,9 @@ fun DifferentGasReturnDialog(
     var customerName by remember(editingRecord?.id) { mutableStateOf(editingRecord?.customerName ?: "") }
     var customerPhone by remember(editingRecord?.id) { mutableStateOf(editingRecord?.customerPhone ?: "") }
     var notes by remember(editingRecord?.id) { mutableStateOf(editingRecord?.notes ?: "") }
+    var returnedEmptyCompany by remember(editingRecord?.id) {
+        mutableStateOf(editingRecord?.returnedEmptyCompany ?: "")
+    }
 
     var activeSection by remember { mutableStateOf(0) } // 0 = Delivered Full, 1 = Returned Empty
     var quickFilter by remember { mutableStateOf(ExchangeQuickFilter.ALL) }
@@ -188,19 +193,20 @@ fun DifferentGasReturnDialog(
     }
     var localError by remember { mutableStateOf<String?>(null) }
 
-    // Respect exact admin-saved sortOrder
+    // Respect exact admin-saved sortOrder (only active categories)
     val orderedProducts = remember(products) {
-        products.sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.id }))
+        products
+            .filter { it.category.isActiveCategory }
+            .sortedWith(compareBy({ it.category.sortOrder }, { it.sortOrder }, { it.id }))
     }
 
     val visibleProducts = remember(orderedProducts, quickFilter, selectedCategory, searchQuery) {
         orderedProducts.filter { p ->
             val matchesQuick = when (quickFilter) {
                 ExchangeQuickFilter.ALL -> true
-                ExchangeQuickFilter.ARAB_GAS -> p.name.contains("Arab Gas", ignoreCase = true)
-                ExchangeQuickFilter.EMIRATES_GAS -> p.name.contains("Emirates Gas", ignoreCase = true)
-                ExchangeQuickFilter.INDUSTRIAL -> p.category == ProductCategory.INDUSTRIAL_GAS
-                ExchangeQuickFilter.MCG_CUTTING -> p.category == ProductCategory.MCG_CUTTING_GAS
+                ExchangeQuickFilter.LPG -> p.category == ProductCategory.COOKING_GAS
+                ExchangeQuickFilter.INDUSTRIAL -> p.category == ProductCategory.INDUSTRIAL_GAS ||
+                    p.category == ProductCategory.SMALL_48_CFT
             }
             matchesQuick &&
                 (selectedCategory == null || p.category == selectedCategory) &&
@@ -510,6 +516,96 @@ fun DifferentGasReturnDialog(
                         }
                     }
 
+                    // Live 3D Energy Stock Flow Visualizer (Full OUT ➔ Empty IN)
+                    val deliveredFlowSummary = deliveredItems.joinToString(", ") { item ->
+                        orderedProducts.firstOrNull { it.id == item.productId }?.name ?: "Gas"
+                    }
+                    val returnedFlowSummary = returnedItems.joinToString(", ") { item ->
+                        orderedProducts.firstOrNull { it.id == item.productId }?.name ?: "Gas"
+                    }
+                    FuturisticStockFlowVisualizer(
+                        deliveredLabel = deliveredFlowSummary,
+                        deliveredQty = totalDelivered,
+                        returnedLabel = returnedFlowSummary,
+                        returnedCompany = returnedEmptyCompany,
+                        returnedQty = totalReturned
+                    )
+
+                    // LPG Returned Empty Company Selector (Arab Gas / Emirates Gas)
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = ObsidianElevated.copy(alpha = 0.72f),
+                        border = BorderStroke(
+                            1.dp,
+                            Brush.horizontalGradient(
+                                listOf(NeonCyanGlow.copy(alpha = 0.45f), MoltenOrangeGlow.copy(alpha = 0.55f))
+                            )
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "RETURNED EMPTY COMPANY (LPG EXCHANGE)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MoltenOrangeGlow,
+                                letterSpacing = 0.6.sp
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                LpgReturnCompany.entries.forEach { company ->
+                                    val isSelected = returnedEmptyCompany.equals(company.displayName, ignoreCase = true)
+                                    val selColor = if (company == LpgReturnCompany.ARAB_GAS) ElectricBlueBright else MetallicOrange
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            returnedEmptyCompany = if (isSelected) "" else company.displayName
+                                        },
+                                        label = {
+                                            Text(
+                                                text = company.displayName,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            containerColor = ObsidianDeep,
+                                            labelColor = PlatinumSilver,
+                                            selectedContainerColor = selColor,
+                                            selectedLabelColor = ArcticWhite
+                                        ),
+                                        modifier = Modifier.testTag("dgr_return_company_${company.name.lowercase()}")
+                                    )
+                                }
+                                FilterChip(
+                                    selected = returnedEmptyCompany.isBlank(),
+                                    onClick = { returnedEmptyCompany = "" },
+                                    label = {
+                                        Text(
+                                            text = "Industrial / N/A",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = ObsidianDeep,
+                                        labelColor = PlatinumMuted,
+                                        selectedContainerColor = ObsidianSurface,
+                                        selectedLabelColor = ArcticWhite
+                                    ),
+                                    modifier = Modifier.testTag("dgr_return_company_none")
+                                )
+                            }
+                        }
+                    }
+
                     // Dual Step Switcher: 1) Delivered Full  |  2) Returned Empty
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -580,7 +676,7 @@ fun DifferentGasReturnDialog(
                         }
                     }
 
-                    // Quick Brand & Corporate Category Filter Pills (Arab Gas / Emirates Gas / Industrial / MCG)
+                    // Quick Gas Family Filter Pills (All / LPG 11-22-44 KG / Industrial)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -599,7 +695,7 @@ fun DifferentGasReturnDialog(
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = ObsidianElevated,
                                     labelColor = PlatinumSilver,
-                                    selectedContainerColor = if (qf == ExchangeQuickFilter.EMIRATES_GAS) MetallicOrange else ElectricBlueBright,
+                                    selectedContainerColor = if (qf == ExchangeQuickFilter.LPG) MetallicOrange else ElectricBlueBright,
                                     selectedLabelColor = ArcticWhite
                                 ),
                                 modifier = Modifier.testTag("dgr_quick_filter_${qf.name.lowercase()}")
@@ -607,7 +703,7 @@ fun DifferentGasReturnDialog(
                         }
                     }
 
-                    // Category filter chips
+                    // Active Category filter chips
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -628,7 +724,7 @@ fun DifferentGasReturnDialog(
                                 selectedLabelColor = ArcticWhite
                             )
                         )
-                        ProductCategory.entries.forEach { cat ->
+                        ProductCategory.activeEntries.forEach { cat ->
                             val isSel = selectedCategory == cat
                             val catStyle = categoryVisualStyle(cat)
                             FilterChip(
@@ -887,8 +983,9 @@ fun DifferentGasReturnDialog(
                                         val name = orderedProducts.firstOrNull { it.id == item.productId }?.name ?: "#${item.productId}"
                                         "$name Empty +${item.quantity}"
                                     }
+                                    val companyTag = returnedEmptyCompany.takeIf { it.isNotBlank() }?.let { " [$it]" } ?: ""
                                     Text(
-                                        text = "Returned: $retSummary",
+                                        text = "Returned: $retSummary$companyTag",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontFamily = JetBrainsMono,
                                         color = MetallicOrangeBright
@@ -985,7 +1082,8 @@ fun DifferentGasReturnDialog(
                                         customerName.trim(),
                                         customerPhone.trim(),
                                         notes.trim(),
-                                        submissionKey
+                                        submissionKey,
+                                        returnedEmptyCompany.trim()
                                     )
                                 }
                             }

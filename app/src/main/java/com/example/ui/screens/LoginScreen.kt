@@ -101,7 +101,9 @@ import com.example.data.model.ThemePreset
 import com.example.data.model.UserRole
 import com.example.data.remote.WorkspaceConnectionState
 import com.example.ui.components.AdminRecoveryDialog
+import com.example.ui.components.FuturisticSpaceBackdrop
 import com.example.ui.components.LuxuryGlassCard
+import com.example.ui.components.Signature3DEmblem
 import com.example.ui.components.SignatureAccentHairline
 import com.example.ui.components.StaffListPickerSheet
 import com.example.ui.components.StaffOneClickSelectorCard
@@ -244,10 +246,9 @@ fun LoginScreen(
         onClearError()
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+    FuturisticSpaceBackdrop(
+        modifier = Modifier.fillMaxSize(),
+        showEnergyParticles = true
     ) {
         Column(
             modifier = Modifier
@@ -283,19 +284,18 @@ fun LoginScreen(
                 }
             }
 
-            // Hero Company Banner
+            // Futuristic 3D Hero Company Banner with Floating 3D Emblem
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(186.dp)
-                    .obsidianRoyalAtmosphere()
+                    .height(216.dp)
             ) {
                 if (bannerBitmap != null) {
                     Image(
                         bitmap = bannerBitmap!!,
                         contentDescription = "C&A Gas Industrial Cylinders",
                         contentScale = ContentScale.Crop,
-                        alpha = 0.22f,
+                        alpha = 0.16f,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -305,8 +305,8 @@ fun LoginScreen(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    ObsidianMidnight.copy(alpha = 0.72f),
-                                    ObsidianDeep.copy(alpha = 0.90f)
+                                    ObsidianMidnight.copy(alpha = 0.55f),
+                                    ObsidianDeep.copy(alpha = 0.85f)
                                 )
                             )
                         )
@@ -314,7 +314,7 @@ fun LoginScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
                     Row(
@@ -328,17 +328,17 @@ fun LoginScreen(
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
-                                    text = "INDUSTRIAL & LPG",
+                                    text = "C&A GAS • 3D EDITION",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = FontWeight.ExtraBold,
                                     modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                 )
                             }
                             Spacer(Modifier.width(8.dp))
                             Surface(
-                                color = Color.White.copy(alpha = 0.12f),
-                                border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.35f)),
+                                color = Color.White.copy(alpha = 0.10f),
+                                border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.45f)),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
@@ -357,7 +357,7 @@ fun LoginScreen(
                         Surface(
                             color = Color.White.copy(alpha = 0.10f),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
+                            border = BorderStroke(1.dp, ElectricBlueGlow.copy(alpha = 0.35f))
                         ) {
                             IconButton(
                                 onClick = onToggleDarkMode,
@@ -371,38 +371,16 @@ fun LoginScreen(
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = ObsidianMidnight.copy(alpha = 0.85f),
-                            border = BorderStroke(
-                                1.5.dp,
-                                Brush.linearGradient(listOf(ElectricBlueGlow, MetallicOrangeBright))
-                            ),
-                            modifier = Modifier.size(54.dp)
-                        ) {
-                            if (logoBitmap != null) {
-                                Image(
-                                    bitmap = logoBitmap!!,
-                                    contentDescription = "C&A Gas Logo",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                    Text(
-                                        text = "C&A",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                }
-                            }
-                        }
+                        Signature3DEmblem(
+                            size = 82.dp,
+                            enableOrbitAnimation = true,
+                            showOuterHalo = true
+                        )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "CONCORD & ATOZ GAS TRADING LLC",
@@ -412,7 +390,7 @@ fun LoginScreen(
                                 modifier = Modifier.testTag("login_company_headline")
                             )
                             Text(
-                                text = "C&A Gas • Store, Vehicle & Sales Management",
+                                text = "Industrial & LPG (11 / 22 / 44 KG) • UAE +971 OTP Access",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.84f)
                             )

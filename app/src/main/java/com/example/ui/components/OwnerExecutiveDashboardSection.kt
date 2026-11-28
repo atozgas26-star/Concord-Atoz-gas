@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -35,7 +38,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -43,7 +50,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,12 +71,18 @@ import com.example.data.model.ProductCategory
 import com.example.data.model.TransactionType
 import com.example.ui.theme.ArcticWhite
 import com.example.ui.theme.BrandGreenLight
+import com.example.ui.theme.ChromeSilverHighlight
+import com.example.ui.theme.CinematicMidnightBlack
+import com.example.ui.theme.DeepSpaceNavy
 import com.example.ui.theme.ElectricBlueBright
 import com.example.ui.theme.ElectricBlueGlow
 import com.example.ui.theme.JetBrainsMono
 import com.example.ui.theme.MetallicOrange
 import com.example.ui.theme.MetallicOrangeBright
 import com.example.ui.theme.MetallicOrangeGold
+import com.example.ui.theme.MoltenOrangeCore
+import com.example.ui.theme.MoltenOrangeGlow
+import com.example.ui.theme.NeonCyanGlow
 import com.example.ui.theme.PlatinumMuted
 import com.example.ui.theme.PlatinumSilver
 import com.example.ui.theme.RoyalBlueDeep
@@ -100,13 +118,15 @@ fun OwnerExecutiveDashboardSection(
 
     val arabGasExchangeCount = remember(lpgExchanges) {
         lpgExchanges.count {
-            it.deliveredSummary.contains("Arab Gas", ignoreCase = true) ||
+            it.returnedEmptyCompany.contains("Arab Gas", ignoreCase = true) ||
+                it.deliveredSummary.contains("Arab Gas", ignoreCase = true) ||
                 it.returnedSummary.contains("Arab Gas", ignoreCase = true)
         }
     }
     val emiratesGasExchangeCount = remember(lpgExchanges) {
         lpgExchanges.count {
-            it.deliveredSummary.contains("Emirates Gas", ignoreCase = true) ||
+            it.returnedEmptyCompany.contains("Emirates Gas", ignoreCase = true) ||
+                it.deliveredSummary.contains("Emirates Gas", ignoreCase = true) ||
                 it.returnedSummary.contains("Emirates Gas", ignoreCase = true)
         }
     }
@@ -117,7 +137,7 @@ fun OwnerExecutiveDashboardSection(
     val alertLogCount = remember(securityLogs) { securityLogs.count { it.isAlert } }
 
     val categoryChartData = remember(companyStockRows) {
-        ProductCategory.entries.map { cat ->
+        ProductCategory.activeEntries.map { cat ->
             val storeFull = companyStockRows.filter { it.product.category == cat }.sumOf { it.storeFull }
             val vehicleFull = companyStockRows.filter { it.product.category == cat }.sumOf { it.vehiclesFull }
             Triple(cat.shortCode, storeFull, vehicleFull)
@@ -154,15 +174,15 @@ fun OwnerExecutiveDashboardSection(
             .testTag("owner_executive_dashboard_section"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Executive Crown Banner
+        // Futuristic 3D Executive Crown Banner
         Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = SignatureRoyalSurface,
+            shape = RoundedCornerShape(22.dp),
+            color = DeepSpaceNavy,
             border = BorderStroke(
-                1.3.dp,
-                Brush.linearGradient(listOf(MetallicOrangeGold, ElectricBlueGlow))
+                1.4.dp,
+                Brush.linearGradient(listOf(ChromeSilverHighlight.copy(alpha = 0.7f), MoltenOrangeGlow, NeonCyanGlow))
             ),
-            shadowElevation = 10.dp,
+            shadowElevation = 14.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -170,65 +190,66 @@ fun OwnerExecutiveDashboardSection(
                     .fillMaxWidth()
                     .background(
                         Brush.horizontalGradient(
-                            listOf(RoyalBlueDeep, SignatureRoyalSurface, Color(0xFF1A2952))
+                            listOf(CinematicMidnightBlack, DeepSpaceNavy, RoyalBlueDeep)
                         )
                     )
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MetallicOrange.copy(alpha = 0.22f),
-                            border = BorderStroke(1.dp, MetallicOrangeGold),
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Visibility,
-                                    contentDescription = null,
-                                    tint = MetallicOrangeGold,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Signature3DEmblem(
+                            size = 48.dp,
+                            enableOrbitAnimation = true,
+                            showOuterHalo = true
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "OWNER EXECUTIVE MONITORING",
+                                text = "OWNER EXECUTIVE 3D HUB",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = ArcticWhite,
-                                letterSpacing = 0.6.sp
+                                letterSpacing = 0.8.sp
                             )
                             Text(
                                 text = "Strictly View-Only • Live Corporate Analytics",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MetallicOrangeGold
+                                color = MoltenOrangeCore
                             )
                         }
                     }
                     Surface(
                         shape = RoundedCornerShape(999.dp),
-                        color = MetallicOrange.copy(alpha = 0.2f),
-                        border = BorderStroke(1.dp, MetallicOrangeBright)
+                        color = MetallicOrange.copy(alpha = 0.24f),
+                        border = BorderStroke(1.dp, MoltenOrangeGlow)
                     ) {
-                        Text(
-                            text = "VIEW ONLY",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MetallicOrangeBright,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                tint = MoltenOrangeCore,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "VIEW ONLY",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MoltenOrangeCore
+                            )
+                        }
                     }
                 }
                 Text(
-                    text = "Real-time overview of C&A GAS store stock, fleet vehicles, Arab Gas & Emirates Gas exchanges, daily closing balances, and security activity.",
+                    text = "Real-time 3D telemetry of C&A GAS store stock, fleet vehicles, LPG exchanges (Arab Gas & Emirates Gas), daily closing balances, and security activity.",
                     style = MaterialTheme.typography.bodySmall,
                     color = PlatinumSilver
                 )
@@ -388,11 +409,14 @@ fun OwnerExecutiveDashboardSection(
             }
         }
 
-        // Visual Chart 2: 7-Day Sales vs Purchase Activity
+        // Visual Chart 2: Animated Molten-Orange 7-Day Sales & Purchase Energy Graph
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = SignatureRoyalSurface,
-            border = BorderStroke(1.dp, SignatureRoyalBorder),
+            border = BorderStroke(
+                1.dp,
+                Brush.horizontalGradient(listOf(MoltenOrangeGlow.copy(alpha = 0.6f), SignatureRoyalBorder))
+            ),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -405,23 +429,21 @@ fun OwnerExecutiveDashboardSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "7-Day Sales & Purchase Trend",
+                        text = "7-Day Sales & Purchase Energy Graph",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = ArcticWhite
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ChartLegendDot("Sales", MetallicOrangeGold)
+                        ChartLegendDot("Sales", MoltenOrangeGlow)
                         ChartLegendDot("Purchases", BrandGreenLight)
                     }
                 }
-                ExecutivePairedBarChart(
+                FuturisticOrangeTrendGraph(
                     items = trendChartData,
-                    primaryColor = MetallicOrangeGold,
-                    secondaryColor = BrandGreenLight,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(126.dp)
+                        .height(138.dp)
                 )
             }
         }
@@ -616,6 +638,15 @@ private fun ExecutivePairedBarChart(
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) return
+    val context = LocalContext.current
+    val lightweight = remember(context) { isLightweightMotionMode(context) }
+    var animateReady by remember { mutableStateOf(lightweight) }
+    LaunchedEffect(Unit) { animateReady = true }
+    val riseProgress by animateFloatAsState(
+        targetValue = if (animateReady) 1f else 0f,
+        animationSpec = tween(durationMillis = if (lightweight) 0 else 700, easing = FastOutSlowInEasing),
+        label = "bar_3d_rise"
+    )
     val maxVal = remember(items) {
         items.maxOfOrNull { maxOf(it.second, it.third) }?.coerceAtLeast(1) ?: 1
     }
@@ -626,40 +657,73 @@ private fun ExecutivePairedBarChart(
                 .weight(1f)
         ) {
             val groupWidth = size.width / items.size.coerceAtLeast(1)
-            val barWidth = (groupWidth * 0.28f).coerceIn(8f, 28f)
-            val gap = (barWidth * 0.22f).coerceAtLeast(3f)
+            val barWidth = (groupWidth * 0.25f).coerceIn(10f, 28f)
+            val depthDx = (barWidth * 0.26f).coerceIn(3f, 8f)
+            val depthDy = (barWidth * 0.18f).coerceIn(2.5f, 6f)
+            val gap = (barWidth * 0.32f).coerceAtLeast(5f)
             val chartBottom = size.height - 6f
-            val usableHeight = (chartBottom - 8f).coerceAtLeast(12f)
+            val usableHeight = (chartBottom - depthDy - 10f).coerceAtLeast(12f)
 
-            // Subtle baseline
-            drawLine(
-                color = SignatureRoyalBorder.copy(alpha = 0.7f),
-                start = Offset(0f, chartBottom),
-                end = Offset(size.width, chartBottom),
-                strokeWidth = 1.5f
-            )
+            // Subtle holographic horizontal gridlines
+            for (step in 0..2) {
+                val y = chartBottom - (usableHeight * (step / 2f))
+                drawLine(
+                    color = SignatureRoyalBorder.copy(alpha = if (step == 0) 0.75f else 0.32f),
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = if (step == 0) 1.5f else 1f
+                )
+            }
+
+            fun draw3DBar(left: Float, height: Float, baseColor: Color, highlightColor: Color) {
+                if (height <= 1f) return
+                val top = chartBottom - height
+                // Front face with vertical neon gradient
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        listOf(highlightColor, baseColor, baseColor.copy(alpha = 0.55f))
+                    ),
+                    topLeft = Offset(left, top),
+                    size = Size(barWidth, height),
+                    cornerRadius = CornerRadius(4f, 4f)
+                )
+                // Right 3D extruded depth face
+                val rightFace = Path().apply {
+                    moveTo(left + barWidth, top)
+                    lineTo(left + barWidth + depthDx, top - depthDy)
+                    lineTo(left + barWidth + depthDx, chartBottom - depthDy)
+                    lineTo(left + barWidth, chartBottom)
+                    close()
+                }
+                drawPath(rightFace, color = baseColor.copy(alpha = 0.42f))
+                // Top 3D isometric luminous cap
+                val topCap = Path().apply {
+                    moveTo(left, top)
+                    lineTo(left + depthDx, top - depthDy)
+                    lineTo(left + barWidth + depthDx, top - depthDy)
+                    lineTo(left + barWidth, top)
+                    close()
+                }
+                drawPath(topCap, color = highlightColor.copy(alpha = 0.92f))
+            }
 
             items.forEachIndexed { idx, item ->
                 val centerX = groupWidth * idx + groupWidth / 2f
-                val h1 = (item.second.toFloat() / maxVal.toFloat()) * usableHeight
-                val h2 = (item.third.toFloat() / maxVal.toFloat()) * usableHeight
+                val h1 = (item.second.toFloat() / maxVal.toFloat()) * usableHeight * riseProgress
+                val h2 = (item.third.toFloat() / maxVal.toFloat()) * usableHeight * riseProgress
 
-                if (h1 > 0f) {
-                    drawRoundRect(
-                        color = primaryColor,
-                        topLeft = Offset(centerX - barWidth - gap / 2f, chartBottom - h1),
-                        size = Size(barWidth, h1),
-                        cornerRadius = CornerRadius(6f, 6f)
-                    )
-                }
-                if (h2 > 0f) {
-                    drawRoundRect(
-                        color = secondaryColor,
-                        topLeft = Offset(centerX + gap / 2f, chartBottom - h2),
-                        size = Size(barWidth, h2),
-                        cornerRadius = CornerRadius(6f, 6f)
-                    )
-                }
+                draw3DBar(
+                    left = centerX - barWidth - gap / 2f,
+                    height = h1,
+                    baseColor = primaryColor,
+                    highlightColor = NeonCyanGlow
+                )
+                draw3DBar(
+                    left = centerX + gap / 2f,
+                    height = h2,
+                    baseColor = secondaryColor,
+                    highlightColor = MoltenOrangeCore
+                )
             }
         }
         Row(
@@ -684,6 +748,172 @@ private fun ExecutivePairedBarChart(
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = JetBrainsMono,
                         color = PlatinumMuted,
+                        fontSize = 8.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FuturisticOrangeTrendGraph(
+    items: List<Triple<String, Int, Int>>,
+    modifier: Modifier = Modifier
+) {
+    if (items.isEmpty()) return
+    val context = LocalContext.current
+    val lightweight = remember(context) { isLightweightMotionMode(context) }
+    var animateReady by remember { mutableStateOf(lightweight) }
+    LaunchedEffect(Unit) { animateReady = true }
+    val progress by animateFloatAsState(
+        targetValue = if (animateReady) 1f else 0f,
+        animationSpec = tween(durationMillis = if (lightweight) 0 else 820, easing = FastOutSlowInEasing),
+        label = "orange_trend_reveal"
+    )
+    val maxVal = remember(items) {
+        items.maxOfOrNull { maxOf(it.second, it.third) }?.coerceAtLeast(1) ?: 1
+    }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            val count = items.size.coerceAtLeast(1)
+            val stepX = size.width / count
+            val chartBottom = size.height - 6f
+            val chartTop = 10f
+            val usableH = (chartBottom - chartTop).coerceAtLeast(14f)
+
+            // Gridlines
+            for (g in 0..2) {
+                val gy = chartBottom - usableH * (g / 2f)
+                drawLine(
+                    color = SignatureRoyalBorder.copy(alpha = if (g == 0) 0.75f else 0.28f),
+                    start = Offset(0f, gy),
+                    end = Offset(size.width, gy),
+                    strokeWidth = if (g == 0) 1.5f else 1f
+                )
+            }
+
+            // Secondary Purchase bars (translucent emerald glow pillars)
+            val purW = (stepX * 0.26f).coerceIn(6f, 18f)
+            items.forEachIndexed { idx, (_, _, purchases) ->
+                val cx = stepX * idx + stepX / 2f
+                val ph = (purchases.toFloat() / maxVal.toFloat()) * usableH * progress
+                if (ph > 1f) {
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(
+                            listOf(BrandGreenLight.copy(alpha = 0.72f), BrandGreenLight.copy(alpha = 0.16f))
+                        ),
+                        topLeft = Offset(cx - purW / 2f, chartBottom - ph),
+                        size = Size(purW, ph),
+                        cornerRadius = CornerRadius(4f, 4f)
+                    )
+                }
+            }
+
+            // Molten Orange glowing Sales line + gradient area under curve
+            val points = items.mapIndexed { idx, (_, sales, _) ->
+                val cx = stepX * idx + stepX / 2f
+                val sh = (sales.toFloat() / maxVal.toFloat()) * usableH * progress
+                Offset(cx, chartBottom - sh)
+            }
+
+            if (points.size >= 2) {
+                val areaPath = Path().apply {
+                    moveTo(points.first().x, chartBottom)
+                    lineTo(points.first().x, points.first().y)
+                    for (i in 1 until points.size) {
+                        val prev = points[i - 1]
+                        val curr = points[i]
+                        val midX = (prev.x + curr.x) / 2f
+                        cubicTo(midX, prev.y, midX, curr.y, curr.x, curr.y)
+                    }
+                    lineTo(points.last().x, chartBottom)
+                    close()
+                }
+                drawPath(
+                    path = areaPath,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            MoltenOrangeGlow.copy(alpha = 0.42f),
+                            MoltenOrangeGlow.copy(alpha = 0.04f)
+                        ),
+                        startY = chartTop,
+                        endY = chartBottom
+                    )
+                )
+
+                val linePath = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    for (i in 1 until points.size) {
+                        val prev = points[i - 1]
+                        val curr = points[i]
+                        val midX = (prev.x + curr.x) / 2f
+                        cubicTo(midX, prev.y, midX, curr.y, curr.x, curr.y)
+                    }
+                }
+                // Outer molten halo
+                drawPath(
+                    path = linePath,
+                    color = MoltenOrangeGlow.copy(alpha = 0.35f),
+                    style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                )
+                // Crisp molten core stroke
+                drawPath(
+                    path = linePath,
+                    brush = Brush.horizontalGradient(
+                        listOf(MetallicOrange, MoltenOrangeGlow, MoltenOrangeCore)
+                    ),
+                    style = Stroke(width = 2.8f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                )
+            }
+
+            // Glowing Sales data nodes
+            points.forEach { pt ->
+                drawCircle(
+                    color = MoltenOrangeGlow.copy(alpha = 0.38f),
+                    radius = 7.5f,
+                    center = pt
+                )
+                drawCircle(
+                    color = MoltenOrangeCore,
+                    radius = 3.8f,
+                    center = pt
+                )
+                drawCircle(
+                    color = ArcticWhite,
+                    radius = 1.6f,
+                    center = pt
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            items.forEach { (label, sales, purchases) ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = PlatinumSilver,
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "$sales/$purchases",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = JetBrainsMono,
+                        color = MoltenOrangeCore,
                         fontSize = 8.sp,
                         maxLines = 1
                     )

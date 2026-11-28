@@ -3394,7 +3394,8 @@ class AppViewModel(
         customerName: String,
         customerPhone: String,
         notes: String = "",
-        submissionKey: String = java.util.UUID.randomUUID().toString()
+        submissionKey: String = java.util.UUID.randomUUID().toString(),
+        returnedEmptyCompany: String = ""
     ) {
         val session = _authSession.value ?: return
         if (session.user.role == UserRole.OWNER_VIEW) {
@@ -3420,7 +3421,8 @@ class AppViewModel(
                     customerName = customerName,
                     customerPhone = customerPhone,
                     notes = notes,
-                    submissionKey = submissionKey
+                    submissionKey = submissionKey,
+                    returnedEmptyCompany = returnedEmptyCompany
                 )
                 handleOperationResult(result)
             } finally {
@@ -3436,7 +3438,8 @@ class AppViewModel(
         vehicleId: Long?,
         customerName: String,
         customerPhone: String,
-        notes: String = ""
+        notes: String = "",
+        returnedEmptyCompany: String = ""
     ) {
         val session = _authSession.value ?: return
         if (session.user.role == UserRole.OWNER_VIEW) {
@@ -3453,7 +3456,8 @@ class AppViewModel(
                 actor = session.user,
                 customerName = customerName,
                 customerPhone = customerPhone,
-                notes = notes
+                notes = notes,
+                returnedEmptyCompany = returnedEmptyCompany
             )
             handleOperationResult(result)
         }
@@ -4302,10 +4306,10 @@ class AppViewModel(
                 val timeFmt = SimpleDateFormat("dd MMM HH:mm", Locale.US)
                 ReportTable(
                     reportTitle = "LPG & Gas Full / Empty Exchange Report",
-                    subtitle = "$periodLabel • ${selectedVeh?.name ?: "All Vehicles & Main Store"} • Arab Gas, Emirates Gas & Industrial",
+                    subtitle = "$periodLabel • ${selectedVeh?.name ?: "All Vehicles & Main Store"} • Returned Empty Companies: Arab Gas & Emirates Gas",
                     generatedBy = actorName,
                     headers = listOf(
-                        "Date/Time", "Customer", "Staff", "Vehicle", "Delivered Full", "Returned Empty", "Del Qty", "Ret Qty", "Notes"
+                        "Date/Time", "Customer", "Staff", "Vehicle", "Delivered Full", "Empty Co.", "Returned Empty", "Del Qty", "Ret Qty", "Notes"
                     ),
                     rows = filtered.map { rec ->
                         listOf(
@@ -4314,17 +4318,19 @@ class AppViewModel(
                             rec.staffName,
                             rec.vehicleName ?: "Main Store",
                             rec.deliveredSummary,
+                            rec.returnedEmptyCompany.ifBlank { "—" },
                             rec.returnedSummary,
                             rec.totalDeliveredQty.toString(),
                             rec.totalReturnedQty.toString(),
                             rec.notes.ifBlank { "—" }
                         )
                     }.ifEmpty {
-                        listOf(listOf("No Exchanges", "—", "—", "—", "—", "—", "0", "0", "—"))
+                        listOf(listOf("No Exchanges", "—", "—", "—", "—", "—", "—", "0", "0", "—"))
                     },
                     footerTotals = listOf(
                         "TOTAL",
                         "${filtered.size} Entries",
+                        "",
                         "",
                         "",
                         "",

@@ -657,20 +657,11 @@ fun RoleWelcomeOverlay(
         finishSmoothly()
     }
 
-    Box(
+    FuturisticSpaceBackdrop(
+        showEnergyParticles = !reducedMotion,
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { alpha = exitAlpha.value }
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        ObsidianMidnight,
-                        ObsidianDeep,
-                        RoyalBlueDeep.copy(alpha = 0.88f),
-                        ObsidianMidnight
-                    )
-                )
-            )
             .testTag("role_welcome_overlay_${role.name.lowercase()}")
     ) {
         Column(
@@ -688,9 +679,9 @@ fun RoleWelcomeOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = ObsidianMidnight.copy(alpha = 0.72f),
+                    color = ObsidianMidnight.copy(alpha = 0.78f),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, badgeAccent.copy(alpha = 0.55f))
+                    border = BorderStroke(1.dp, badgeAccent.copy(alpha = 0.65f))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -730,6 +721,13 @@ fun RoleWelcomeOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                Signature3DEmblem(
+                    size = 86.dp,
+                    enableOrbitAnimation = !reducedMotion,
+                    showOuterHalo = true,
+                    modifier = Modifier.graphicsLayer { alpha = textAlpha.value }
+                )
+                Spacer(Modifier.height(14.dp))
                 Text(
                     text = welcomeHeadline,
                     style = MaterialTheme.typography.headlineLarge,
@@ -749,7 +747,7 @@ fun RoleWelcomeOverlay(
                     modifier = Modifier.graphicsLayer { alpha = textAlpha.value }
                 )
 
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(18.dp))
 
                 CinematicDeliveryTruckStage(
                     truckXFraction = truckX.value,

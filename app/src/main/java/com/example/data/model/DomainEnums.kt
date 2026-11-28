@@ -6,11 +6,35 @@ enum class UserRole {
     OWNER_VIEW
 }
 
-enum class ProductCategory(val displayName: String, val shortCode: String, val sortOrder: Int) {
-    INDUSTRIAL_GAS("INDUSTRIAL GAS", "IND", 1),
-    SMALL_48_CFT("48 CFT SMALL", "48CFT", 2),
-    COOKING_GAS("LPG GAS (ARAB & EMIRATES)", "LPG", 3),
-    MCG_CUTTING_GAS("MCG & CUTTING GAS", "MCG", 4)
+enum class ProductCategory(
+    val displayName: String,
+    val shortCode: String,
+    val sortOrder: Int,
+    val isActiveCategory: Boolean = true
+) {
+    INDUSTRIAL_GAS("INDUSTRIAL GAS", "IND", 1, true),
+    SMALL_48_CFT("48 CFT SMALL", "48CFT", 2, true),
+    COOKING_GAS("LPG GAS", "LPG", 3, true),
+    MCG_CUTTING_GAS("MCG & CUTTING GAS", "MCG", 4, false);
+
+    companion object {
+        /**
+         * Active customer-facing gas categories:
+         * Industrial Gas, 48 CFT Small, and LPG Gas (11 KG, 22 KG, 44 KG).
+         * MCG & Cutting Gas is retired and kept only for legacy Room enum deserialization.
+         */
+        val activeEntries: List<ProductCategory> = entries.filter { it.isActiveCategory }
+    }
+}
+
+/**
+ * Authorized LPG Empty Cylinder Return Companies.
+ * Used exclusively for returned empty-cylinder company tracking inside LPG Exchange records,
+ * never as separate LPG product categories.
+ */
+enum class LpgReturnCompany(val displayName: String) {
+    ARAB_GAS("Arab Gas"),
+    EMIRATES_GAS("Emirates Gas")
 }
 
 /**
@@ -94,8 +118,9 @@ enum class StaffFeaturePermission(val label: String, val shortLabel: String) {
     MY_VEHICLE_STOCK("My Vehicle Stock", "Vehicle Stock"),
     FULL_OUT("Full Cylinder OUT / Sales", "Full OUT"),
     EMPTY_IN("Empty Cylinder IN / Return", "Empty IN"),
-    DELIVERY_ENTRIES("Delivery & Transfer Entries", "Deliveries"),
-    LPG_EXCHANGE("Arab & Emirates Gas Exchange", "LPG Exchange"),
+    DELIVERY_ENTRIES("LPG & Delivery Entries", "Deliveries"),
+    LPG_EXCHANGE("LPG Empty Exchange (Arab / Emirates)", "LPG Exchange"),
+    INDUSTRIAL_DELIVERY("Industrial Gas Delivery", "Industrial"),
     MY_DAILY_REPORT("My Daily Sales Report", "Daily Report"),
     MY_ACTIVITY_HISTORY("My Activity History", "Activity");
 

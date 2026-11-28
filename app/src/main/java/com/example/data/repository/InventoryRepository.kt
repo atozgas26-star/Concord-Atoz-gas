@@ -571,7 +571,8 @@ class InventoryRepository(
         customerName: String,
         customerPhone: String,
         notes: String = "",
-        submissionKey: String = java.util.UUID.randomUUID().toString()
+        submissionKey: String = java.util.UUID.randomUUID().toString(),
+        returnedEmptyCompany: String = ""
     ): OperationResult {
         if (actor.role == UserRole.OWNER_VIEW) {
             return OperationResult.ValidationError("Owner View is read-only and cannot record stock transactions.")
@@ -586,6 +587,7 @@ class InventoryRepository(
         }
         val cleanPhone = customerPhone.trim().take(40)
         val cleanNotes = notes.trim().take(240)
+        val cleanReturnCompany = GasNamingSanitizer.sanitizeCompanyOrProductName(returnedEmptyCompany).take(60)
 
         val mergedDelivered = deliveredItems
             .filter { it.quantity > 0 }
@@ -682,8 +684,12 @@ class InventoryRepository(
             }
 
             val deliveredSummary = deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
-            val returnedSummary = returnedLines.joinToString(", ") { "${it.productName} Empty ×${it.quantity}" }
+            val returnedSummary = returnedLines.joinToString(", ") {
+                val coPrefix = if (cleanReturnCompany.isNotBlank()) "$cleanReturnCompany " else ""
+                "$coPrefix${it.productName} Empty ×${it.quantity}"
+            }
             val phoneTag = if (cleanPhone.isNotBlank()) " • Tel: $cleanPhone" else ""
+            val coTag = if (cleanReturnCompany.isNotBlank()) " • Empty Co: $cleanReturnCompany" else ""
             val noteTag = if (cleanNotes.isNotBlank()) " • $cleanNotes" else ""
 
             val fullOutType = if (vehicle != null) {
@@ -730,7 +736,7 @@ class InventoryRepository(
                     staffName = actor.displayName,
                     quantity = item.quantity,
                     customerName = cleanCustomer,
-                    notes = "Diff Gas Return • Returned vs ($deliveredSummary)$phoneTag$noteTag".take(300),
+                    notes = "Diff Gas Return • Returned vs ($deliveredSummary)$coTag$phoneTag$noteTag".take(300),
                     remoteId = CloudSyncRepository.generateRemoteTxId()
                 )
                 val rowId = txDao.insert(tx)
@@ -757,7 +763,8 @@ class InventoryRepository(
                 totalReturnedQty = returnedLines.sumOf { it.quantity },
                 notes = cleanNotes,
                 linkedTxRemoteIds = linkedRemoteIdsCsv,
-                updatedAtMs = nowMs
+                updatedAtMs = nowMs,
+                returnedEmptyCompany = cleanReturnCompany
             )
             differentGasReturnDao.insert(returnRecord)
 
@@ -794,7 +801,8 @@ class InventoryRepository(
         actor: UserAccountEntity,
         customerName: String,
         customerPhone: String,
-        notes: String = ""
+        notes: String = "",
+        returnedEmptyCompany: String = ""
     ): OperationResult {
         if (actor.role == UserRole.OWNER_VIEW) {
             return OperationResult.ValidationError("Owner View is strictly read-only and cannot edit gas exchanges.")
@@ -805,6 +813,7 @@ class InventoryRepository(
         }
         val cleanPhone = customerPhone.trim().take(40)
         val cleanNotes = notes.trim().take(240)
+        val cleanReturnCompany = GasNamingSanitizer.sanitizeCompanyOrProductName(returnedEmptyCompany).take(60)
 
         val mergedDelivered = deliveredItems
             .filter { it.quantity > 0 }
@@ -876,8 +885,12 @@ class InventoryRepository(
                 DifferentGasLineItem(p.id, p.name, p.category.displayName, item.quantity)
             }
             val deliveredSummary = deliveredLines.joinToString(", ") { "${it.productName} Full ×${it.quantity}" }
-            val returnedSummary = returnedLines.joinToString(", ") { "${it.productName} Empty ×${it.quantity}" }
+            val returnedSummary = returnedLines.joinToString(", ") {
+                val coPrefix = if (cleanReturnCompany.isNotBlank()) "$cleanReturnCompany " else ""
+                "$coPrefix${it.productName} Empty ×${it.quantity}"
+            }
             val phoneTag = if (cleanPhone.isNotBlank()) " • Tel: $cleanPhone" else ""
+            val coTag = if (cleanReturnCompany.isNotBlank()) " • Empty Co: $cleanReturnCompany" else ""
             val noteTag = if (cleanNotes.isNotBlank()) " • $cleanNotes" else ""
 
             val fullOutType = if (vehicle != null) TransactionType.VEHICLE_CUSTOMER_CHANGE_FULL_OUT else TransactionType.STORE_CUSTOMER_CHANGE_FULL_OUT
@@ -915,7 +928,7 @@ class InventoryRepository(
                         staffName = existing.staffName,
                         quantity = item.quantity,
                         customerName = cleanCustomer,
-                        notes = "Diff Gas Return (Edited) • Returned vs ($deliveredSummary)$phoneTag$noteTag".take(300),
+                        notes = "Diff Gas Return (Edited) • Returned vs ($deliveredSummary)$coTag$phoneTag$noteTag".take(300),
                         remoteId = CloudSyncRepository.generateRemoteTxId()
                     )
                 )
@@ -971,7 +984,8 @@ class InventoryRepository(
                 totalReturnedQty = returnedLines.sumOf { it.quantity },
                 notes = cleanNotes,
                 linkedTxRemoteIds = insertedTransactions.mapNotNull { it.remoteId }.joinToString(","),
-                updatedAtMs = nowMs
+                updatedAtMs = nowMs,
+                returnedEmptyCompany = cleanReturnCompany
             )
             differentGasReturnDao.update(updatedRecord)
             summaryMsg = "Updated Gas Exchange ($scopeLabel): Delivered $deliveredSummary | Returned $returnedSummary."

@@ -334,7 +334,7 @@ class LuxuryV230FeatureTest {
         // 2. Edit name, category, cylinder size/KG
         val editRes = repository.updateProduct(
             productId = created.id,
-            category = ProductCategory.MCG_CUTTING_GAS,
+            category = ProductCategory.SMALL_48_CFT,
             name = "Helium Precision",
             cylinderSizeKg = "47L",
             isActive = true,
@@ -343,7 +343,7 @@ class LuxuryV230FeatureTest {
         assertTrue(editRes is OperationResult.Success)
         val edited = repository.allProductsFlow.first().first { it.id == created.id }
         assertEquals("Helium Precision", edited.name)
-        assertEquals(ProductCategory.MCG_CUTTING_GAS, edited.category)
+        assertEquals(ProductCategory.SMALL_48_CFT, edited.category)
         assertEquals("47L", edited.cylinderSizeKg)
 
         // Staff CANNOT edit or delete products
@@ -416,6 +416,7 @@ class LuxuryV230FeatureTest {
             }
         }
         composeRule.onNodeWithTag("cinematic_delivery_truck_canvas").assertIsDisplayed()
+        composeRule.onNodeWithTag("splash_sound_mute_toggle").assertIsDisplayed()
         composeRule.onNodeWithTag("splash_skip_button").assertIsDisplayed().performClick()
         assertTrue(splashSkipped)
     }

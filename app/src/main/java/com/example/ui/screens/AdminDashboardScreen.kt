@@ -108,6 +108,7 @@ import com.example.ui.components.CurrentInventoryTotalsCard
 import com.example.ui.components.DashboardInsideOutsideFolderCard
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
+import com.example.ui.components.FuturisticSpaceBackdrop
 import com.example.ui.components.HeaderBellIconButton
 import com.example.ui.components.HeaderChatIconButton
 import com.example.ui.components.HeaderUpdateIconButton
@@ -204,14 +205,23 @@ fun AdminDashboardScreen(
 ) {
     var editingTransaction by remember { mutableStateOf<StockTransactionEntity?>(null) }
     var showThresholdDialog by remember { mutableStateOf(false) }
+    val isDarkRoot = LocalIsDarkTheme.current
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    FuturisticSpaceBackdrop(
+        modifier = Modifier.fillMaxSize(),
+        showEnergyParticles = isDarkRoot
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(if (!isDarkRoot) Modifier.background(MaterialTheme.colorScheme.background) else Modifier)
+    ) {
         BrandHeaderBanner(
             title = "Concord & Atoz Gas Trading LLC",
             subtitle = if (isReadOnly) {
                 "Owner View (Read-Only) • No Entry or Modification"
             } else {
-                "Admin Dashboard • Welcome, $adminName"
+                "Admin Command Centre • Welcome, $adminName"
             },
             headerGradient = if (isReadOnly) RoleHeaderPalettes.OwnerGradient else RoleHeaderPalettes.AdminGradient,
             accentBarColor = if (isReadOnly) RoleHeaderPalettes.OwnerAccent else RoleHeaderPalettes.AdminAccent,
@@ -937,6 +947,7 @@ fun AdminDashboardScreen(
             }
         }
     }
+    }
 
     if (showThresholdDialog && !isReadOnly) {
         LowStockThresholdDialog(
@@ -1364,19 +1375,21 @@ private fun QuickNavCard(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(containerColor),
-                contentAlignment = Alignment.Center
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = containerColor,
+                border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(40.dp)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = title,
-                    tint = onContainerColor,
-                    modifier = Modifier.size(20.dp)
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = onContainerColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
             Column {
                 Text(

@@ -147,10 +147,10 @@ fun BrandHeaderBanner(
     ) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
-                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
                 android.graphics.BitmapFactory.decodeResource(
                     context.resources,
-                    R.drawable.ic_ca_red_logo,
+                    R.drawable.img_ca_3d_emblem,
                     opts
                 )?.asImageBitmap()
             }.getOrNull()
@@ -535,7 +535,7 @@ fun CategoryFilterRow(
                 selectedLabelColor = MaterialTheme.colorScheme.onPrimary
             )
         )
-        ProductCategory.entries.forEach { category ->
+        ProductCategory.activeEntries.forEach { category ->
             FilterChip(
                 selected = selectedCategory == category,
                 onClick = { onCategorySelected(category) },
@@ -831,7 +831,7 @@ fun TransactionEntryDialog(
                         },
                         modifier = Modifier.testTag("tx_cat_chip_all")
                     )
-                    ProductCategory.entries.forEach { cat ->
+                    ProductCategory.activeEntries.forEach { cat ->
                         val catStyle = categoryVisualStyle(cat)
                         val catSelectedCount = sortedProducts.count {
                             it.category == cat && (qtyByProductId[it.id]?.toIntOrNull() ?: 0) > 0
@@ -872,7 +872,7 @@ fun TransactionEntryDialog(
                 OutlinedTextField(
                     value = productSearchQuery,
                     onValueChange = { productSearchQuery = it },
-                    placeholder = { Text("Quick search product (e.g. Oxygen, 48 CFT, LPG, MCG)...", fontSize = 12.sp) },
+                    placeholder = { Text("Quick search product (e.g. Oxygen, 48 CFT, LPG 22kg)...", fontSize = 12.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     trailingIcon = {
                         if (productSearchQuery.isNotEmpty()) {
@@ -1546,7 +1546,7 @@ fun EditTransactionDialog(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    ProductCategory.entries.forEach { cat ->
+                    ProductCategory.activeEntries.forEach { cat ->
                         FilterChip(
                             selected = selectedCategory == cat,
                             onClick = {
@@ -2184,7 +2184,7 @@ fun StockCalculatorDialog(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    ProductCategory.entries.forEach { cat ->
+                    ProductCategory.activeEntries.forEach { cat ->
                         FilterChip(
                             selected = selectedCategory == cat,
                             onClick = {

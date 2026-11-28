@@ -244,7 +244,7 @@ fun AdminSettingsScreen(
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
 
     val productFolderStats = remember(products) {
-        ProductCategory.entries.map { cat ->
+        ProductCategory.activeEntries.map { cat ->
             val catProds = products.filter { it.category == cat }
             CategoryFolderStat(
                 category = cat,
@@ -2262,7 +2262,7 @@ private fun AddProductDialog(
                         expanded = expanded,
                         onDismissRequest = { expanded = false }
                     ) {
-                        ProductCategory.entries.forEach { cat ->
+                        ProductCategory.activeEntries.forEach { cat ->
                             DropdownMenuItem(
                                 text = { Text(cat.displayName) },
                                 onClick = {

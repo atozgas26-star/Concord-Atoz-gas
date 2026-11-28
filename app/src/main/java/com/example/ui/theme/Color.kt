@@ -3,31 +3,44 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ============================================================================
-// C&A GAS — EXCLUSIVE SIGNATURE LUXURY PALETTE
-// Obsidian Midnight Blue • Royal Electric Blue • Signature Metallic Orange
-// Pure Arctic White • Platinum Silver
+// C&A GAS V4.0 — NEXT-GENERATION 3D CINEMATIC FUTURISTIC PALETTE
+// Cinematic Midnight Black • Deep Space Navy • Glowing Metallic Orange
+// Electric Blue Energy • Chrome Silver • Glassmorphism
 // ============================================================================
 
-val ObsidianMidnight = Color(0xFF050D1F)
-val ObsidianDeep = Color(0xFF07132C)
-val ObsidianSurface = Color(0xFF0B1733)
-val ObsidianElevated = Color(0xFF112145)
-val ObsidianBorder = Color(0xFF213869)
-val ObsidianBorderSubtle = Color(0xFF17284D)
+val CinematicMidnightBlack = Color(0xFF030712)
+val DeepSpaceNavy = Color(0xFF060E24)
+val SpaceGlassSurface = Color(0xFF0A1633)
+val SpaceGlassElevated = Color(0xFF102047)
+val SpaceGlassBorder = Color(0xFF1F3870)
+val NeonElectricBlue = Color(0xFF2563EB)
+val NeonCyanGlow = Color(0xFF38BDF8)
+val MoltenOrangeGlow = Color(0xFFFF6B1A)
+val MoltenOrangeCore = Color(0xFFFF9248)
+val ChromeSilverHighlight = Color(0xFFF8FAFC)
+val ChromeSilverMid = Color(0xFFCBD5E1)
+val ChromeSilverShadow = Color(0xFF64748B)
+
+val ObsidianMidnight = Color(0xFF030712)
+val ObsidianDeep = Color(0xFF060E24)
+val ObsidianSurface = Color(0xFF0A1530)
+val ObsidianElevated = Color(0xFF112147)
+val ObsidianBorder = Color(0xFF213A73)
+val ObsidianBorderSubtle = Color(0xFF162852)
 
 val RoyalElectricBlue = Color(0xFF1D4ED8)
-val RoyalBlueDeep = Color(0xFF0F2D7A)
-val SignatureRoyalBackground = Color(0xFF061434)
-val SignatureRoyalSurface = Color(0xFF0B1C45)
-val SignatureRoyalElevated = Color(0xFF12285E)
-val SignatureRoyalBorder = Color(0xFF28478B)
+val RoyalBlueDeep = Color(0xFF0D276B)
+val SignatureRoyalBackground = Color(0xFF040B1C)
+val SignatureRoyalSurface = Color(0xFF091636)
+val SignatureRoyalElevated = Color(0xFF10224F)
+val SignatureRoyalBorder = Color(0xFF25448A)
 val ElectricBlueBright = Color(0xFF3B82F6)
 val ElectricBlueGlow = Color(0xFF60A5FA)
 val ElectricBlueSoft = Color(0xFFEAF1FF)
 val ElectricBlueOnSoft = Color(0xFF0A2463)
 
-val MetallicOrange = Color(0xFFEA580C)
-val MetallicOrangeBright = Color(0xFFFF7A2F)
+val MetallicOrange = Color(0xFFFF6B1A)
+val MetallicOrangeBright = Color(0xFFFF8533)
 val MetallicOrangeGold = Color(0xFFF59E0B)
 val MetallicOrangeSoft = Color(0xFFFFF1E8)
 val MetallicOrangeOnSoft = Color(0xFF7C2D12)

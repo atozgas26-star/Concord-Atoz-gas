@@ -242,7 +242,7 @@ fun VehicleTransferDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    ProductCategory.entries.forEach { cat ->
+                    ProductCategory.activeEntries.forEach { cat ->
                         val catStyle = categoryVisualStyle(cat)
                         val isCatSelected = selectedCategory == cat
                         FilterChip(

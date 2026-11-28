@@ -162,8 +162,8 @@ fun categoryVisualStyle(category: ProductCategory): CategoryVisualStyle = when (
     )
     ProductCategory.COOKING_GAS -> CategoryVisualStyle(
         category = category,
-        shortTitle = "Cooking Gas",
-        primaryColor = Color(0xFFEA580C), // Signature Metallic Orange
+        shortTitle = "LPG Gas",
+        primaryColor = Color(0xFFFF6B1A), // Signature Metallic Orange
         lightContainer = Color(0xFFFFF1E8),
         darkContainer = Color(0xFF3E1908),
         lightOnContainer = Color(0xFF7C2D12),
@@ -325,7 +325,7 @@ fun CategoryFolderGrid(
 ) {
     val isDark = LocalIsDarkTheme.current || onMidnightBackground
     val orderedStats = remember(stats) {
-        ProductCategory.entries.map { cat ->
+        ProductCategory.activeEntries.map { cat ->
             stats.firstOrNull { it.category == cat } ?: CategoryFolderStat(cat, 0, 0, 0)
         }
     }
@@ -538,7 +538,7 @@ fun DashboardInsideOutsideFolderCard(
     val outsideEmpty = remember(companyStockRows) { companyStockRows.sumOf { it.vehiclesEmpty } }
 
     val folderStats = remember(companyStockRows, activeZone) {
-        ProductCategory.entries.map { cat ->
+        ProductCategory.activeEntries.map { cat ->
             val catRows = companyStockRows.filter { it.product.category == cat }
             CategoryFolderStat(
                 category = cat,

@@ -96,13 +96,12 @@ private enum class ExchangeGasFilter(val label: String) {
     ALL("All Gases"),
     ARAB_GAS("Arab Gas"),
     EMIRATES_GAS("Emirates Gas"),
-    INDUSTRIAL("Industrial"),
-    MCG_CUTTING("MCG / Cutting")
+    INDUSTRIAL("Industrial")
 }
 
 /**
- * Corporate Customer-wise & Staff-wise LPG / Different Gas Exchange History Modal.
- * Features Date, Gas Type (Arab Gas / Emirates Gas / Industrial / MCG), Vehicle, and Staff filters,
+ * Futuristic Customer-wise & Staff-wise LPG / Different Gas Exchange History Modal.
+ * Features Date, Returned Empty Company (Arab Gas / Emirates Gas) & Industrial filters,
  * atomic Edit & Delete with stock reversal (strictly hidden when isReadOnly == true),
  * and one-tap PDF / Excel export of filtered records.
  */
@@ -141,15 +140,12 @@ fun DifferentGasReturnHistoryDialog(
             ExchangeDateFilter.TODAY -> e.businessDate == todayStr
             ExchangeDateFilter.THIS_MONTH -> e.businessDate.startsWith(monthPrefix)
         }
-        val combinedText = "${e.deliveredSummary} ${e.returnedSummary}"
+        val combinedText = "${e.deliveredSummary} ${e.returnedSummary} ${e.returnedEmptyCompany}"
         val matchesGas = when (gasFilter) {
             ExchangeGasFilter.ALL -> true
             ExchangeGasFilter.ARAB_GAS -> combinedText.contains("Arab Gas", ignoreCase = true)
             ExchangeGasFilter.EMIRATES_GAS -> combinedText.contains("Emirates Gas", ignoreCase = true)
             ExchangeGasFilter.INDUSTRIAL -> listOf("Oxygen", "Acetylene", "Argon", "CO2", "Nitrogen").any {
-                combinedText.contains(it, ignoreCase = true)
-            }
-            ExchangeGasFilter.MCG_CUTTING -> listOf("MCG", "Cutting").any {
                 combinedText.contains(it, ignoreCase = true)
             }
         }
@@ -161,6 +157,7 @@ fun DifferentGasReturnHistoryDialog(
             e.staffName.contains(query, ignoreCase = true) ||
             e.deliveredSummary.contains(query, ignoreCase = true) ||
             e.returnedSummary.contains(query, ignoreCase = true) ||
+            e.returnedEmptyCompany.contains(query, ignoreCase = true) ||
             scopeLabel.contains(query, ignoreCase = true)
         return matchesDate && matchesGas && matchesVehicle && matchesQuery
     }
@@ -693,6 +690,23 @@ private fun ReturnHistoryEntryRow(
                 fontFamily = JetBrainsMono,
                 color = MetallicOrangeBright
             )
+            if (entry.returnedEmptyCompany.isNotBlank()) {
+                val isEmirates = entry.returnedEmptyCompany.contains("Emirates", ignoreCase = true)
+                val badgeColor = if (isEmirates) MetallicOrangeBright else ElectricBlueGlow
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = badgeColor.copy(alpha = 0.16f),
+                    border = BorderStroke(0.8.dp, badgeColor.copy(alpha = 0.65f))
+                ) {
+                    Text(
+                        text = "Empty Company: ${entry.returnedEmptyCompany}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
             if (entry.notes.isNotBlank()) {
                 Text(
                     text = "Notes: ${entry.notes}",

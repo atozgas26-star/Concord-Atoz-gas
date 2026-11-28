@@ -185,7 +185,7 @@ fun ProductEditorDialog(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        ProductCategory.entries.forEach { cat ->
+                        ProductCategory.activeEntries.forEach { cat ->
                             val isSel = category == cat
                             val catStyle = categoryVisualStyle(cat)
                             FilterChip(

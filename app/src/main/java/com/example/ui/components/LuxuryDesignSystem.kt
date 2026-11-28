@@ -68,26 +68,26 @@ import kotlinx.coroutines.delay
 @Composable
 fun LuxuryGlassCard(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(18.dp),
+    shape: Shape = RoundedCornerShape(20.dp),
     accentGlow: Color? = null,
     forceMidnight: Boolean = false,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val isDark = LocalIsDarkTheme.current || forceMidnight
-    val surfaceColor = if (isDark) ObsidianSurface else PureWhite
+    val surfaceColor = if (isDark) ObsidianSurface.copy(alpha = 0.94f) else PureWhite
     val borderBrush = if (isDark) {
         Brush.linearGradient(
             listOf(
-                (accentGlow ?: ElectricBlueGlow).copy(alpha = 0.42f),
-                ObsidianBorder.copy(alpha = 0.85f),
-                MetallicOrangeBright.copy(alpha = 0.24f)
+                (accentGlow ?: ElectricBlueGlow).copy(alpha = 0.62f),
+                ObsidianBorder.copy(alpha = 0.78f),
+                MetallicOrangeBright.copy(alpha = 0.36f)
             )
         )
     } else {
         Brush.linearGradient(
             listOf(
-                (accentGlow ?: RoyalElectricBlue).copy(alpha = 0.18f),
+                (accentGlow ?: RoyalElectricBlue).copy(alpha = 0.22f),
                 PlatinumSilver,
                 PlatinumSilver.copy(alpha = 0.8f)
             )
@@ -100,29 +100,50 @@ fun LuxuryGlassCard(
         modifier
     }
 
+    val innerContent: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawBehind {
+                    if (isDark) {
+                        // Subtle 2.5D specular top-left ambient light reflection
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    (accentGlow ?: ElectricBlueGlow).copy(alpha = 0.08f),
+                                    Color.Transparent,
+                                    MetallicOrange.copy(alpha = 0.04f)
+                                )
+                            )
+                        )
+                    }
+                }
+        ) {
+            Column(modifier = Modifier.fillMaxWidth(), content = content)
+        }
+    }
+
     if (onClick != null) {
         Surface(
             onClick = onClick,
             modifier = cardModifier,
             shape = shape,
             color = surfaceColor,
-            tonalElevation = if (isDark) 2.dp else 1.dp,
-            shadowElevation = if (isDark) 8.dp else 3.dp,
-            border = BorderStroke(1.dp, borderBrush)
-        ) {
-            Column(content = content)
-        }
+            tonalElevation = if (isDark) 3.dp else 1.dp,
+            shadowElevation = if (isDark) 12.dp else 3.dp,
+            border = BorderStroke(1.1.dp, borderBrush),
+            content = innerContent
+        )
     } else {
         Surface(
             modifier = cardModifier,
             shape = shape,
             color = surfaceColor,
-            tonalElevation = if (isDark) 2.dp else 1.dp,
-            shadowElevation = if (isDark) 8.dp else 2.dp,
-            border = BorderStroke(1.dp, borderBrush)
-        ) {
-            Column(content = content)
-        }
+            tonalElevation = if (isDark) 3.dp else 1.dp,
+            shadowElevation = if (isDark) 10.dp else 2.dp,
+            border = BorderStroke(1.1.dp, borderBrush),
+            content = innerContent
+        )
     }
 }
 

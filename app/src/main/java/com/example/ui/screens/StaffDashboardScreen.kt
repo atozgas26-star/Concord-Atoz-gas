@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -62,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -228,8 +231,15 @@ fun StaffDashboardScreen(
     val canEmptyIn = StaffFeaturePermission.EMPTY_IN in allowedFeatures
     val canDeliveries = StaffFeaturePermission.DELIVERY_ENTRIES in allowedFeatures
     val canLpgExchange = StaffFeaturePermission.LPG_EXCHANGE in allowedFeatures
+    val canIndustrialDelivery = StaffFeaturePermission.INDUSTRIAL_DELIVERY in allowedFeatures
     val canDailyReport = StaffFeaturePermission.MY_DAILY_REPORT in allowedFeatures
     val canActivityHistory = StaffFeaturePermission.MY_ACTIVITY_HISTORY in allowedFeatures
+
+    val activeStaffCategories = remember(canIndustrialDelivery) {
+        ProductCategory.activeEntries.filter { cat ->
+            canIndustrialDelivery || cat != ProductCategory.INDUSTRIAL_GAS
+        }
+    }
 
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<ProductCategory?>(null) }
@@ -243,9 +253,10 @@ fun StaffDashboardScreen(
     var showAutoSessionDialog by remember { mutableStateOf(false) }
     var staffSalesDailyMode by remember { mutableStateOf(true) }
 
-    val filteredVehicleRows = remember(vehicleRows, selectedCategory, searchQuery) {
+    val filteredVehicleRows = remember(vehicleRows, selectedCategory, searchQuery, canIndustrialDelivery) {
         vehicleRows.filter { row ->
-            (selectedCategory == null || row.product.category == selectedCategory) &&
+            (canIndustrialDelivery || row.product.category != ProductCategory.INDUSTRIAL_GAS) &&
+                (selectedCategory == null || row.product.category == selectedCategory) &&
                 (searchQuery.isBlank() ||
                     row.product.name.contains(searchQuery, ignoreCase = true) ||
                     row.product.category.displayName.contains(searchQuery, ignoreCase = true))
@@ -269,8 +280,8 @@ fun StaffDashboardScreen(
     val totalRetEmpty = remember(vehicleRows) { vehicleRows.sumOf { it.emptyReturnedToStore } }
     val activePendingCount = remember(pendingCustomers) { pendingCustomers.count { it.pendingEmptyBalance > 0 } }
 
-    val folderStats = remember(vehicleRows) {
-        ProductCategory.entries.map { cat ->
+    val folderStats = remember(vehicleRows, activeStaffCategories) {
+        activeStaffCategories.map { cat ->
             val catRows = vehicleRows.filter { it.product.category == cat }
             CategoryFolderStat(
                 category = cat,
@@ -308,8 +319,8 @@ fun StaffDashboardScreen(
             )
         }.filter { it.totalSold > 0 || it.fullRecd > 0 || it.custEmpty > 0 || it.compRepl > 0 }
     }
-    val salesFolderStats = remember(productSummaries) {
-        ProductCategory.entries.map { cat ->
+    val salesFolderStats = remember(productSummaries, activeStaffCategories) {
+        activeStaffCategories.map { cat ->
             val catItems = productSummaries.filter { it.product.category == cat }
             CategoryFolderStat(
                 category = cat,
@@ -1410,21 +1421,56 @@ private fun StaffBigActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Button(
+    Surface(
         onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = containerColor),
-        shape = RoundedCornerShape(14.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+        border = BorderStroke(
+            width = 1.dp,
+            brush = Brush.linearGradient(
+                listOf(Color.White.copy(alpha = 0.42f), containerColor.copy(alpha = 0.4f))
+            )
+        ),
+        shadowElevation = 6.dp,
         modifier = modifier
             .luxuryTapScale()
-            .height(54.dp)
+            .height(58.dp)
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(19.dp))
-        Spacer(Modifier.width(7.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            lineHeight = MaterialTheme.typography.labelMedium.lineHeight
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            containerColor.copy(alpha = 0.96f),
+                            containerColor.copy(alpha = 0.78f)
+                        )
+                    )
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.White.copy(alpha = 0.16f),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    lineHeight = MaterialTheme.typography.labelMedium.lineHeight
+                )
+            }
+        }
     }
 }

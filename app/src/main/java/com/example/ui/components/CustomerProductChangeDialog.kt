@@ -777,14 +777,14 @@ private fun ExchangeCategoryChipsRow(
             onClick = { onSelectCategory(null) },
             label = {
                 Text(
-                    text = if (totalSelected == 0) "All (4 Folders)" else "All ($totalSelected)",
+                    text = if (totalSelected == 0) "All (3 Folders)" else "All ($totalSelected)",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
             },
             modifier = Modifier.testTag("${testTagPrefix}_all")
         )
-        ProductCategory.entries.forEach { cat ->
+        ProductCategory.activeEntries.forEach { cat ->
             val catStyle = categoryVisualStyle(cat)
             val catCount = products.count { it.category == cat && (qtyMap[it.id]?.toIntOrNull() ?: 0) > 0 }
             val isSel = selectedCategory == cat

@@ -79,6 +79,7 @@ import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.CustomerProductChangeDialog
 import com.example.ui.components.DateSelectorBar
 import com.example.ui.components.EditTransactionDialog
+import com.example.ui.components.Futuristic3DCylinderVisual
 import com.example.ui.components.LuxuryGlassCard
 import com.example.ui.components.OpenedCategoryFolderHeader
 import com.example.ui.components.OpeningStockEditDialog
@@ -198,7 +199,7 @@ fun StoreManagementScreen(
     val totalDamaged = storeRows.sumOf { it.damagedBalance }
 
     val folderStats = remember(storeRows) {
-        ProductCategory.entries.map { cat ->
+        ProductCategory.activeEntries.map { cat ->
             val catRows = storeRows.filter { it.product.category == cat }
             CategoryFolderStat(
                 category = cat,
@@ -768,19 +769,32 @@ private fun StoreProductCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = row.product.category.displayName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = ElectricBlueGlow,
-                        fontWeight = FontWeight.Bold
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Futuristic3DCylinderVisual(
+                        fullCount = row.storeFullBalance,
+                        emptyCount = row.storeEmptyBalance,
+                        damagedCount = row.damagedBalance,
+                        accentColor = catStyle.primaryColor,
+                        modifier = Modifier.size(width = 36.dp, height = 52.dp)
                     )
-                    Text(
-                        text = row.product.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = ArcticWhite
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = row.product.category.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ElectricBlueGlow,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = row.product.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = ArcticWhite
+                        )
+                    }
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

@@ -229,7 +229,8 @@ data class DifferentGasReturnEntity(
     val totalReturnedQty: Int,
     val notes: String = "",
     val linkedTxRemoteIds: String = "",
-    val updatedAtMs: Long = 0L
+    val updatedAtMs: Long = 0L,
+    val returnedEmptyCompany: String = ""
 )
 
 @Entity(

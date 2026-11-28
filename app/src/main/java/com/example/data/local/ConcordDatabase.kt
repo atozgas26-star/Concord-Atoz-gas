@@ -27,7 +27,7 @@ import com.example.data.model.UserRole
         RegisteredDeviceEntity::class,
         SecurityAuditLogEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -113,42 +113,32 @@ abstract class ConcordDatabase : RoomDatabase() {
                     ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "CO2 5kg", sortOrder = 205, cylinderSizeKg = "5 KG"),
                     ProductEntity(category = ProductCategory.SMALL_48_CFT, name = "Nitrogen", sortOrder = 206, cylinderSizeKg = "48 CFT"),
 
-                    // COOKING / LPG GAS — exact Arab Gas & Emirates Gas plus legacy cylinder sizes
+                    // LPG GAS — strictly 11 KG, 22 KG, 44 KG (Arab Gas & Emirates Gas are tracked as returned empty companies)
                     ProductEntity(category = ProductCategory.COOKING_GAS, name = "11kg", sortOrder = 301, cylinderSizeKg = "11 KG"),
                     ProductEntity(category = ProductCategory.COOKING_GAS, name = "22kg", sortOrder = 302, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303, cylinderSizeKg = "44 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 11kg", sortOrder = 304, cylinderSizeKg = "11 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 22kg", sortOrder = 305, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 44kg", sortOrder = 306, cylinderSizeKg = "44 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 11kg", sortOrder = 307, cylinderSizeKg = "11 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 22kg", sortOrder = 308, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 44kg", sortOrder = 309, cylinderSizeKg = "44 KG"),
-
-                    // MCG & CUTTING GAS
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "22kg", sortOrder = 401, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "44kg", sortOrder = 402, cylinderSizeKg = "44 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 22kg", sortOrder = 403, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 44kg", sortOrder = 404, cylinderSizeKg = "44 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "Cutting Gas", sortOrder = 405, cylinderSizeKg = "Cutting Gas")
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303, cylinderSizeKg = "44 KG")
                 )
                 productDao().insertAll(seededProducts)
             } else {
-                // Non-destructively ensure corporate LPG & MCG/Cutting Gas products exist on upgraded installs
+                // Non-destructively ensure core 11kg/22kg/44kg LPG products are active while retiring
+                // MCG/Cutting Gas and standalone Arab/Emirates product rows (preserving all historical stock & ledger records).
                 val existingKeys = existingProducts.map { it.category to it.name.lowercase() }.toSet()
-                val corporateAdditions = listOf(
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 11kg", sortOrder = 304, cylinderSizeKg = "11 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 22kg", sortOrder = 305, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Arab Gas 44kg", sortOrder = 306, cylinderSizeKg = "44 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 11kg", sortOrder = 307, cylinderSizeKg = "11 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 22kg", sortOrder = 308, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "Emirates Gas 44kg", sortOrder = 309, cylinderSizeKg = "44 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 22kg", sortOrder = 403, cylinderSizeKg = "22 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "MCG 44kg", sortOrder = 404, cylinderSizeKg = "44 KG"),
-                    ProductEntity(category = ProductCategory.MCG_CUTTING_GAS, name = "Cutting Gas", sortOrder = 405, cylinderSizeKg = "Cutting Gas")
+                val requiredCoreLpg = listOf(
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "11kg", sortOrder = 301, cylinderSizeKg = "11 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "22kg", sortOrder = 302, cylinderSizeKg = "22 KG"),
+                    ProductEntity(category = ProductCategory.COOKING_GAS, name = "44kg", sortOrder = 303, cylinderSizeKg = "44 KG")
                 ).filter { (it.category to it.name.lowercase()) !in existingKeys }
-                if (corporateAdditions.isNotEmpty()) {
-                    corporateAdditions.forEach { product ->
-                        runCatching { productDao().insert(product) }
+                requiredCoreLpg.forEach { product ->
+                    runCatching { productDao().insert(product) }
+                }
+                existingProducts.forEach { prod ->
+                    val shouldRetire = prod.category == ProductCategory.MCG_CUTTING_GAS ||
+                        (prod.category == ProductCategory.COOKING_GAS && (
+                            prod.name.startsWith("Arab Gas", ignoreCase = true) ||
+                                prod.name.startsWith("Emirates Gas", ignoreCase = true)
+                            ))
+                    if (shouldRetire && prod.isActive) {
+                        runCatching { productDao().update(prod.copy(isActive = false)) }
                     }
                 }
             }
@@ -385,6 +375,22 @@ abstract class ConcordDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Track LPG Empty Return Company (Arab Gas / Emirates Gas) explicitly on exchange records
+                db.execSQL("ALTER TABLE different_gas_returns ADD COLUMN returnedEmptyCompany TEXT NOT NULL DEFAULT ''")
+
+                // 2. Retire MCG & Cutting Gas from active product catalog while preserving historical records
+                db.execSQL("UPDATE products SET isActive = 0 WHERE category = 'MCG_CUTTING_GAS'")
+
+                // 3. Keep LPG products strictly 11kg, 22kg, 44kg; retire standalone Arab/Emirates LPG product rows
+                db.execSQL("UPDATE products SET isActive = 0 WHERE category = 'COOKING_GAS' AND (name LIKE 'Arab Gas%' OR name LIKE 'Emirates Gas%')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', '11kg', 301, 1, '11 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', '22kg', 302, 1, '22 KG')")
+                db.execSQL("INSERT OR IGNORE INTO products (category, name, sortOrder, isActive, cylinderSizeKg) VALUES ('COOKING_GAS', '44kg', 303, 1, '44 KG')")
+            }
+        }
+
         fun getInstance(context: Context): ConcordDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -398,7 +404,8 @@ abstract class ConcordDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
                     )
                     .fallbackToDestructiveMigration(false)
                     .build()

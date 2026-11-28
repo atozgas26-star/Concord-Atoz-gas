@@ -362,7 +362,7 @@ fun ConcordGasRootApp(
                         reportTitle = "LPG & Gas Exchange Register",
                         subtitle = "Filtered Entries: ${records.size}",
                         generatedBy = actorName,
-                        headers = listOf("Date", "Customer", "Phone", "Staff", "Location", "Delivered Full", "Returned Empty", "Notes"),
+                        headers = listOf("Date", "Customer", "Phone", "Staff", "Location", "Delivered Full", "Returned Empty", "Empty Co.", "Notes"),
                         rows = records.map { r ->
                             listOf(
                                 r.businessDate,
@@ -372,6 +372,7 @@ fun ConcordGasRootApp(
                                 r.vehicleName ?: "Main Store Yard",
                                 "${r.deliveredSummary} (${r.totalDeliveredQty})",
                                 "${r.returnedSummary} (${r.totalReturnedQty})",
+                                r.returnedEmptyCompany.ifBlank { "-" },
                                 r.notes.ifBlank { "-" }
                             )
                         },
@@ -383,6 +384,7 @@ fun ConcordGasRootApp(
                             "",
                             records.sumOf { it.totalDeliveredQty }.toString(),
                             records.sumOf { it.totalReturnedQty }.toString(),
+                            "",
                             ""
                         )
                     )
@@ -1329,7 +1331,7 @@ fun ConcordGasRootApp(
                 showDifferentGasReturnDialog = false
                 editingDifferentGasReturn = null
             },
-            onConfirm = { deliveredItems, returnedItems, vehicleId, custName, custPhone, notes, submissionKey ->
+            onConfirm = { deliveredItems, returnedItems, vehicleId, custName, custPhone, notes, submissionKey, returnedEmptyCompany ->
                 if (activeEditing != null) {
                     viewModel.updateDifferentGasReturn(
                         recordId = activeEditing.id,
@@ -1338,7 +1340,8 @@ fun ConcordGasRootApp(
                         vehicleId = vehicleId,
                         customerName = custName,
                         customerPhone = custPhone,
-                        notes = notes
+                        notes = notes,
+                        returnedEmptyCompany = returnedEmptyCompany
                     )
                 } else {
                     viewModel.recordDifferentGasReturn(
@@ -1348,7 +1351,8 @@ fun ConcordGasRootApp(
                         customerName = custName,
                         customerPhone = custPhone,
                         notes = notes,
-                        submissionKey = submissionKey
+                        submissionKey = submissionKey,
+                        returnedEmptyCompany = returnedEmptyCompany
                     )
                 }
                 showDifferentGasReturnDialog = false

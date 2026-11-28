@@ -56,6 +56,8 @@ import com.example.ui.components.BrandHeaderBanner
 import com.example.ui.components.CategoryFolderGrid
 import com.example.ui.components.CategoryFolderStat
 import com.example.ui.components.DateSelectorBar
+import com.example.ui.components.Futuristic3DCylinderVisual
+import com.example.ui.components.FuturisticSpaceBackdrop
 import com.example.ui.components.InsideOutsideScopeToggle
 import com.example.ui.components.KpiMetricCard
 import com.example.ui.components.LuxuryGlassCard
@@ -120,7 +122,7 @@ fun CompanyInventoryScreen(
     val allOutsideEmpty = remember(stockRows) { stockRows.sumOf { it.vehiclesEmpty } }
 
     val folderStats = remember(stockRows, activeZone) {
-        ProductCategory.entries.map { cat ->
+        ProductCategory.activeEntries.map { cat ->
             val catRows = stockRows.filter { it.product.category == cat }
             CategoryFolderStat(
                 category = cat,
@@ -147,26 +149,8 @@ fun CompanyInventoryScreen(
     val vehiclesEmpty = filteredRows.sumOf { it.vehiclesEmpty }
 
     val isDark = LocalIsDarkTheme.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .then(
-                if (isDark) {
-                    Modifier.background(
-                        Brush.verticalGradient(
-                            listOf(
-                                ObsidianMidnight,
-                                ObsidianDeep,
-                                SignatureRoyalBackground,
-                                ObsidianMidnight
-                            )
-                        )
-                    )
-                } else {
-                    Modifier
-                }
-            )
-    ) {
+    val screenBody: @Composable () -> Unit = {
+        Column(modifier = Modifier.fillMaxSize()) {
         BrandHeaderBanner(
             title = if (isReadOnly) "Company Inventory (View Only)" else "Company Inventory",
             subtitle = "Inside Store + Outside Fleet Folders" + if (isReadOnly) " • Read-Only" else "",
@@ -450,19 +434,25 @@ fun CompanyInventoryScreen(
                             Column(modifier = Modifier.padding(14.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Futuristic3DCylinderVisual(
+                                        fullCount = primaryFull,
+                                        emptyCount = primaryEmpty,
+                                        accentColor = catStyle.primaryColor,
+                                        modifier = Modifier.size(width = 36.dp, height = 52.dp)
+                                    )
                                     Column(modifier = Modifier.weight(1f)) {
-                                        val isDark = LocalIsDarkTheme.current
+                                        val isDarkCard = LocalIsDarkTheme.current
                                         Surface(
-                                            color = if (isDark) catStyle.darkContainer else catStyle.lightContainer,
+                                            color = if (isDarkCard) catStyle.darkContainer else catStyle.lightContainer,
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
                                             Text(
                                                 text = row.product.category.displayName.uppercase(),
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = if (isDark) catStyle.darkOnContainer else catStyle.lightOnContainer,
+                                                color = if (isDarkCard) catStyle.darkOnContainer else catStyle.lightOnContainer,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                             )
@@ -579,5 +569,16 @@ fun CompanyInventoryScreen(
                 }
             }
         }
+        }
+    }
+    if (isDark) {
+        FuturisticSpaceBackdrop(
+            showEnergyParticles = true,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            screenBody()
+        }
+    } else {
+        screenBody()
     }
 }
